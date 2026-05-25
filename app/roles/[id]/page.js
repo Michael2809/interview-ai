@@ -18,6 +18,7 @@ export default function RoleDetailPage() {
     const [message, setMessage] = useState('')
     const [busyStageId, setBusyStageId] = useState(null)
     const [origin, setOrigin] = useState('')
+    const [inviteEmail, setInviteEmail] = useState({})
 
     useEffect(() => {
         setOrigin(window.location.origin)
@@ -117,9 +118,30 @@ export default function RoleDetailPage() {
         loadQuestions()
     }
 
+    async function sendInvite(stageId) {
+        const email = inviteEmail[stageId]
+        if (!email) {
+            setMessage('Please enter a candidate email.')
+            return
+        }
+        setMessage('Sending invite...')
+        const response = await fetch('/api/send-invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stageId, candidateEmail: email, origin }),
+        })
+        const result = await response.json()
+        if (result.error) {
+            setMessage('Error: ' + result.error)
+        } else {
+            setMessage('Invite sent to ' + email)
+            setInviteEmail({ ...inviteEmail, [stageId]: '' })
+        }
+    }
+
     return (
         <div style={{ padding: '40px', maxWidth: '600px' }}>
-            <a href="/roles" style={{ color: '#666' }}>← Back to all roles</a>
+            <a href="/roles" style={{ color: '#666' }}>Back to all roles</a>
 
             <h1 style={{ fontSize: '24px', marginTop: '20px' }}>
                 {role ? role.title : 'Loading...'}
@@ -154,18 +176,30 @@ export default function RoleDetailPage() {
                                         checked={q.approved}
                                         onChange={() => toggleApprove(q)}
                                     />{' '}
-                                    {q.text} {q.approved ? '✓ approved' : ''}
+                                    {q.text} {q.approved ? 'approved' : ''}
                                 </label>
                             </div>
                         ))}
 
                     <div style={{ marginTop: '10px', fontSize: '13px' }}>
-                        <div style={{ marginBottom: '4px' }}>
-                            <span style={{ color: '#666' }}>Candidate link: </span>
-                            <span>{origin}/interview/{stage.id}</span>
-                        </div>
+                        <input
+                            type="email"
+                            placeholder="Candidate email"
+                            value={inviteEmail[stage.id] || ''}
+                            onChange={(e) => setInviteEmail({ ...inviteEmail, [stage.id]: e.target.value })}
+                            style={{ padding: '6px', width: '60%', border: '1px solid #ccc', marginRight: '8px' }}
+                        />
+                        <button
+                            onClick={() => sendInvite(stage.id)}
+                            style={{ padding: '6px 12px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer' }}
+                        >
+                            Send Invite
+                        </button>
+                    </div>
+
+                    <div style={{ marginTop: '8px', fontSize: '13px' }}>
                         <a href={'/interview/' + stage.id + '/transcript'} style={{ color: '#0066cc' }}>
-                            View transcript →
+                            View transcript
                         </a>
                     </div>
                 </div>
