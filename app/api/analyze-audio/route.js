@@ -12,7 +12,7 @@ export async function POST(request) {
       sentiment_analysis: true,
       entity_detection: true,
       iab_categories: false,
-      speech_model: 'best',
+     speech_models: ['universal-3-pro'],
       disfluencies: true,
     })
 
