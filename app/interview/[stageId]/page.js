@@ -275,24 +275,27 @@ export default function InterviewPage() {
         const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
         const videoFilename = stageId + '-' + Date.now() + '.webm'
 
-        // Upload video to Cloudinary
+        // Upload video directly to Cloudinary (bypasses Vercel's 4.5MB limit)
         let videoUrl = null
         try {
             const formData = new FormData()
             formData.append('file', videoBlob)
-            formData.append('filename', videoFilename)
+            formData.append('upload_preset', 'interview-videos')
 
-            const uploadResponse = await fetch('/api/upload-video', {
-                method: 'POST',
-                body: formData,
-            })
+            const uploadResponse = await fetch(
+                'https://api.cloudinary.com/v1_1/dbrhpzdqz/video/upload',
+                {
+                    method: 'POST',
+                    body: formData,
+                }
+            )
 
             const uploadResult = await uploadResponse.json()
 
             if (uploadResponse.ok) {
-                videoUrl = uploadResult.url
+                videoUrl = uploadResult.secure_url
             } else {
-                console.error('Video upload error:', uploadResult.error)
+                console.error('Video upload error:', uploadResult)
             }
         } catch (err) {
             console.error('Video upload exception:', err)
