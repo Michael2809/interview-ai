@@ -108,6 +108,10 @@ export default function InterviewPage() {
         if (questions.length === 0) return
 
         try {
+            // Unlock iPhone Safari speech synthesis with a silent utterance during user tap
+            const unlock = new SpeechSynthesisUtterance('')
+            window.speechSynthesis.speak(unlock)
+
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             streamRef.current = stream
 
