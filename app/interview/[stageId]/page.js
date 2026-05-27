@@ -120,8 +120,8 @@ export default function InterviewPage() {
             }
             videoRecorder.start()
 
-            // Audio-only recorder for AssemblyAI
-            // Audio recorder — pick a mimeType the browser supports
+           // Audio-only recorder for AssemblyAI
+            const audioStream = new MediaStream(stream.getAudioTracks())
             const audioMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
                 ? 'audio/webm;codecs=opus'
                 : MediaRecorder.isTypeSupported('audio/mp4')
