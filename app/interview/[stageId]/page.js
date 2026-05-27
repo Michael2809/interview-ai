@@ -66,14 +66,23 @@ export default function InterviewPage() {
         const setVoiceAndSpeak = () => {
             const voices = window.speechSynthesis.getVoices()
             const preferred =
+                // iPhone/iPad voices (best first)
+                voices.find(v => v.name === 'Samantha (Enhanced)') ||
+                voices.find(v => v.name === 'Karen (Enhanced)') ||
+                voices.find(v => v.name === 'Moira (Enhanced)') ||
+                voices.find(v => v.name === 'Samantha') ||
+                voices.find(v => v.name === 'Karen') ||
+                voices.find(v => v.name === 'Moira') ||
+                // Desktop voices
                 voices.find(v => v.name === 'Google UK English Female') ||
                 voices.find(v => v.name === 'Microsoft Heera - English (India)') ||
                 voices.find(v => v.name === 'Microsoft Zira - English (United States)') ||
+                // Fallbacks
                 voices.find(v => v.name.includes('Female') && v.lang.startsWith('en')) ||
                 voices.find(v => v.lang === 'en-US')
             if (preferred) utterance.voice = preferred
-            utterance.rate = 0.88
-            utterance.pitch = 1.1
+            utterance.rate = 0.95
+            utterance.pitch = 1.0
             utterance.volume = 1
             setIsSpeaking(true)
 
