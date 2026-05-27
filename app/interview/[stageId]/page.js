@@ -102,12 +102,17 @@ export default function InterviewPage() {
                 videoRef.current.srcObject = stream
             }
 
-            // Video recorder
+            // Video recorder — pick a mimeType the browser supports
+            const videoMimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+                ? 'video/webm;codecs=vp8,opus'
+                : MediaRecorder.isTypeSupported('video/mp4')
+                ? 'video/mp4'
+                : ''
             const videoRecorder = new MediaRecorder(stream, {
-    mimeType: 'video/webm;codecs=vp8,opus',
-    videoBitsPerSecond: 500000,
-    audioBitsPerSecond: 64000
-})
+                mimeType: videoMimeType,
+                videoBitsPerSecond: 500000,
+                audioBitsPerSecond: 64000
+            })
             mediaRecorderRef.current = videoRecorder
             chunksRef.current = []
             videoRecorder.ondataavailable = (e) => {
@@ -116,11 +121,16 @@ export default function InterviewPage() {
             videoRecorder.start()
 
             // Audio-only recorder for AssemblyAI
-            const audioStream = new MediaStream(stream.getAudioTracks())
+            // Audio recorder — pick a mimeType the browser supports
+            const audioMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/mp4')
+                ? 'audio/mp4'
+                : ''
             const audioRecorder = new MediaRecorder(audioStream, {
-    mimeType: 'audio/webm;codecs=opus',
-    audioBitsPerSecond: 64000
-})
+                mimeType: audioMimeType,
+                audioBitsPerSecond: 64000
+            })
             audioRecorderRef.current = audioRecorder
             audioChunksRef.current = []
             audioRecorder.ondataavailable = (e) => {
@@ -312,12 +322,15 @@ export default function InterviewPage() {
         }
 
         // Upload audio for AssemblyAI analysis
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        const audioFilename = stageId + '-audio-' + Date.now() + '.webm'
+        const audioMime = audioRecorderRef.current?.mimeType || 'audio/webm'
+        const audioExt = audioMime.includes('mp4') ? 'mp4' : 'webm'
+        const audioContentType = audioMime.includes('mp4') ? 'audio/mp4' : 'audio/webm'
+        const audioBlob = new Blob(audioChunksRef.current, { type: audioContentType })
+        const audioFilename = stageId + '-audio-' + Date.now() + '.' + audioExt
 
         const { error: audioError } = await supabase.storage
             .from('interview-videos')
-            .upload(audioFilename, audioBlob, { contentType: 'audio/webm' })
+            .upload(audioFilename, audioBlob, { contentType: audioContentType })
 
         if (!audioError) {
             const { data: audioUrlData } = await supabase.storage
