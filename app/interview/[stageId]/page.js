@@ -76,13 +76,26 @@ export default function InterviewPage() {
             utterance.pitch = 1.1
             utterance.volume = 1
             setIsSpeaking(true)
-            utterance.onend = () => {
+
+            // Safety net: ensure onDone always fires even if speech fails (iPhone Safari)
+            let doneFired = false
+            const fireDone = () => {
+                if (doneFired) return
+                doneFired = true
                 setIsSpeaking(false)
                 if (onDone) onDone()
             }
+
+            utterance.onend = fireDone
+            utterance.onerror = fireDone
+
+            // Estimate speech duration: ~150 words/min = 400ms per word, plus 2s buffer
+            const wordCount = text.split(' ').length
+            const estimatedDuration = (wordCount * 400) + 2000
+            setTimeout(fireDone, estimatedDuration)
+
             window.speechSynthesis.speak(utterance)
         }
-
         if (window.speechSynthesis.getVoices().length === 0) {
             window.speechSynthesis.onvoiceschanged = setVoiceAndSpeak
         } else {
