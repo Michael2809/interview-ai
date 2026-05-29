@@ -93,6 +93,14 @@ export default function RoleDetailPage() {
   async function draftQuestions(stage) {
     setBusyStageId(stage.id)
     flashMessage('Drafting questions for ' + stage.name + '...')
+
+    // Delete existing UNAPPROVED questions for this stage (keep approved ones)
+    await supabase
+      .from('questions')
+      .delete()
+      .eq('stage_id', stage.id)
+      .eq('approved', false)
+
     const response = await fetch('/api/generate-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,7 +112,7 @@ export default function RoleDetailPage() {
     const rows = result.questions.map((q) => ({ stage_id: stage.id, text: q, approved: false }))
     const { error: err } = await supabase.from('questions').insert(rows)
     if (err) return flashError('Could not save questions: ' + err.message)
-    flashMessage('Questions drafted for ' + stage.name + '.')
+    flashMessage('Fresh questions drafted for ' + stage.name + '.')
     loadQuestions()
   }
 
