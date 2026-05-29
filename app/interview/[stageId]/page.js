@@ -367,7 +367,7 @@ export default function InterviewPage() {
                 await supabase.from('interviews').insert({
                     stage_id: stageId,
                     speaker: 'audio',
-                    content: audioFilename,
+                    content: 'Audio recording',
                     candidate_name: candidateName,
                     video_url: audioUrlData.signedUrl,
                 })

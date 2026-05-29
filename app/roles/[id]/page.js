@@ -3,244 +3,357 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import {
+  ScanFace,
+  LayoutDashboard,
+  Briefcase,
+  Users,
+  Settings,
+  LogOut,
+  Plus,
+  Menu,
+  X,
+  ArrowLeft,
+  Sparkles,
+  Send,
+  FileText,
+  Check,
+} from 'lucide-react'
 
 export default function RoleDetailPage() {
-    const params = useParams()
-    const roleId = params.id
+  const params = useParams()
+  const roleId = params.id
+  const router = useRouter()
+  const authClient = createClient()
 
-    const [role, setRole] = useState(null)
-    const [stages, setStages] = useState([])
-    const [questions, setQuestions] = useState([])
+  const [role, setRole] = useState(null)
+  const [stages, setStages] = useState([])
+  const [questions, setQuestions] = useState([])
 
-    const [name, setName] = useState('')
-    const [level, setLevel] = useState('easy')
-    const [topics, setTopics] = useState('')
-    const [message, setMessage] = useState('')
-    const [busyStageId, setBusyStageId] = useState(null)
-    const [origin, setOrigin] = useState('')
-    const [inviteEmail, setInviteEmail] = useState({})
+  const [name, setName] = useState('')
+  const [level, setLevel] = useState('easy')
+  const [topics, setTopics] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [busyStageId, setBusyStageId] = useState(null)
+  const [origin, setOrigin] = useState('')
+  const [inviteEmail, setInviteEmail] = useState({})
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-    useEffect(() => {
-        setOrigin(window.location.origin)
-    }, [])
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
 
-    async function loadRole() {
-        const { data } = await supabase.from('roles').select().eq('id', roleId).single()
-        if (data) setRole(data)
-    }
+  async function loadRole() {
+    const { data } = await supabase.from('roles').select().eq('id', roleId).single()
+    if (data) setRole(data)
+  }
 
-    async function loadStages() {
-        const { data } = await supabase
-            .from('stages')
-            .select()
-            .eq('role_id', roleId)
-            .order('position', { ascending: true })
-        if (data) setStages(data)
-    }
+  async function loadStages() {
+    const { data } = await supabase
+      .from('stages')
+      .select()
+      .eq('role_id', roleId)
+      .order('position', { ascending: true })
+    if (data) setStages(data)
+  }
 
-    async function loadQuestions() {
-        const { data } = await supabase.from('questions').select()
-        if (data) setQuestions(data)
-    }
+  async function loadQuestions() {
+    const { data } = await supabase.from('questions').select()
+    if (data) setQuestions(data)
+  }
 
-    useEffect(() => {
-        loadRole()
-        loadStages()
-        loadQuestions()
-    }, [])
+  useEffect(() => {
+    loadRole()
+    loadStages()
+    loadQuestions()
+  }, [])
 
-    async function saveStage() {
-        if (!name) {
-            setMessage('Please type a stage name first.')
-            return
-        }
-        const nextPosition = stages.length + 1
-        const { error } = await supabase.from('stages').insert({
-            role_id: roleId,
-            name: name,
-            level: level,
-            position: nextPosition,
-            topics: topics,
-        })
-        if (error) {
-            setMessage('Something went wrong: ' + error.message)
-        } else {
-            setMessage('Stage added.')
-            setName('')
-            setTopics('')
-            setLevel('easy')
-            loadStages()
-        }
-    }
+  function flashError(msg) { setMessage(''); setError(msg) }
+  function flashMessage(msg) { setError(''); setMessage(msg) }
 
-    async function draftQuestions(stage) {
-        setBusyStageId(stage.id)
-        setMessage('Drafting questions for ' + stage.name + '...')
+  async function saveStage() {
+    if (!name) return flashError('Please type a stage name first.')
+    const nextPosition = stages.length + 1
+    const { error: err } = await supabase.from('stages').insert({
+      role_id: roleId,
+      name, level,
+      position: nextPosition,
+      topics,
+    })
+    if (err) return flashError('Something went wrong: ' + err.message)
+    flashMessage('Stage added.')
+    setName(''); setTopics(''); setLevel('easy')
+    loadStages()
+  }
 
-        const response = await fetch('/api/generate-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                stageName: stage.name,
-                level: stage.level,
-                topics: stage.topics,
-            }),
-        })
+  async function draftQuestions(stage) {
+    setBusyStageId(stage.id)
+    flashMessage('Drafting questions for ' + stage.name + '...')
+    const response = await fetch('/api/generate-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stageName: stage.name, level: stage.level, topics: stage.topics }),
+    })
+    const result = await response.json()
+    setBusyStageId(null)
+    if (result.error) return flashError('AI error: ' + result.error)
+    const rows = result.questions.map((q) => ({ stage_id: stage.id, text: q, approved: false }))
+    const { error: err } = await supabase.from('questions').insert(rows)
+    if (err) return flashError('Could not save questions: ' + err.message)
+    flashMessage('Questions drafted for ' + stage.name + '.')
+    loadQuestions()
+  }
 
-        const result = await response.json()
-        setBusyStageId(null)
+  async function toggleApprove(question) {
+    await supabase.from('questions').update({ approved: !question.approved }).eq('id', question.id)
+    loadQuestions()
+  }
 
-        if (result.error) {
-            setMessage('AI error: ' + result.error)
-            return
-        }
+  async function sendInvite(stageId) {
+    const email = inviteEmail[stageId]
+    if (!email) return flashError('Please enter a candidate email.')
+    flashMessage('Sending invite...')
+    const response = await fetch('/api/send-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stageId, candidateEmail: email, origin }),
+    })
+    const result = await response.json()
+    if (result.error) return flashError('Error: ' + result.error)
+    flashMessage('Invite sent to ' + email)
+    setInviteEmail({ ...inviteEmail, [stageId]: '' })
+  }
 
-        const rows = result.questions.map((q) => ({
-            stage_id: stage.id,
-            text: q,
-            approved: false,
-        }))
+  async function handleLogout() {
+    await authClient.auth.signOut()
+    router.push('/login')
+  }
 
-        const { error } = await supabase.from('questions').insert(rows)
-        if (error) {
-            setMessage('Could not save questions: ' + error.message)
-        } else {
-            setMessage('Questions drafted for ' + stage.name + '.')
-            loadQuestions()
-        }
-    }
+  const navLinks = (
+    <>
+      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+        <LayoutDashboard size={18} /> Dashboard
+      </Link>
+      <Link href="/roles" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
+        <Briefcase size={18} /> Roles
+      </Link>
+      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+        <Users size={18} /> Candidates
+      </Link>
+      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+        <Settings size={18} /> Settings
+      </Link>
+    </>
+  )
 
-    async function toggleApprove(question) {
-        await supabase
-            .from('questions')
-            .update({ approved: !question.approved })
-            .eq('id', question.id)
-        loadQuestions()
-    }
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-gray-soft flex-col">
+        <div className="p-6 border-b border-gray-soft">
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-ink rounded-lg flex items-center justify-center">
+              <ScanFace className="text-yellow" size={18} />
+            </div>
+            <span className="font-heading font-bold text-lg text-ink">Recrewt AI</span>
+          </Link>
+        </div>
+        <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+        <div className="p-4 border-t border-gray-soft">
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <LogOut size={18} /> Logout
+          </button>
+        </div>
+      </aside>
 
-    async function sendInvite(stageId) {
-        const email = inviteEmail[stageId]
-        if (!email) {
-            setMessage('Please enter a candidate email.')
-            return
-        }
-        setMessage('Sending invite...')
-        const response = await fetch('/api/send-invite', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stageId, candidateEmail: email, origin }),
-        })
-        const result = await response.json()
-        if (result.error) {
-            setMessage('Error: ' + result.error)
-        } else {
-            setMessage('Invite sent to ' + email)
-            setInviteEmail({ ...inviteEmail, [stageId]: '' })
-        }
-    }
+      {/* Mobile slide-out */}
+      {mobileNavOpen && (
+        <div className="md:hidden fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-ink/40" onClick={() => setMobileNavOpen(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-soft flex flex-col">
+            <div className="p-6 border-b border-gray-soft flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-ink rounded-lg flex items-center justify-center">
+                  <ScanFace className="text-yellow" size={18} />
+                </div>
+                <span className="font-heading font-bold text-lg text-ink">Recrewt AI</span>
+              </div>
+              <button onClick={() => setMobileNavOpen(false)} className="text-gray-mid"><X size={20} /></button>
+            </div>
+            <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+            <div className="p-4 border-t border-gray-soft">
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <LogOut size={18} /> Logout
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
-    return (
-        <div style={{ padding: '40px', maxWidth: '600px' }}>
-            <a href="/roles" style={{ color: '#666' }}>Back to all roles</a>
+      {/* Main */}
+      <main className="flex-1 min-w-0">
+        {/* Mobile top bar */}
+        <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-gray-soft">
+          <button onClick={() => setMobileNavOpen(true)} className="text-ink"><Menu size={22} /></button>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-ink rounded-lg flex items-center justify-center">
+              <ScanFace className="text-yellow" size={16} />
+            </div>
+            <span className="font-heading font-bold text-ink">Recrewt AI</span>
+          </div>
+          <div className="w-6" />
+        </div>
 
-            <h1 style={{ fontSize: '24px', marginTop: '20px' }}>
-                {role ? role.title : 'Loading...'}
-            </h1>
+        <div className="p-6 lg:p-10 max-w-4xl">
+          <Link href="/roles" className="inline-flex items-center gap-1 text-sm text-gray-mid hover:text-ink transition-colors">
+            <ArrowLeft size={14} /> Back to roles
+          </Link>
 
-            <h2 style={{ fontSize: '20px', marginTop: '30px', marginBottom: '10px' }}>Interview Stages</h2>
+          <h1 className="font-heading font-bold text-2xl md:text-3xl text-ink mt-3">
+            {role ? role.title : 'Loading…'}
+          </h1>
+          <p className="text-sm text-gray-mid mt-1">Create interview stages, draft AI questions, and invite candidates.</p>
 
-            {stages.length === 0 && <p style={{ color: '#666' }}>No stages yet.</p>}
+          {(error || message) && (
+            <div className="mt-4">
+              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+              {message && <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">{message}</p>}
+            </div>
+          )}
 
-            {stages.map((stage) => (
-                <div key={stage.id} style={{ padding: '12px', border: '1px solid #eee', marginBottom: '12px' }}>
-                    <strong>{stage.position}. {stage.name}</strong>
-                    <div style={{ color: '#666', fontSize: '14px', marginBottom: '8px' }}>
-                        Level: {stage.level} — Topics: {stage.topics || 'none'}
-                    </div>
+          {/* Stages */}
+          <h2 className="font-heading font-semibold text-lg text-ink mt-10 mb-4">Interview stages</h2>
 
-                    <button
+          {stages.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-soft p-10 text-center mb-8">
+              <p className="font-medium text-ink">No stages yet</p>
+              <p className="text-sm text-gray-mid mt-1">Add your first stage below — for example "Screening Call" or "Technical Round".</p>
+            </div>
+          ) : (
+            <div className="space-y-4 mb-8">
+              {stages.map((stage) => {
+                const stageQuestions = questions.filter((q) => q.stage_id === stage.id)
+                return (
+                  <div key={stage.id} className="bg-white rounded-2xl border border-gray-soft p-6">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div>
+                        <h3 className="font-heading font-semibold text-ink">
+                          {stage.position}. {stage.name}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-mid">
+                          <span className="bg-lavender text-violet font-medium px-2 py-0.5 rounded-full capitalize">{stage.level}</span>
+                          <span>{stage.topics ? `Topics: ${stage.topics}` : 'No topics'}</span>
+                        </div>
+                      </div>
+                      <button
                         onClick={() => draftQuestions(stage)}
                         disabled={busyStageId === stage.id}
-                        style={{ padding: '6px 12px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px' }}
-                    >
-                        {busyStageId === stage.id ? 'Drafting...' : 'Draft questions with AI'}
-                    </button>
+                        className="inline-flex items-center gap-2 bg-violet text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-violet-dark transition-colors disabled:opacity-60 shrink-0"
+                      >
+                        <Sparkles size={14} />
+                        {busyStageId === stage.id ? 'Drafting…' : 'Draft with AI'}
+                      </button>
+                    </div>
 
-                    {questions
-                        .filter((q) => q.stage_id === stage.id)
-                        .map((q) => (
-                            <div key={q.id} style={{ marginTop: '8px', fontSize: '14px' }}>
-                                <label style={{ cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={q.approved}
-                                        onChange={() => toggleApprove(q)}
-                                    />{' '}
-                                    {q.text} {q.approved ? 'approved' : ''}
-                                </label>
-                            </div>
+                    {stageQuestions.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {stageQuestions.map((q) => (
+                          <label key={q.id} className="flex items-start gap-2 p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={q.approved}
+                              onChange={() => toggleApprove(q)}
+                              className="mt-1 accent-violet"
+                            />
+                            <span className="text-sm text-ink flex-1">{q.text}</span>
+                            {q.approved && (
+                              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full shrink-0">
+                                <Check size={12} /> Approved
+                              </span>
+                            )}
+                          </label>
                         ))}
+                      </div>
+                    )}
 
-                    <div style={{ marginTop: '10px', fontSize: '13px' }}>
-                        <input
-                            type="email"
-                            placeholder="Candidate email"
-                            value={inviteEmail[stage.id] || ''}
-                            onChange={(e) => setInviteEmail({ ...inviteEmail, [stage.id]: e.target.value })}
-                            style={{ padding: '6px', width: '60%', border: '1px solid #ccc', marginRight: '8px' }}
-                        />
-                        <button
-                            onClick={() => sendInvite(stage.id)}
-                            style={{ padding: '6px 12px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer' }}
-                        >
-                            Send Invite
-                        </button>
+                    <div className="mt-4 pt-4 border-t border-gray-soft flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="email"
+                        placeholder="Candidate email"
+                        value={inviteEmail[stage.id] || ''}
+                        onChange={(e) => setInviteEmail({ ...inviteEmail, [stage.id]: e.target.value })}
+                        className="flex-1 rounded-lg border border-gray-soft px-3 py-2 text-sm text-ink placeholder-gray-mid focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
+                      />
+                      <button
+                        onClick={() => sendInvite(stage.id)}
+                        className="inline-flex items-center justify-center gap-2 bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink/90 transition-colors"
+                      >
+                        <Send size={14} /> Send invite
+                      </button>
                     </div>
 
-                    <div style={{ marginTop: '8px', fontSize: '13px' }}>
-                        <a href={'/interview/' + stage.id + '/transcript'} style={{ color: '#0066cc' }}>
-                            View transcript
-                        </a>
-                    </div>
-                </div>
-            ))}
+                    <Link
+                      href={'/interview/' + stage.id + '/transcript'}
+                      className="mt-4 inline-flex items-center gap-1 text-sm text-violet font-medium hover:text-violet-dark"
+                    >
+                      <FileText size={14} /> View transcript
+                    </Link>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-            <h3 style={{ fontSize: '16px', marginTop: '30px', marginBottom: '10px' }}>Add a stage</h3>
-
-            <input
-                type="text"
-                placeholder="Stage name, e.g. Screening Call"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                style={{ padding: '10px', width: '100%', marginBottom: '8px', border: '1px solid #ccc' }}
-            />
-
-            <select
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                style={{ padding: '10px', width: '100%', marginBottom: '8px', border: '1px solid #ccc' }}
-            >
-                <option value="easy">Easy</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="hard">Hard</option>
-            </select>
-
-            <input
-                type="text"
-                placeholder="Topics, e.g. communication, basic skills"
-                value={topics}
-                onChange={(e) => setTopics(e.target.value)}
-                style={{ padding: '10px', width: '100%', marginBottom: '8px', border: '1px solid #ccc' }}
-            />
-
-            <button
+          {/* Add Stage */}
+          <div className="bg-white rounded-2xl border border-gray-soft p-6">
+            <h2 className="font-heading font-semibold text-lg text-ink mb-4">Add a stage</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-ink mb-1">Stage name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Screening Call"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink placeholder-gray-mid focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink mb-1">Difficulty</label>
+                <select
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                  className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink bg-white focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
+                >
+                  <option value="easy">Easy</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink mb-1">Topics</label>
+                <input
+                  type="text"
+                  placeholder="e.g. communication, basic skills"
+                  value={topics}
+                  onChange={(e) => setTopics(e.target.value)}
+                  className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink placeholder-gray-mid focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
+                />
+              </div>
+              <button
                 onClick={saveStage}
-                style={{ padding: '10px 20px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer' }}
-            >
-                Add Stage
-            </button>
-
-            {message && <p style={{ marginTop: '20px' }}>{message}</p>}
+                className="inline-flex items-center gap-2 bg-violet text-white font-medium px-4 py-2 rounded-lg hover:bg-violet-dark transition-colors"
+              >
+                <Plus size={16} /> Add Stage
+              </button>
+            </div>
+          </div>
         </div>
-    )
+      </main>
+    </div>
+  )
 }
