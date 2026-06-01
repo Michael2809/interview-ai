@@ -24,10 +24,67 @@ export async function POST(request) {
   const link = origin + '/interview/' + stageId + '?token=' + token
 
   const { error: emailError } = await resend.emails.send({
-    from: 'onboarding@resend.dev',
+    from: 'interviews@recrewtai.com',
     to: candidateEmail,
-    subject: 'You have been invited to an interview',
-    html: '<p>You have been invited to complete an interview.</p><p><a href="' + link + '">Click here to start</a></p>',
+    subject: 'Interview Invitation — Action Required',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #111;">
+
+        <div style="background: #111; padding: 24px 32px;">
+          <h1 style="color: #ffffff; font-size: 20px; margin: 0;">Recrewt AI</h1>
+        </div>
+
+        <div style="padding: 40px 32px; border: 1px solid #e8ebed; border-top: none;">
+          <p style="font-size: 15px; color: #444; margin-top: 0;">Dear Candidate,</p>
+
+          <p style="font-size: 15px; color: #444; line-height: 1.6;">
+            We are pleased to inform you that you have been selected to proceed to the next stage of our recruitment process. You have been invited to complete a video interview powered by <strong>Recrewt AI</strong>.
+          </p>
+
+          <p style="font-size: 15px; color: #444; line-height: 1.6;">
+            Please review the following guidelines carefully before beginning your interview:
+          </p>
+
+          <div style="background: #f9f9f9; border-left: 4px solid #6C5CE7; padding: 20px 24px; margin: 24px 0; border-radius: 4px;">
+            <p style="font-weight: bold; font-size: 14px; color: #111; margin-top: 0;">Interview Guidelines</p>
+            <ol style="font-size: 14px; color: #444; line-height: 2; margin: 0; padding-left: 20px;">
+              <li>Complete your interview within <strong>48 hours</strong> of receiving this email.</li>
+              <li>Find a <strong>quiet, well-lit space</strong> free from distractions before starting.</li>
+              <li>The interview must be completed <strong>in one sitting</strong> — it cannot be paused or resumed.</li>
+              <li>Speak <strong>clearly and at a natural pace</strong> when answering each question.</li>
+              <li>Ensure you have a <strong>stable internet connection</strong> before proceeding.</li>
+              <li>When prompted, <strong>allow access to your camera and microphone</strong> to begin.</li>
+            </ol>
+          </div>
+
+          <p style="font-size: 15px; color: #444; line-height: 1.6;">
+            When you are ready, click the button below to begin your interview. Please ensure you meet all the above requirements before proceeding.
+          </p>
+
+          <div style="text-align: center; margin: 32px 0;">
+            <a href="${link}" style="background: #6C5CE7; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 15px; font-weight: bold; display: inline-block;">
+              Begin Interview
+            </a>
+          </div>
+
+          <p style="font-size: 13px; color: #888; line-height: 1.6;">
+            If the button above does not work, copy and paste the following link into your browser:<br/>
+            <a href="${link}" style="color: #6C5CE7;">${link}</a>
+          </p>
+
+          <hr style="border: none; border-top: 1px solid #e8ebed; margin: 32px 0;" />
+
+          <p style="font-size: 13px; color: #aaa; margin: 0;">
+            This is an automated message from Recrewt AI. Please do not reply to this email. If you have any questions, contact the recruiter who invited you.
+          </p>
+        </div>
+
+        <div style="background: #f4f4f4; padding: 16px 32px; text-align: center;">
+          <p style="font-size: 12px; color: #aaa; margin: 0;">© ${new Date().getFullYear()} Recrewt AI. All rights reserved.</p>
+        </div>
+
+      </div>
+    `,
   })
 
   if (emailError) {

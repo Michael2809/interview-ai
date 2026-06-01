@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { createClient } from '@/lib/supabase/client'
@@ -21,6 +21,7 @@ import {
   Send,
   FileText,
   Check,
+  Upload,
 } from 'lucide-react'
 
 export default function RoleDetailPage() {
@@ -39,9 +40,12 @@ export default function RoleDetailPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busyStageId, setBusyStageId] = useState(null)
+  const [uploadingStageId, setUploadingStageId] = useState(null)
   const [origin, setOrigin] = useState('')
   const [inviteEmail, setInviteEmail] = useState({})
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  const fileInputRefs = useRef({})
 
   useEffect(() => {
     setOrigin(window.location.origin)
@@ -94,7 +98,6 @@ export default function RoleDetailPage() {
     setBusyStageId(stage.id)
     flashMessage('Drafting questions for ' + stage.name + '...')
 
-    // Delete existing UNAPPROVED questions for this stage (keep approved ones)
     await supabase
       .from('questions')
       .delete()
@@ -114,6 +117,48 @@ export default function RoleDetailPage() {
     if (err) return flashError('Could not save questions: ' + err.message)
     flashMessage('Fresh questions drafted for ' + stage.name + '.')
     loadQuestions()
+  }
+
+  async function uploadResume(stage, file) {
+    if (!file) return
+
+    setUploadingStageId(stage.id)
+    flashMessage('Reading document and drafting questions for ' + stage.name + '...')
+
+    await supabase
+      .from('questions')
+      .delete()
+      .eq('stage_id', stage.id)
+      .eq('approved', false)
+
+    const formData = new FormData()
+    formData.append('resume', file)
+    formData.append('stageName', stage.name)
+    formData.append('level', stage.level)
+    formData.append('topics', stage.topics || '')
+
+    const response = await fetch('/api/generate-questions-from-resume', {
+      method: 'POST',
+      body: formData,
+    })
+    const result = await response.json()
+    setUploadingStageId(null)
+
+    if (result.error) return flashError('Resume error: ' + result.error)
+
+    const rows = result.questions.map((q) => ({ stage_id: stage.id, text: q, approved: false }))
+    const { error: err } = await supabase.from('questions').insert(rows)
+    if (err) return flashError('Could not save questions: ' + err.message)
+    flashMessage('Personalized questions drafted from document for ' + stage.name + '.')
+    loadQuestions()
+  }
+
+  function triggerFileUpload(stageId) {
+    const input = fileInputRefs.current[stageId]
+    if (input) {
+      input.value = ''
+      input.click()
+    }
   }
 
   async function toggleApprove(question) {
@@ -204,7 +249,6 @@ export default function RoleDetailPage() {
 
       {/* Main */}
       <main className="flex-1 min-w-0">
-        {/* Mobile top bar */}
         <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-gray-soft">
           <button onClick={() => setMobileNavOpen(true)} className="text-ink"><Menu size={22} /></button>
           <div className="flex items-center gap-2">
@@ -233,21 +277,22 @@ export default function RoleDetailPage() {
             </div>
           )}
 
-          {/* Stages */}
           <h2 className="font-heading font-semibold text-lg text-ink mt-10 mb-4">Interview stages</h2>
 
           {stages.length === 0 ? (
             <div className="bg-white rounded-2xl border border-dashed border-gray-soft p-10 text-center mb-8">
               <p className="font-medium text-ink">No stages yet</p>
-              <p className="text-sm text-gray-mid mt-1">Add your first stage below — for example "Screening Call" or "Technical Round".</p>
+              <p className="text-sm text-gray-mid mt-1">Add your first stage below.</p>
             </div>
           ) : (
             <div className="space-y-4 mb-8">
               {stages.map((stage) => {
                 const stageQuestions = questions.filter((q) => q.stage_id === stage.id)
+                const isUploading = uploadingStageId === stage.id
+                const isDrafting = busyStageId === stage.id
                 return (
                   <div key={stage.id} className="bg-white rounded-2xl border border-gray-soft p-6">
-                    <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
                       <div>
                         <h3 className="font-heading font-semibold text-ink">
                           {stage.position}. {stage.name}
@@ -257,14 +302,31 @@ export default function RoleDetailPage() {
                           <span>{stage.topics ? `Topics: ${stage.topics}` : 'No topics'}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => draftQuestions(stage)}
-                        disabled={busyStageId === stage.id}
-                        className="inline-flex items-center gap-2 bg-violet text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-violet-dark transition-colors disabled:opacity-60 shrink-0"
-                      >
-                        <Sparkles size={14} />
-                        {busyStageId === stage.id ? 'Drafting…' : 'Draft with AI'}
-                      </button>
+                      <div className="flex gap-2 shrink-0 flex-wrap">
+                        <input
+                          ref={(el) => { fileInputRefs.current[stage.id] = el }}
+                          type="file"
+                          accept=".pdf,.docx,.doc,.txt"
+                          className="hidden"
+                          onChange={(e) => uploadResume(stage, e.target.files[0])}
+                        />
+                        <button
+                          onClick={() => triggerFileUpload(stage.id)}
+                          disabled={isUploading || isDrafting}
+                          className="inline-flex items-center gap-2 bg-white border border-violet text-violet text-sm font-medium px-3 py-2 rounded-lg hover:bg-lavender transition-colors disabled:opacity-60"
+                        >
+                          <Upload size={14} />
+                          {isUploading ? 'Reading…' : 'From Document'}
+                        </button>
+                        <button
+                          onClick={() => draftQuestions(stage)}
+                          disabled={isDrafting || isUploading}
+                          className="inline-flex items-center gap-2 bg-violet text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-violet-dark transition-colors disabled:opacity-60"
+                        >
+                          <Sparkles size={14} />
+                          {isDrafting ? 'Drafting…' : 'Draft with AI'}
+                        </button>
+                      </div>
                     </div>
 
                     {stageQuestions.length > 0 && (
@@ -316,7 +378,6 @@ export default function RoleDetailPage() {
             </div>
           )}
 
-          {/* Add Stage */}
           <div className="bg-white rounded-2xl border border-gray-soft p-6">
             <h2 className="font-heading font-semibold text-lg text-ink mb-4">Add a stage</h2>
             <div className="space-y-3">

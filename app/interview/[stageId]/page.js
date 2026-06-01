@@ -66,18 +66,15 @@ export default function InterviewPage() {
         const setVoiceAndSpeak = () => {
             const voices = window.speechSynthesis.getVoices()
             const preferred =
-                // iPhone/iPad voices (best first)
                 voices.find(v => v.name === 'Samantha (Enhanced)') ||
                 voices.find(v => v.name === 'Karen (Enhanced)') ||
                 voices.find(v => v.name === 'Moira (Enhanced)') ||
                 voices.find(v => v.name === 'Samantha') ||
                 voices.find(v => v.name === 'Karen') ||
                 voices.find(v => v.name === 'Moira') ||
-                // Desktop voices
                 voices.find(v => v.name === 'Google UK English Female') ||
                 voices.find(v => v.name === 'Microsoft Heera - English (India)') ||
                 voices.find(v => v.name === 'Microsoft Zira - English (United States)') ||
-                // Fallbacks
                 voices.find(v => v.name.includes('Female') && v.lang.startsWith('en')) ||
                 voices.find(v => v.lang === 'en-US')
             if (preferred) utterance.voice = preferred
@@ -86,7 +83,6 @@ export default function InterviewPage() {
             utterance.volume = 1
             setIsSpeaking(true)
 
-            // Safety net: ensure onDone always fires even if speech fails (iPhone Safari)
             let doneFired = false
             const fireDone = () => {
                 if (doneFired) return
@@ -98,7 +94,6 @@ export default function InterviewPage() {
             utterance.onend = fireDone
             utterance.onerror = fireDone
 
-            // Estimate speech duration: ~150 words/min = 400ms per word, plus 2s buffer
             const wordCount = text.split(' ').length
             const estimatedDuration = (wordCount * 400) + 2000
             setTimeout(fireDone, estimatedDuration)
@@ -117,7 +112,6 @@ export default function InterviewPage() {
         if (questions.length === 0) return
 
         try {
-            // Unlock iPhone Safari speech synthesis with a silent utterance during user tap
             const unlock = new SpeechSynthesisUtterance('')
             window.speechSynthesis.speak(unlock)
 
@@ -128,7 +122,6 @@ export default function InterviewPage() {
                 videoRef.current.srcObject = stream
             }
 
-            // Video recorder — pick a mimeType the browser supports
             const videoMimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
                 ? 'video/webm;codecs=vp8,opus'
                 : MediaRecorder.isTypeSupported('video/mp4')
@@ -146,7 +139,6 @@ export default function InterviewPage() {
             }
             videoRecorder.start()
 
-           // Audio-only recorder for AssemblyAI
             const audioStream = new MediaStream(stream.getAudioTracks())
             const audioMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
                 ? 'audio/webm;codecs=opus'
@@ -290,6 +282,33 @@ export default function InterviewPage() {
         speakText(nextQuestion)
     }
 
+    async function autoScore(stageName) {
+        try {
+            const transcript = transcriptRef.current.filter(
+                (l) => l.speaker === 'interviewer' || l.speaker === 'candidate'
+            )
+            if (transcript.length === 0) return
+
+            const response = await fetch('/api/score-interview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transcript, stageName }),
+            })
+            const result = await response.json()
+            if (result.error) return
+
+            await supabase.from('scores').upsert({
+                stage_id: stageId,
+                candidate_name: candidateName,
+                score: result.score,
+                summary: result.summary,
+                status: result.status || 'on-hold',
+            }, { onConflict: 'stage_id,candidate_name' })
+        } catch (err) {
+            console.error('Auto-score error:', err)
+        }
+    }
+
     async function finishInterview() {
         setUploading(true)
         window.speechSynthesis.cancel()
@@ -311,7 +330,6 @@ export default function InterviewPage() {
         const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
         const videoFilename = stageId + '-' + Date.now() + '.webm'
 
-        // Upload video directly to Cloudinary (bypasses Vercel's 4.5MB limit)
         let videoUrl = null
         try {
             const formData = new FormData()
@@ -320,18 +338,11 @@ export default function InterviewPage() {
 
             const uploadResponse = await fetch(
                 'https://api.cloudinary.com/v1_1/dbrhpzdqz/video/upload',
-                {
-                    method: 'POST',
-                    body: formData,
-                }
+                { method: 'POST', body: formData }
             )
-
             const uploadResult = await uploadResponse.json()
-
             if (uploadResponse.ok) {
                 videoUrl = uploadResult.secure_url
-            } else {
-                console.error('Video upload error:', uploadResult)
             }
         } catch (err) {
             console.error('Video upload exception:', err)
@@ -347,7 +358,7 @@ export default function InterviewPage() {
             })
         }
 
-        // Upload audio for AssemblyAI analysis
+        // Upload audio for AssemblyAI
         const audioMime = audioRecorderRef.current?.mimeType || 'audio/webm'
         const audioExt = audioMime.includes('mp4') ? 'mp4' : 'webm'
         const audioContentType = audioMime.includes('mp4') ? 'audio/mp4' : 'audio/webm'
@@ -372,7 +383,6 @@ export default function InterviewPage() {
                     video_url: audioUrlData.signedUrl,
                 })
 
-                // Trigger AssemblyAI analysis in background
                 fetch('/api/analyze-audio', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -384,6 +394,9 @@ export default function InterviewPage() {
                 })
             }
         }
+
+        // Auto-score and categorize — no human needed
+        await autoScore(stage?.name || 'Interview')
 
         setUploading(false)
         setFinished(true)
@@ -507,8 +520,6 @@ export default function InterviewPage() {
             flexDirection: 'column'
         }}>
             <div style={{ display: 'flex', flex: 1 }}>
-
-                {/* Left: Camera */}
                 <div style={{ width: '40%', background: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
                     <video
                         ref={videoRef}
@@ -522,66 +533,29 @@ export default function InterviewPage() {
                     </div>
                 </div>
 
-                {/* Right: Interview */}
                 <div style={{ flex: 1, padding: '40px', display: 'flex', flexDirection: 'column' }}>
-
                     <div style={{ marginBottom: '32px' }}>
                         <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                             {isSpeaking ? 'Interviewer is speaking...' : 'Interviewer'}
                         </div>
-                        <div style={{
-                            fontSize: '20px',
-                            lineHeight: '1.5',
-                            color: isSpeaking ? '#fff' : '#ccc'
-                        }}>
+                        <div style={{ fontSize: '20px', lineHeight: '1.5', color: isSpeaking ? '#fff' : '#ccc' }}>
                             {currentQuestion}
                         </div>
                     </div>
 
                     <div style={{ flex: 1 }}>
                         {spokenAnswer && (
-                            <div style={{
-                                padding: '16px',
-                                background: '#111',
-                                borderRadius: '6px',
-                                marginBottom: '16px',
-                                fontSize: '15px',
-                                color: '#ddd',
-                                lineHeight: '1.6',
-                                minHeight: '80px'
-                            }}>
+                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#ddd', lineHeight: '1.6', minHeight: '80px' }}>
                                 {spokenAnswer}
                             </div>
                         )}
-
                         {!spokenAnswer && !listening && (
-                            <div style={{
-                                padding: '16px',
-                                background: '#111',
-                                borderRadius: '6px',
-                                marginBottom: '16px',
-                                fontSize: '15px',
-                                color: '#444',
-                                minHeight: '80px',
-                                display: 'flex',
-                                alignItems: 'center'
-                            }}>
+                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#444', minHeight: '80px', display: 'flex', alignItems: 'center' }}>
                                 Your answer will appear here as you speak...
                             </div>
                         )}
-
                         {listening && !spokenAnswer && (
-                            <div style={{
-                                padding: '16px',
-                                background: '#111',
-                                borderRadius: '6px',
-                                marginBottom: '16px',
-                                fontSize: '15px',
-                                color: '#888',
-                                minHeight: '80px',
-                                display: 'flex',
-                                alignItems: 'center'
-                            }}>
+                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#888', minHeight: '80px', display: 'flex', alignItems: 'center' }}>
                                 Listening...
                             </div>
                         )}
@@ -606,47 +580,24 @@ export default function InterviewPage() {
                                 Start Speaking
                             </button>
                         )}
-
                         {listening && (
                             <button
                                 onClick={stopListening}
-                                style={{
-                                    padding: '14px 28px',
-                                    background: '#c00',
-                                    color: '#fff',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '15px',
-                                    borderRadius: '6px',
-                                    fontWeight: 'bold'
-                                }}
+                                style={{ padding: '14px 28px', background: '#c00', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '15px', borderRadius: '6px', fontWeight: 'bold' }}
                             >
                                 Stop Speaking
                             </button>
                         )}
-
                         {spokenAnswer && !listening && !busy && (
                             <button
                                 onClick={submitSpokenAnswer}
-                                style={{
-                                    padding: '14px 28px',
-                                    background: '#0066cc',
-                                    color: '#fff',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '15px',
-                                    borderRadius: '6px',
-                                    fontWeight: 'bold'
-                                }}
+                                style={{ padding: '14px 28px', background: '#0066cc', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '15px', borderRadius: '6px', fontWeight: 'bold' }}
                             >
                                 Submit Answer
                             </button>
                         )}
-
                         {busy && (
-                            <div style={{ padding: '14px', color: '#666', fontSize: '15px' }}>
-                                Processing...
-                            </div>
+                            <div style={{ padding: '14px', color: '#666', fontSize: '15px' }}>Processing...</div>
                         )}
                     </div>
                 </div>
