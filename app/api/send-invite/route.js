@@ -8,6 +8,25 @@ export async function POST(request) {
 
   const token = crypto.randomUUID()
 
+  // Fetch stage and role name
+  const { data: stageData } = await supabase
+    .from('stages')
+    .select('name, role_id')
+    .eq('id', stageId)
+    .single()
+
+  const stageName = stageData?.name || 'Interview'
+
+  let roleName = 'the position'
+  if (stageData?.role_id) {
+    const { data: roleData } = await supabase
+      .from('roles')
+      .select('title')
+      .eq('id', stageData.role_id)
+      .single()
+    if (roleData?.title) roleName = roleData.title
+  }
+
   const { error } = await supabase.from('interviews').insert({
     stage_id: stageId,
     candidate_email: candidateEmail,
@@ -26,7 +45,7 @@ export async function POST(request) {
   const { error: emailError } = await resend.emails.send({
     from: 'interviews@recrewtai.com',
     to: candidateEmail,
-    subject: 'Interview Invitation — Action Required',
+    subject: `Interview Invitation — ${roleName} — Action Required`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #111;">
 
@@ -38,11 +57,11 @@ export async function POST(request) {
           <p style="font-size: 15px; color: #444; margin-top: 0;">Dear Candidate,</p>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            We are pleased to inform you that you have been selected to proceed to the next stage of our recruitment process. You have been invited to complete a video interview powered by <strong>Recrewt AI</strong>.
+            We are pleased to inform you that you have been selected to proceed to the next stage of our recruitment process for the <strong>${roleName}</strong> position.
           </p>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            Please review the following guidelines carefully before beginning your interview:
+            You have been invited to complete a <strong>${stageName}</strong> video interview powered by <strong>Recrewt AI</strong>. Please review the following guidelines carefully before beginning.
           </p>
 
           <div style="background: #f9f9f9; border-left: 4px solid #6C5CE7; padding: 20px 24px; margin: 24px 0; border-radius: 4px;">
@@ -58,7 +77,7 @@ export async function POST(request) {
           </div>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            When you are ready, click the button below to begin your interview. Please ensure you meet all the above requirements before proceeding.
+            When you are ready, click the button below to begin your interview for the <strong>${roleName}</strong> position.
           </p>
 
           <div style="text-align: center; margin: 32px 0;">
