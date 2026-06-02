@@ -35,7 +35,7 @@ export default function RoleDetailPage() {
   const [questions, setQuestions] = useState([])
 
   const [name, setName] = useState('')
-  const [level, setLevel] = useState('easy')
+  const [level, setLevel] = useState('introductory')
   const [topics, setTopics] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -47,9 +47,7 @@ export default function RoleDetailPage() {
 
   const fileInputRefs = useRef({})
 
-  useEffect(() => {
-    setOrigin(window.location.origin)
-  }, [])
+  useEffect(() => { setOrigin(window.location.origin) }, [])
 
   async function loadRole() {
     const { data } = await supabase.from('roles').select().eq('id', roleId).single()
@@ -58,10 +56,7 @@ export default function RoleDetailPage() {
 
   async function loadStages() {
     const { data } = await supabase
-      .from('stages')
-      .select()
-      .eq('role_id', roleId)
-      .order('position', { ascending: true })
+      .from('stages').select().eq('role_id', roleId).order('position', { ascending: true })
     if (data) setStages(data)
   }
 
@@ -80,30 +75,21 @@ export default function RoleDetailPage() {
   function flashMessage(msg) { setError(''); setMessage(msg) }
 
   async function saveStage() {
-    if (!name) return flashError('Please type a stage name first.')
+    if (!name) return flashError('Please enter an interview stage name first.')
     const nextPosition = stages.length + 1
     const { error: err } = await supabase.from('stages').insert({
-      role_id: roleId,
-      name, level,
-      position: nextPosition,
-      topics,
+      role_id: roleId, name, level, position: nextPosition, topics,
     })
     if (err) return flashError('Something went wrong: ' + err.message)
-    flashMessage('Stage added.')
-    setName(''); setTopics(''); setLevel('easy')
+    flashMessage('Interview stage added.')
+    setName(''); setTopics(''); setLevel('introductory')
     loadStages()
   }
 
   async function draftQuestions(stage) {
     setBusyStageId(stage.id)
     flashMessage('Drafting questions for ' + stage.name + '...')
-
-    await supabase
-      .from('questions')
-      .delete()
-      .eq('stage_id', stage.id)
-      .eq('approved', false)
-
+    await supabase.from('questions').delete().eq('stage_id', stage.id).eq('approved', false)
     const response = await fetch('/api/generate-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -121,44 +107,28 @@ export default function RoleDetailPage() {
 
   async function uploadResume(stage, file) {
     if (!file) return
-
     setUploadingStageId(stage.id)
     flashMessage('Reading document and drafting questions for ' + stage.name + '...')
-
-    await supabase
-      .from('questions')
-      .delete()
-      .eq('stage_id', stage.id)
-      .eq('approved', false)
-
+    await supabase.from('questions').delete().eq('stage_id', stage.id).eq('approved', false)
     const formData = new FormData()
     formData.append('resume', file)
     formData.append('stageName', stage.name)
     formData.append('level', stage.level)
     formData.append('topics', stage.topics || '')
-
-    const response = await fetch('/api/generate-questions-from-resume', {
-      method: 'POST',
-      body: formData,
-    })
+    const response = await fetch('/api/generate-questions-from-resume', { method: 'POST', body: formData })
     const result = await response.json()
     setUploadingStageId(null)
-
     if (result.error) return flashError('Resume error: ' + result.error)
-
     const rows = result.questions.map((q) => ({ stage_id: stage.id, text: q, approved: false }))
     const { error: err } = await supabase.from('questions').insert(rows)
     if (err) return flashError('Could not save questions: ' + err.message)
-    flashMessage('Personalized questions drafted from document for ' + stage.name + '.')
+    flashMessage('Personalised questions drafted from document for ' + stage.name + '.')
     loadQuestions()
   }
 
   function triggerFileUpload(stageId) {
     const input = fileInputRefs.current[stageId]
-    if (input) {
-      input.value = ''
-      input.click()
-    }
+    if (input) { input.value = ''; input.click() }
   }
 
   async function toggleApprove(question) {
@@ -186,25 +156,20 @@ export default function RoleDetailPage() {
     router.push('/login')
   }
 
-  const navLinks = (
-    <>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <LayoutDashboard size={18} /> Dashboard
-      </Link>
-      <Link href="/roles" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
-        <Briefcase size={18} /> Roles
-      </Link>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <Users size={18} /> Candidates
-      </Link>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <Settings size={18} /> Settings
-      </Link>
-    </>
-  )
+  function complexityLabel(val) {
+    if (val === 'introductory') return 'Introductory'
+    if (val === 'mid-level') return 'Mid-Level'
+    if (val === 'advanced') return 'Advanced'
+    // legacy values
+    if (val === 'easy') return 'Introductory'
+    if (val === 'intermediate') return 'Mid-Level'
+    if (val === 'hard') return 'Advanced'
+    return val
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-gray-soft flex-col">
         <div className="p-6 border-b border-gray-soft">
@@ -215,7 +180,20 @@ export default function RoleDetailPage() {
             <span className="font-heading font-bold text-lg text-ink">Recrewt AI</span>
           </Link>
         </div>
-        <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+        <nav className="flex-1 p-4 space-y-1">
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <LayoutDashboard size={18} /> Dashboard
+          </Link>
+          <Link href="/roles" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
+            <Briefcase size={18} /> Roles
+          </Link>
+          <Link href="/candidates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <Users size={18} /> Candidates
+          </Link>
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <Settings size={18} /> Settings
+          </Link>
+        </nav>
         <div className="p-4 border-t border-gray-soft">
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
             <LogOut size={18} /> Logout
@@ -237,7 +215,20 @@ export default function RoleDetailPage() {
               </div>
               <button onClick={() => setMobileNavOpen(false)} className="text-gray-mid"><X size={20} /></button>
             </div>
-            <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+            <nav className="flex-1 p-4 space-y-1">
+              <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <LayoutDashboard size={18} /> Dashboard
+              </Link>
+              <Link href="/roles" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
+                <Briefcase size={18} /> Roles
+              </Link>
+              <Link href="/candidates" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <Users size={18} /> Candidates
+              </Link>
+              <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <Settings size={18} /> Settings
+              </Link>
+            </nav>
             <div className="p-4 border-t border-gray-soft">
               <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
                 <LogOut size={18} /> Logout
@@ -277,7 +268,7 @@ export default function RoleDetailPage() {
             </div>
           )}
 
-          <h2 className="font-heading font-semibold text-lg text-ink mt-10 mb-4">Interview stages</h2>
+          <h2 className="font-heading font-semibold text-lg text-ink mt-10 mb-4">Interview Stages</h2>
 
           {stages.length === 0 ? (
             <div className="bg-white rounded-2xl border border-dashed border-gray-soft p-10 text-center mb-8">
@@ -298,8 +289,10 @@ export default function RoleDetailPage() {
                           {stage.position}. {stage.name}
                         </h3>
                         <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-mid">
-                          <span className="bg-lavender text-violet font-medium px-2 py-0.5 rounded-full capitalize">{stage.level}</span>
-                          <span>{stage.topics ? `Topics: ${stage.topics}` : 'No topics'}</span>
+                          <span className="bg-lavender text-violet font-medium px-2 py-0.5 rounded-full">
+                            {complexityLabel(stage.level)}
+                          </span>
+                          <span>{stage.topics ? `Skill Focus: ${stage.topics}` : 'No skill focus set'}</span>
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0 flex-wrap">
@@ -362,7 +355,7 @@ export default function RoleDetailPage() {
                         onClick={() => sendInvite(stage.id)}
                         className="inline-flex items-center justify-center gap-2 bg-ink text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-ink/90 transition-colors"
                       >
-                        <Send size={14} /> Send invite
+                        <Send size={14} /> Send Invite
                       </button>
                     </div>
 
@@ -370,7 +363,7 @@ export default function RoleDetailPage() {
                       href={'/interview/' + stage.id + '/transcript'}
                       className="mt-4 inline-flex items-center gap-1 text-sm text-violet font-medium hover:text-violet-dark"
                     >
-                      <FileText size={14} /> View transcript
+                      <FileText size={14} /> View Transcript
                     </Link>
                   </div>
                 )
@@ -378,11 +371,12 @@ export default function RoleDetailPage() {
             </div>
           )}
 
+          {/* Add stage form */}
           <div className="bg-white rounded-2xl border border-gray-soft p-6">
-            <h2 className="font-heading font-semibold text-lg text-ink mb-4">Add a stage</h2>
-            <div className="space-y-3">
+            <h2 className="font-heading font-semibold text-lg text-ink mb-4">Add an Interview Stage</h2>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-ink mb-1">Stage name</label>
+                <label className="block text-sm font-medium text-ink mb-1">Interview Stage</label>
                 <input
                   type="text"
                   placeholder="e.g. Screening Call"
@@ -392,22 +386,22 @@ export default function RoleDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-ink mb-1">Difficulty</label>
+                <label className="block text-sm font-medium text-ink mb-1">Complexity</label>
                 <select
                   value={level}
                   onChange={(e) => setLevel(e.target.value)}
                   className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink bg-white focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
                 >
-                  <option value="easy">Easy</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="hard">Hard</option>
+                  <option value="introductory">Introductory</option>
+                  <option value="mid-level">Mid-Level</option>
+                  <option value="advanced">Advanced</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-ink mb-1">Topics</label>
+                <label className="block text-sm font-medium text-ink mb-1">Skill Focus</label>
                 <input
                   type="text"
-                  placeholder="e.g. communication, basic skills"
+                  placeholder="e.g. communication, problem-solving"
                   value={topics}
                   onChange={(e) => setTopics(e.target.value)}
                   className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink placeholder-gray-mid focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
@@ -421,6 +415,7 @@ export default function RoleDetailPage() {
               </button>
             </div>
           </div>
+
         </div>
       </main>
     </div>
