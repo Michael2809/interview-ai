@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -36,7 +35,7 @@ function formatDate(d) {
 }
 
 function CandidatesInner() {
-  const authClient = createClient()
+  const supabase = createClient()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialFilter = searchParams.get('filter') === 'completed' ? 'completed' : 'invited'
@@ -122,7 +121,7 @@ function CandidatesInner() {
   }, [])
 
   async function handleLogout() {
-    await authClient.auth.signOut()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 

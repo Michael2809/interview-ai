@@ -326,7 +326,6 @@ export default function InterviewPage() {
             streamRef.current.getTracks().forEach((track) => track.stop())
         }
 
-        // Upload video
         const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
         const videoFilename = stageId + '-' + Date.now() + '.webm'
 
@@ -358,7 +357,6 @@ export default function InterviewPage() {
             })
         }
 
-        // Upload audio for AssemblyAI
         const audioMime = audioRecorderRef.current?.mimeType || 'audio/webm'
         const audioExt = audioMime.includes('mp4') ? 'mp4' : 'webm'
         const audioContentType = audioMime.includes('mp4') ? 'audio/mp4' : 'audio/webm'
@@ -395,7 +393,6 @@ export default function InterviewPage() {
             }
         }
 
-        // Auto-score and categorize — no human needed
         await autoScore(stage?.name || 'Interview')
 
         setUploading(false)
@@ -405,14 +402,9 @@ export default function InterviewPage() {
     if (uploading) {
         return (
             <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#000',
-                color: '#fff',
-                fontFamily: 'sans-serif'
+                minHeight: '100vh', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: '#000', color: '#fff', fontFamily: 'sans-serif'
             }}>
                 <div style={{ fontSize: '24px', marginBottom: '12px' }}>Saving your interview...</div>
                 <div style={{ color: '#999', fontSize: '14px' }}>Please do not close this page.</div>
@@ -423,16 +415,10 @@ export default function InterviewPage() {
     if (finished) {
         return (
             <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#000',
-                color: '#fff',
-                fontFamily: 'sans-serif',
-                textAlign: 'center',
-                padding: '40px'
+                minHeight: '100vh', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: '#000', color: '#fff', fontFamily: 'sans-serif',
+                textAlign: 'center', padding: '40px'
             }}>
                 <div style={{ fontSize: '32px', marginBottom: '12px' }}>Interview Complete</div>
                 <div style={{ color: '#999', fontSize: '16px' }}>
@@ -445,15 +431,9 @@ export default function InterviewPage() {
     if (!started) {
         return (
             <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#000',
-                color: '#fff',
-                fontFamily: 'sans-serif',
-                padding: '40px'
+                minHeight: '100vh', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: '#000', color: '#fff', fontFamily: 'sans-serif', padding: '40px'
             }}>
                 <div style={{ maxWidth: '480px', width: '100%' }}>
                     <h1 style={{ fontSize: '28px', marginBottom: '8px' }}>
@@ -475,15 +455,9 @@ export default function InterviewPage() {
                                 value={candidateName}
                                 onChange={(e) => setCandidateName(e.target.value)}
                                 style={{
-                                    padding: '14px',
-                                    width: '100%',
-                                    marginBottom: '16px',
-                                    border: '1px solid #333',
-                                    background: '#111',
-                                    color: '#fff',
-                                    fontSize: '15px',
-                                    borderRadius: '6px',
-                                    boxSizing: 'border-box'
+                                    padding: '14px', width: '100%', marginBottom: '16px',
+                                    border: '1px solid #333', background: '#111', color: '#fff',
+                                    fontSize: '15px', borderRadius: '6px', boxSizing: 'border-box'
                                 }}
                             />
                             <button
@@ -495,14 +469,29 @@ export default function InterviewPage() {
                                     color: candidateName ? '#000' : '#666',
                                     border: 'none',
                                     cursor: candidateName ? 'pointer' : 'not-allowed',
-                                    fontSize: '15px',
-                                    borderRadius: '6px',
-                                    width: '100%',
-                                    fontWeight: 'bold'
+                                    fontSize: '15px', borderRadius: '6px',
+                                    width: '100%', fontWeight: 'bold'
                                 }}
                             >
                                 Begin Interview
                             </button>
+
+                            {/* Privacy Policy notice */}
+                            <p style={{
+                                color: '#555', fontSize: '12px', marginTop: '16px',
+                                textAlign: 'center', lineHeight: '1.6'
+                            }}>
+                                By starting this interview you agree to our{' '}
+                                <a
+                                    href="/privacy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: '#888', textDecoration: 'underline' }}
+                                >
+                                    Privacy Policy
+                                </a>
+                                . Your video and responses will be recorded and reviewed by the recruiter.
+                            </p>
                         </div>
                     )}
                 </div>
@@ -512,15 +501,15 @@ export default function InterviewPage() {
 
     return (
         <div style={{
-            minHeight: '100vh',
-            background: '#000',
-            color: '#fff',
-            fontFamily: 'sans-serif',
-            display: 'flex',
-            flexDirection: 'column'
+            minHeight: '100vh', background: '#000', color: '#fff',
+            fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column'
         }}>
             <div style={{ display: 'flex', flex: 1 }}>
-                <div style={{ width: '40%', background: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+                <div style={{
+                    width: '40%', background: '#111', display: 'flex',
+                    flexDirection: 'column', alignItems: 'center',
+                    justifyContent: 'center', padding: '24px'
+                }}>
                     <video
                         ref={videoRef}
                         autoPlay
@@ -535,7 +524,10 @@ export default function InterviewPage() {
 
                 <div style={{ flex: 1, padding: '40px', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        <div style={{
+                            fontSize: '12px', color: '#666', marginBottom: '8px',
+                            textTransform: 'uppercase', letterSpacing: '1px'
+                        }}>
                             {isSpeaking ? 'Interviewer is speaking...' : 'Interviewer'}
                         </div>
                         <div style={{ fontSize: '20px', lineHeight: '1.5', color: isSpeaking ? '#fff' : '#ccc' }}>
@@ -545,17 +537,29 @@ export default function InterviewPage() {
 
                     <div style={{ flex: 1 }}>
                         {spokenAnswer && (
-                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#ddd', lineHeight: '1.6', minHeight: '80px' }}>
+                            <div style={{
+                                padding: '16px', background: '#111', borderRadius: '6px',
+                                marginBottom: '16px', fontSize: '15px', color: '#ddd',
+                                lineHeight: '1.6', minHeight: '80px'
+                            }}>
                                 {spokenAnswer}
                             </div>
                         )}
                         {!spokenAnswer && !listening && (
-                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#444', minHeight: '80px', display: 'flex', alignItems: 'center' }}>
+                            <div style={{
+                                padding: '16px', background: '#111', borderRadius: '6px',
+                                marginBottom: '16px', fontSize: '15px', color: '#444',
+                                minHeight: '80px', display: 'flex', alignItems: 'center'
+                            }}>
                                 Your answer will appear here as you speak...
                             </div>
                         )}
                         {listening && !spokenAnswer && (
-                            <div style={{ padding: '16px', background: '#111', borderRadius: '6px', marginBottom: '16px', fontSize: '15px', color: '#888', minHeight: '80px', display: 'flex', alignItems: 'center' }}>
+                            <div style={{
+                                padding: '16px', background: '#111', borderRadius: '6px',
+                                marginBottom: '16px', fontSize: '15px', color: '#888',
+                                minHeight: '80px', display: 'flex', alignItems: 'center'
+                            }}>
                                 Listening...
                             </div>
                         )}
@@ -572,9 +576,7 @@ export default function InterviewPage() {
                                     color: isSpeaking ? '#555' : '#000',
                                     border: 'none',
                                     cursor: isSpeaking ? 'not-allowed' : 'pointer',
-                                    fontSize: '15px',
-                                    borderRadius: '6px',
-                                    fontWeight: 'bold'
+                                    fontSize: '15px', borderRadius: '6px', fontWeight: 'bold'
                                 }}
                             >
                                 Start Speaking
@@ -583,7 +585,11 @@ export default function InterviewPage() {
                         {listening && (
                             <button
                                 onClick={stopListening}
-                                style={{ padding: '14px 28px', background: '#c00', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '15px', borderRadius: '6px', fontWeight: 'bold' }}
+                                style={{
+                                    padding: '14px 28px', background: '#c00', color: '#fff',
+                                    border: 'none', cursor: 'pointer', fontSize: '15px',
+                                    borderRadius: '6px', fontWeight: 'bold'
+                                }}
                             >
                                 Stop Speaking
                             </button>
@@ -591,13 +597,19 @@ export default function InterviewPage() {
                         {spokenAnswer && !listening && !busy && (
                             <button
                                 onClick={submitSpokenAnswer}
-                                style={{ padding: '14px 28px', background: '#0066cc', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '15px', borderRadius: '6px', fontWeight: 'bold' }}
+                                style={{
+                                    padding: '14px 28px', background: '#0066cc', color: '#fff',
+                                    border: 'none', cursor: 'pointer', fontSize: '15px',
+                                    borderRadius: '6px', fontWeight: 'bold'
+                                }}
                             >
                                 Submit Answer
                             </button>
                         )}
                         {busy && (
-                            <div style={{ padding: '14px', color: '#666', fontSize: '15px' }}>Processing...</div>
+                            <div style={{ padding: '14px', color: '#666', fontSize: '15px' }}>
+                                Processing...
+                            </div>
                         )}
                     </div>
                 </div>

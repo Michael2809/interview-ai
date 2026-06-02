@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -56,7 +55,7 @@ const JOB_CATEGORIES = {
     'Project Management', 'Business Operations', 'Supply Chain',
     'Logistics', 'Office Management',
   ],
-  'Other': ['Other'],
+  'Other': [],
 }
 
 export default function RolesPage() {
@@ -71,7 +70,7 @@ export default function RolesPage() {
   const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const authClient = createClient()
+  const supabase = createClient()
   const router = useRouter()
 
   async function loadRoles() {
@@ -111,7 +110,7 @@ export default function RolesPage() {
   }
 
   async function handleLogout() {
-    await authClient.auth.signOut()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 
@@ -155,7 +154,7 @@ export default function RolesPage() {
           <Link href="/candidates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
             <Users size={18} /> Candidates
           </Link>
-          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+          <Link href="/settings" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
             <Settings size={18} /> Settings
           </Link>
         </nav>
@@ -190,7 +189,7 @@ export default function RolesPage() {
               <Link href="/candidates" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
                 <Users size={18} /> Candidates
               </Link>
-              <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+              <Link href="/settings" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
                 <Settings size={18} /> Settings
               </Link>
             </nav>
@@ -280,20 +279,30 @@ export default function RolesPage() {
                     Specialisation
                     {!category && <span className="text-gray-mid font-normal"> — pick a category first</span>}
                   </label>
-                  <div className="relative">
-                    <select
+                  {category === 'Other' ? (
+                    <input
+                      type="text"
+                      placeholder="e.g. Legal, PR, Real Estate, Research…"
                       value={subcategory}
                       onChange={(e) => setSubcategory(e.target.value)}
-                      disabled={!category}
-                      className="w-full appearance-none rounded-lg border border-gray-soft px-3 py-2 text-ink bg-white focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20 pr-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">All {category || '…'}</option>
-                      {subcategories.map((sub) => (
-                        <option key={sub} value={sub}>{sub}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-mid pointer-events-none" />
-                  </div>
+                      className="w-full rounded-lg border border-gray-soft px-3 py-2 text-ink placeholder-gray-mid focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20"
+                    />
+                  ) : (
+                    <div className="relative">
+                      <select
+                        value={subcategory}
+                        onChange={(e) => setSubcategory(e.target.value)}
+                        disabled={!category}
+                        className="w-full appearance-none rounded-lg border border-gray-soft px-3 py-2 text-ink bg-white focus:border-violet focus:outline-none focus:ring-2 focus:ring-violet/20 pr-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="">All {category || '…'}</option>
+                        {subcategories.map((sub) => (
+                          <option key={sub} value={sub}>{sub}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-mid pointer-events-none" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -325,6 +334,7 @@ export default function RolesPage() {
                   </select>
                 </div>
               </div>
+
             </div>
 
             {error && <p className="mt-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}

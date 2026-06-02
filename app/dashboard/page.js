@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -112,7 +111,7 @@ function PipelineColumn({ title, dot, badge, list }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const authClient = createClient()
+  const supabase = createClient()
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -228,7 +227,7 @@ export default function DashboardPage() {
   useEffect(() => { loadData() }, [loadData])
 
   async function handleLogout() {
-    await authClient.auth.signOut()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 
@@ -283,7 +282,7 @@ export default function DashboardPage() {
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
             <Users size={18} aria-hidden="true" /> Candidates
           </Link>
-          <Link href="/dashboard"
+          <Link href="/settings"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
             <Settings size={18} aria-hidden="true" /> Settings
           </Link>
@@ -327,7 +326,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
                 <Users size={18} aria-hidden="true" /> Candidates
               </Link>
-              <Link href="/dashboard" onClick={() => setMobileNavOpen(false)}
+              <Link href="/settings" onClick={() => setMobileNavOpen(false)}
                 className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
                 <Settings size={18} aria-hidden="true" /> Settings
               </Link>

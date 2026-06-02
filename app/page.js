@@ -310,18 +310,26 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="py-10 px-6 lg:px-8 border-t border-gray-soft">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-ink rounded-lg flex items-center justify-center">
-              <ScanFace className="text-yellow" size={16} />
-            </div>
-            <span className="font-heading font-bold text-ink">Recrewt AI</span>
-          </div>
-          <p className="text-sm text-gray-mid">
-            © 2026 Recrewt AI. All rights reserved.
-          </p>
-        </div>
-      </footer>
+  <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className="flex items-center gap-2">
+      <div className="w-7 h-7 bg-ink rounded-lg flex items-center justify-center">
+        <ScanFace className="text-yellow" size={16} />
+      </div>
+      <span className="font-heading font-bold text-ink">Recrewt AI</span>
+    </div>
+    <div className="flex items-center gap-6">
+      <Link href="/privacy" className="text-sm text-gray-mid hover:text-ink transition-colors">
+        Privacy Policy
+      </Link>
+      <a href="mailto:support@recrewtai.com" className="text-sm text-gray-mid hover:text-ink transition-colors">
+        Contact
+      </a>
+    </div>
+    <p className="text-sm text-gray-mid">
+      © 2026 Recrewt AI. All rights reserved.
+    </p>
+  </div>
+</footer>
 
     </div>
   )

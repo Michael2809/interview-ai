@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '../../../../lib/supabase'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import {
@@ -29,7 +28,7 @@ export default function TranscriptPage() {
   const params = useParams()
   const stageId = params.stageId
   const router = useRouter()
-  const authClient = createClient()
+  const supabase = createClient()
 
   const [stage, setStage] = useState(null)
   const [lines, setLines] = useState([])
@@ -51,11 +50,8 @@ export default function TranscriptPage() {
       if (names.length > 0) setSelected(names[0])
     }
 
-    // Load saved scores from DB
     const { data: scoreData } = await supabase
-      .from('scores')
-      .select()
-      .eq('stage_id', stageId)
+      .from('scores').select().eq('stage_id', stageId)
     if (scoreData) {
       const scoreMap = {}
       scoreData.forEach((s) => {
@@ -73,11 +69,13 @@ export default function TranscriptPage() {
     const v = lines.find((l) => l.candidate_name === name && l.speaker === 'video')
     return v ? v.video_url : null
   }
+
   function getAnalysisForCandidate(name) {
     const a = lines.find((l) => l.candidate_name === name && l.speaker === 'analysis')
     if (!a) return null
     try { return JSON.parse(a.content) } catch { return null }
   }
+
   function getTranscriptForCandidate(name) {
     return lines.filter((l) => l.candidate_name === name && l.speaker !== 'video' && l.speaker !== 'invite' && l.speaker !== 'analysis' && l.speaker !== 'audio')
   }
@@ -96,11 +94,8 @@ export default function TranscriptPage() {
       setScores({ ...scores, [name]: { error: result.error } })
       return
     }
-
     const newScore = { score: result.score, summary: result.summary, status: result.status || 'on-hold' }
     setScores({ ...scores, [name]: newScore })
-
-    // Save to DB — upsert so re-scoring updates existing row
     await supabase.from('scores').upsert({
       stage_id: stageId,
       candidate_name: name,
@@ -116,15 +111,12 @@ export default function TranscriptPage() {
       .update({ status })
       .eq('stage_id', stageId)
       .eq('candidate_name', name)
-    setScores((prev) => ({
-      ...prev,
-      [name]: { ...prev[name], status },
-    }))
+    setScores((prev) => ({ ...prev, [name]: { ...prev[name], status } }))
     setUpdatingStatus({ ...updatingStatus, [name]: false })
   }
 
   async function handleLogout() {
-    await authClient.auth.signOut()
+    await supabase.auth.signOut()
     router.push('/login')
   }
 
@@ -134,27 +126,10 @@ export default function TranscriptPage() {
 
   function statusBadge(status) {
     if (status === 'shortlisted') return <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Shortlisted</span>
-   if (status === 'on-hold') return <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">~ On Hold</span>
+    if (status === 'on-hold') return <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">~ On Hold</span>
     if (status === 'rejected') return <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">✕ Rejected</span>
     return null
   }
-
-  const navLinks = (
-    <>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <LayoutDashboard size={18} /> Dashboard
-      </Link>
-      <Link href="/roles" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
-        <Briefcase size={18} /> Roles
-      </Link>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <Users size={18} /> Candidates
-      </Link>
-      <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
-        <Settings size={18} /> Settings
-      </Link>
-    </>
-  )
 
   const analysis = selected ? getAnalysisForCandidate(selected) : null
   const transcriptLines = selected ? getTranscriptForCandidate(selected) : []
@@ -172,7 +147,20 @@ export default function TranscriptPage() {
             <span className="font-heading font-bold text-lg text-ink">Recrewt AI</span>
           </Link>
         </div>
-        <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+        <nav className="flex-1 p-4 space-y-1">
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <LayoutDashboard size={18} /> Dashboard
+          </Link>
+          <Link href="/roles" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
+            <Briefcase size={18} /> Roles
+          </Link>
+          <Link href="/candidates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <Users size={18} /> Candidates
+          </Link>
+          <Link href="/settings" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+            <Settings size={18} /> Settings
+          </Link>
+        </nav>
         <div className="p-4 border-t border-gray-soft">
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
             <LogOut size={18} /> Logout
@@ -194,7 +182,20 @@ export default function TranscriptPage() {
               </div>
               <button onClick={() => setMobileNavOpen(false)} className="text-gray-mid"><X size={20} /></button>
             </div>
-            <nav className="flex-1 p-4 space-y-1">{navLinks}</nav>
+            <nav className="flex-1 p-4 space-y-1">
+              <Link href="/dashboard" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <LayoutDashboard size={18} /> Dashboard
+              </Link>
+              <Link href="/roles" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-lavender text-ink font-medium text-sm">
+                <Briefcase size={18} /> Roles
+              </Link>
+              <Link href="/candidates" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <Users size={18} /> Candidates
+              </Link>
+              <Link href="/settings" onClick={() => setMobileNavOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
+                <Settings size={18} /> Settings
+              </Link>
+            </nav>
             <div className="p-4 border-t border-gray-soft">
               <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm">
                 <LogOut size={18} /> Logout
@@ -242,9 +243,7 @@ export default function TranscriptPage() {
                     key={name}
                     onClick={() => setSelected(name)}
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl border whitespace-nowrap text-sm transition-colors ${
-                      selected === name
-                        ? 'bg-ink text-white border-ink'
-                        : 'bg-white text-ink border-gray-soft hover:border-violet'
+                      selected === name ? 'bg-ink text-white border-ink' : 'bg-white text-ink border-gray-soft hover:border-violet'
                     }`}
                   >
                     <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
@@ -256,7 +255,7 @@ export default function TranscriptPage() {
                     {scores[name]?.status && scores[name].status !== 'pending' && (
                       <span className={`w-2 h-2 rounded-full ${
                         scores[name]?.status === 'shortlisted' ? 'bg-green-500' :
-scores[name]?.status === 'on-hold' ? 'bg-yellow-400' : 'bg-red-400'
+                        scores[name]?.status === 'on-hold' ? 'bg-yellow-400' : 'bg-red-400'
                       }`} />
                     )}
                   </button>
@@ -371,7 +370,6 @@ scores[name]?.status === 'on-hold' ? 'bg-yellow-400' : 'bg-red-400'
                   <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{scores[selected].error}</p>
                 )}
 
-                {/* Shortlisting buttons — only show once scored */}
                 {scores[selected]?.score && (
                   <div>
                     <p className="text-sm text-gray-mid mb-3">Move this candidate to:</p>
