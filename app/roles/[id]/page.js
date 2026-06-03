@@ -184,7 +184,13 @@ export default function RoleDetailPage() {
   }
 
   async function sendBulkInvites(stageId) {
-    const emails = getEmailsForStage(stageId)
+  const emails = getEmailsForStage(stageId)
+  if (emails.length === 0) return flashError('No valid email addresses to send to.')
+
+  // Fetch recruiter settings for email personalisation
+  const { data: settingsData } = await supabase.from('settings').select('full_name, company_name').single()
+  const recruiterName = settingsData?.full_name || ''
+  const companyName = settingsData?.company_name || ''
     if (emails.length === 0) return flashError('No valid email addresses to send to.')
 
     setSendingStage(stageId)
@@ -202,7 +208,7 @@ export default function RoleDetailPage() {
           fetch('/api/send-invite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stageId, candidateEmail: email, origin }),
+            body: JSON.stringify({ stageId, candidateEmail: email, origin, recruiterName, companyName }),
           })
             .then(r => r.json())
             .then(result => ({ email, error: result.error }))

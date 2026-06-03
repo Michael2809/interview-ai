@@ -4,7 +4,7 @@ import { supabase } from '../../../lib/supabase'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
-  const { stageId, candidateEmail, origin } = await request.json()
+  const { stageId, candidateEmail, origin, recruiterName, companyName } = await request.json()
 
   const token = crypto.randomUUID()
 
@@ -42,26 +42,39 @@ export async function POST(request) {
 
   const link = origin + '/interview/' + stageId + '?token=' + token
 
+  // Build sender context
+  const senderName = recruiterName && companyName
+    ? `${recruiterName} from ${companyName}`
+    : recruiterName
+    ? recruiterName
+    : companyName
+    ? companyName
+    : 'our team'
+
+  const displayCompany = companyName || 'Recrewt AI'
+  const subjectLine = `Interview Invitation — ${roleName} at ${displayCompany} — Action Required`
+
   const { error: emailError } = await resend.emails.send({
     from: 'interviews@recrewtai.com',
     to: candidateEmail,
-    subject: `Interview Invitation — ${roleName} — Action Required`,
+    subject: subjectLine,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #111;">
 
-        <div style="background: #111; padding: 24px 32px;">
+        <div style="background: #111; padding: 24px 32px; display: flex; align-items: center; justify-content: space-between;">
           <h1 style="color: #ffffff; font-size: 20px; margin: 0;">Recrewt AI</h1>
+          ${displayCompany !== 'Recrewt AI' ? `<span style="color: #aaa; font-size: 13px;">on behalf of ${displayCompany}</span>` : ''}
         </div>
 
         <div style="padding: 40px 32px; border: 1px solid #e8ebed; border-top: none;">
           <p style="font-size: 15px; color: #444; margin-top: 0;">Dear Candidate,</p>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            We are pleased to inform you that you have been selected to proceed to the next stage of our recruitment process for the <strong>${roleName}</strong> position.
+            You have been invited by <strong>${senderName}</strong> to complete a video interview for the <strong>${roleName}</strong> position.
           </p>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            You have been invited to complete a <strong>${stageName}</strong> video interview powered by <strong>Recrewt AI</strong>. Please review the following guidelines carefully before beginning.
+            This is a <strong>${stageName}</strong> interview powered by <strong>Recrewt AI</strong>. Please review the following guidelines carefully before beginning.
           </p>
 
           <div style="background: #f9f9f9; border-left: 4px solid #6C5CE7; padding: 20px 24px; margin: 24px 0; border-radius: 4px;">
@@ -77,7 +90,7 @@ export async function POST(request) {
           </div>
 
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
-            When you are ready, click the button below to begin your interview for the <strong>${roleName}</strong> position.
+            When you are ready, click the button below to begin your interview for the <strong>${roleName}</strong> position at <strong>${displayCompany}</strong>.
           </p>
 
           <div style="text-align: center; margin: 32px 0;">
@@ -94,12 +107,12 @@ export async function POST(request) {
           <hr style="border: none; border-top: 1px solid #e8ebed; margin: 32px 0;" />
 
           <p style="font-size: 13px; color: #aaa; margin: 0;">
-            This is an automated message from Recrewt AI. Please do not reply to this email. If you have any questions, contact the recruiter who invited you.
+            This is an automated message sent via Recrewt AI on behalf of ${displayCompany}. Please do not reply to this email.
           </p>
         </div>
 
         <div style="background: #f4f4f4; padding: 16px 32px; text-align: center;">
-          <p style="font-size: 12px; color: #aaa; margin: 0;">© ${new Date().getFullYear()} Recrewt AI. All rights reserved.</p>
+          <p style="font-size: 12px; color: #aaa; margin: 0;">© ${new Date().getFullYear()} Recrewt AI · <a href="${origin}/privacy" style="color: #aaa;">Privacy Policy</a></p>
         </div>
 
       </div>

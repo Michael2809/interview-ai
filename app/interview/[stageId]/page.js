@@ -33,6 +33,45 @@ export default function InterviewPage() {
     const recognitionRef = useRef(null)
     const transcriptRef = useRef([])
 
+    // ── Cached voice ref — loaded once on mount ──────────────────────────────
+    const cachedVoiceRef = useRef(null)
+
+    useEffect(() => {
+        loadData()
+        initVoices()
+    }, [])
+
+    // Pre-load voices and warm up the speech engine as soon as the page opens
+    function initVoices() {
+        const pickVoice = () => {
+            const voices = window.speechSynthesis.getVoices()
+            cachedVoiceRef.current =
+                voices.find(v => v.name === 'Samantha (Enhanced)') ||
+                voices.find(v => v.name === 'Karen (Enhanced)') ||
+                voices.find(v => v.name === 'Moira (Enhanced)') ||
+                voices.find(v => v.name === 'Samantha') ||
+                voices.find(v => v.name === 'Karen') ||
+                voices.find(v => v.name === 'Moira') ||
+                voices.find(v => v.name === 'Google UK English Female') ||
+                voices.find(v => v.name === 'Microsoft Heera - English (India)') ||
+                voices.find(v => v.name === 'Microsoft Zira - English (United States)') ||
+                voices.find(v => v.name.includes('Female') && v.lang.startsWith('en')) ||
+                voices.find(v => v.lang === 'en-US') ||
+                null
+
+            // Pre-warm the speech engine with a silent utterance
+            const warmup = new SpeechSynthesisUtterance(' ')
+            warmup.volume = 0
+            window.speechSynthesis.speak(warmup)
+        }
+
+        if (window.speechSynthesis.getVoices().length > 0) {
+            pickVoice()
+        } else {
+            window.speechSynthesis.onvoiceschanged = pickVoice
+        }
+    }
+
     async function loadData() {
         const { data: stageData } = await supabase
             .from('stages')
@@ -50,61 +89,39 @@ export default function InterviewPage() {
     }
 
     useEffect(() => {
-        loadData()
-    }, [])
-
-    useEffect(() => {
         if (videoRef.current && streamRef.current) {
             videoRef.current.srcObject = streamRef.current
         }
     }, [started])
 
+    // ── speakText — uses cached voice, no bad setTimeout ────────────────────
     function speakText(text, onDone) {
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(text)
 
-        const setVoiceAndSpeak = () => {
-            const voices = window.speechSynthesis.getVoices()
-            const preferred =
-                voices.find(v => v.name === 'Samantha (Enhanced)') ||
-                voices.find(v => v.name === 'Karen (Enhanced)') ||
-                voices.find(v => v.name === 'Moira (Enhanced)') ||
-                voices.find(v => v.name === 'Samantha') ||
-                voices.find(v => v.name === 'Karen') ||
-                voices.find(v => v.name === 'Moira') ||
-                voices.find(v => v.name === 'Google UK English Female') ||
-                voices.find(v => v.name === 'Microsoft Heera - English (India)') ||
-                voices.find(v => v.name === 'Microsoft Zira - English (United States)') ||
-                voices.find(v => v.name.includes('Female') && v.lang.startsWith('en')) ||
-                voices.find(v => v.lang === 'en-US')
-            if (preferred) utterance.voice = preferred
-            utterance.rate = 0.95
-            utterance.pitch = 1.0
-            utterance.volume = 1
-            setIsSpeaking(true)
+        // Use cached voice — no per-call lookup
+        if (cachedVoiceRef.current) utterance.voice = cachedVoiceRef.current
+        utterance.rate = 0.95
+        utterance.pitch = 1.0
+        utterance.volume = 1
+        setIsSpeaking(true)
 
-            let doneFired = false
-            const fireDone = () => {
-                if (doneFired) return
-                doneFired = true
-                setIsSpeaking(false)
-                if (onDone) onDone()
-            }
-
-            utterance.onend = fireDone
-            utterance.onerror = fireDone
-
-            const wordCount = text.split(' ').length
-            const estimatedDuration = (wordCount * 400) + 2000
-            setTimeout(fireDone, estimatedDuration)
-
-            window.speechSynthesis.speak(utterance)
+        let doneFired = false
+        const fireDone = () => {
+            if (doneFired) return
+            doneFired = true
+            setIsSpeaking(false)
+            if (onDone) onDone()
         }
-        if (window.speechSynthesis.getVoices().length === 0) {
-            window.speechSynthesis.onvoiceschanged = setVoiceAndSpeak
-        } else {
-            setVoiceAndSpeak()
-        }
+
+        utterance.onend = fireDone
+        utterance.onerror = fireDone
+
+        // 30-second safety net only — not the primary timer
+        // This only fires if the browser fails to fire onend (known Chrome bug)
+        setTimeout(fireDone, 30000)
+
+        window.speechSynthesis.speak(utterance)
     }
 
     async function startInterview() {
@@ -164,7 +181,9 @@ export default function InterviewPage() {
         setStarted(true)
         const firstQuestion = questions[0].text
         setCurrentQuestion(firstQuestion)
-        await addLine('interviewer', firstQuestion)
+
+        // ── Fire DB insert and speech simultaneously — no waiting ──
+        addLine('interviewer', firstQuestion)
         speakText(firstQuestion)
     }
 
@@ -256,7 +275,7 @@ export default function InterviewPage() {
             if (result.followUp) {
                 setAskedFollowUp(true)
                 setCurrentQuestion(result.followUp)
-                await addLine('interviewer', result.followUp)
+                addLine('interviewer', result.followUp)
                 speakText(result.followUp)
                 return
             }
@@ -476,7 +495,6 @@ export default function InterviewPage() {
                                 Begin Interview
                             </button>
 
-                            {/* Privacy Policy notice */}
                             <p style={{
                                 color: '#555', fontSize: '12px', marginTop: '16px',
                                 textAlign: 'center', lineHeight: '1.6'
