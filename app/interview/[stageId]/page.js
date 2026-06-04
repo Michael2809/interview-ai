@@ -21,9 +21,9 @@ export default function InterviewPage() {
     const [busy, setBusy] = useState(false)
 
     const [listening, setListening] = useState(false)
-    const listeningRef = useRef(false) // ref for use inside closures (fixes iOS stale state bug)
+    const listeningRef = useRef(false)
     const [spokenAnswer, setSpokenAnswer] = useState('')
-    const [typedAnswer, setTypedAnswer] = useState('')
+    const [speechError, setSpeechError] = useState('')
     const [isSpeaking, setIsSpeaking] = useState(false)
 
     const videoRef = useRef(null)
@@ -202,10 +202,11 @@ export default function InterviewPage() {
     function startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
         if (!SpeechRecognition) {
-            alert('Your browser does not support speech recognition. Please use Chrome.')
+            setSpeechError('Speech recognition is not supported on your device. Please use Chrome on desktop or Safari on iPhone.')
             return
         }
 
+        setSpeechError('')
         const recognition = new SpeechRecognition()
         recognitionRef.current = recognition
         recognition.continuous = true
@@ -229,8 +230,17 @@ export default function InterviewPage() {
         }
 
         recognition.onerror = (event) => {
-            if (event.error !== 'no-speech') {
+            if (event.error === 'not-allowed') {
+                setSpeechError('Microphone access was denied. Please allow microphone permission and try again.')
+                listeningRef.current = false
+                setListening(false)
+            } else if (event.error === 'no-speech') {
+                // silence is fine, just keep listening
+            } else {
                 console.error('Speech error:', event.error)
+                setSpeechError('Speech recognition error: ' + event.error + '. Try using Chrome on desktop or Safari on iPhone.')
+                listeningRef.current = false
+                setListening(false)
             }
         }
 
@@ -254,13 +264,12 @@ export default function InterviewPage() {
         setListening(false)
     }
 
-    async function submitAnswer() {
-        const answer = spokenAnswer.trim() || typedAnswer.trim()
+    async function submitSpokenAnswer() {
+        const answer = spokenAnswer.trim()
         if (!answer) return
         setBusy(true)
 
         setSpokenAnswer('')
-        setTypedAnswer('')
         await addLine('candidate', answer)
 
         if (!askedFollowUp) {
@@ -293,7 +302,6 @@ export default function InterviewPage() {
     function goToNextQuestion() {
         const nextIndex = currentIndex + 1
         setAskedFollowUp(false)
-        setTypedAnswer('')
 
         if (nextIndex >= questions.length) {
             finishInterview()
@@ -595,22 +603,15 @@ export default function InterviewPage() {
                                 Listening...
                             </div>
                         )}
-
-                        {/* Text input fallback — always visible */}
-                        <textarea
-                            placeholder="Or type your answer here..."
-                            value={typedAnswer}
-                            onChange={(e) => setTypedAnswer(e.target.value)}
-                            disabled={listening || busy}
-                            rows={3}
-                            style={{
-                                width: '100%', padding: '12px', background: '#111',
-                                border: '1px solid #333', color: '#fff', fontSize: '14px',
-                                borderRadius: '6px', resize: 'none', boxSizing: 'border-box',
-                                opacity: (listening || busy) ? 0.4 : 1,
-                                marginTop: '8px'
-                            }}
-                        />
+                        {speechError && (
+                            <div style={{
+                                padding: '14px 16px', background: '#1a0000', border: '1px solid #660000',
+                                borderRadius: '6px', marginTop: '12px', fontSize: '13px', color: '#ff6b6b',
+                                lineHeight: '1.6'
+                            }}>
+                                ⚠️ {speechError}
+                            </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
@@ -642,9 +643,9 @@ export default function InterviewPage() {
                                 Stop Speaking
                             </button>
                         )}
-                        {(spokenAnswer || typedAnswer) && !listening && !busy && (
+                        {spokenAnswer && !listening && !busy && (
                             <button
-                                onClick={submitAnswer}
+                                onClick={submitSpokenAnswer}
                                 style={{
                                     padding: '14px 28px', background: '#0066cc', color: '#fff',
                                     border: 'none', cursor: 'pointer', fontSize: '15px',
