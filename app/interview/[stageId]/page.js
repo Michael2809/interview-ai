@@ -21,7 +21,9 @@ export default function InterviewPage() {
     const [busy, setBusy] = useState(false)
 
     const [listening, setListening] = useState(false)
+    const listeningRef = useRef(false) // ref for use inside closures (fixes iOS stale state bug)
     const [spokenAnswer, setSpokenAnswer] = useState('')
+    const [typedAnswer, setTypedAnswer] = useState('')
     const [isSpeaking, setIsSpeaking] = useState(false)
 
     const videoRef = useRef(null)
@@ -233,12 +235,13 @@ export default function InterviewPage() {
         }
 
         recognition.onend = () => {
-            if (listening) {
+            if (listeningRef.current) {
                 recognition.start()
             }
         }
 
         recognition.start()
+        listeningRef.current = true
         setListening(true)
         setSpokenAnswer('')
     }
@@ -247,16 +250,18 @@ export default function InterviewPage() {
         if (recognitionRef.current) {
             recognitionRef.current.stop()
         }
+        listeningRef.current = false
         setListening(false)
     }
 
-    async function submitSpokenAnswer() {
-        if (!spokenAnswer.trim()) return
+    async function submitAnswer() {
+        const answer = spokenAnswer.trim() || typedAnswer.trim()
+        if (!answer) return
         setBusy(true)
 
-        const myAnswer = spokenAnswer.trim()
         setSpokenAnswer('')
-        await addLine('candidate', myAnswer)
+        setTypedAnswer('')
+        await addLine('candidate', answer)
 
         if (!askedFollowUp) {
             const response = await fetch('/api/follow-up', {
@@ -266,7 +271,7 @@ export default function InterviewPage() {
                     stageName: stage.name,
                     level: stage.level,
                     question: currentQuestion,
-                    answer: myAnswer,
+                    answer,
                 }),
             })
             const result = await response.json()
@@ -288,6 +293,7 @@ export default function InterviewPage() {
     function goToNextQuestion() {
         const nextIndex = currentIndex + 1
         setAskedFollowUp(false)
+        setTypedAnswer('')
 
         if (nextIndex >= questions.length) {
             finishInterview()
@@ -510,6 +516,14 @@ export default function InterviewPage() {
                                 </a>
                                 . Your video and responses will be recorded and reviewed by the recruiter.
                             </p>
+
+                            <p style={{
+                                color: '#555', fontSize: '12px', marginTop: '10px',
+                                textAlign: 'center', lineHeight: '1.6',
+                                background: '#111', padding: '10px 12px', borderRadius: '6px'
+                            }}>
+                                📱 On iPhone? Use <strong style={{ color: '#ccc' }}>Safari</strong> for voice input — Chrome on iPhone does not support microphone. You can also type your answers instead.
+                            </p>
                         </div>
                     )}
                 </div>
@@ -581,6 +595,22 @@ export default function InterviewPage() {
                                 Listening...
                             </div>
                         )}
+
+                        {/* Text input fallback — always visible */}
+                        <textarea
+                            placeholder="Or type your answer here..."
+                            value={typedAnswer}
+                            onChange={(e) => setTypedAnswer(e.target.value)}
+                            disabled={listening || busy}
+                            rows={3}
+                            style={{
+                                width: '100%', padding: '12px', background: '#111',
+                                border: '1px solid #333', color: '#fff', fontSize: '14px',
+                                borderRadius: '6px', resize: 'none', boxSizing: 'border-box',
+                                opacity: (listening || busy) ? 0.4 : 1,
+                                marginTop: '8px'
+                            }}
+                        />
                     </div>
 
                     <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
@@ -612,9 +642,9 @@ export default function InterviewPage() {
                                 Stop Speaking
                             </button>
                         )}
-                        {spokenAnswer && !listening && !busy && (
+                        {(spokenAnswer || typedAnswer) && !listening && !busy && (
                             <button
-                                onClick={submitSpokenAnswer}
+                                onClick={submitAnswer}
                                 style={{
                                     padding: '14px 28px', background: '#0066cc', color: '#fff',
                                     border: 'none', cursor: 'pointer', fontSize: '15px',
