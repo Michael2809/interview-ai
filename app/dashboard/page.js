@@ -20,6 +20,8 @@ import {
   Menu,
   X,
   Trash2,
+  Lock,
+  Zap,
 } from 'lucide-react'
 
 // ─── Module-level helpers ─────────────────────────────────────────────────────
@@ -37,6 +39,111 @@ function scoreColor(score) {
   if (score >= 7) return 'bg-green-100 text-green-700'
   if (score >= 4) return 'bg-yellow-100 text-yellow-700'
   return 'bg-red-100 text-red-700'
+}
+
+// ─── NEW: Trial banner ────────────────────────────────────────────────────────
+
+function TrialBanner({ trialData }) {
+  if (!trialData || trialData.plan !== 'trial') return null
+
+  const daysLeft = Math.max(
+    0,
+    Math.ceil((new Date(trialData.trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))
+  )
+  const interviewsUsed = trialData.trial_interviews_completed || 0
+  const interviewsLeft = Math.max(0, 5 - interviewsUsed)
+  const isExpired = daysLeft === 0
+  const isLimitHit = interviewsLeft === 0
+
+  const urgent = isExpired || isLimitHit
+
+  return (
+    <div className={`rounded-xl px-5 py-3 flex items-center justify-between gap-4 mb-6 ${urgent ? 'bg-red-50 border border-red-200' : 'bg-lavender border border-violet/20'}`}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${urgent ? 'bg-red-100 text-red-600' : 'bg-violet text-white'}`}>
+          FREE TRIAL
+        </span>
+        {isExpired ? (
+          <span className="text-sm font-medium text-red-600">Your trial has expired</span>
+        ) : isLimitHit ? (
+          <span className="text-sm font-medium text-red-600">You've used all 5 trial interviews</span>
+        ) : (
+          <span className="text-sm text-ink">
+            <strong>{interviewsLeft} interview{interviewsLeft === 1 ? '' : 's'}</strong> remaining ·{' '}
+            <strong>{daysLeft} day{daysLeft === 1 ? '' : 's'}</strong> left
+          </span>
+        )}
+      </div>
+      <Link
+        href="/upgrade"
+        className="shrink-0 bg-violet text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-violet-dark transition-colors"
+      >
+        Upgrade Now
+      </Link>
+    </div>
+  )
+}
+
+// ─── NEW: Trial feature panel ─────────────────────────────────────────────────
+
+function TrialFeaturePanel() {
+  const unlocked = [
+    'AI question generation',
+    'Video interviews',
+    'AI scoring & transcripts',
+    'Full sentiment analysis',
+    'CSV bulk invites',
+    'Interview progress dashboard',
+    'Basic & advanced speech analysis',
+  ]
+  const locked = [
+    'Unlimited roles',
+    '500 interviews / month',
+    '3 team logins',
+    'Same-day priority support',
+  ]
+
+  return (
+    <section className="mb-8">
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl border border-gray-soft p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="font-heading font-semibold text-ink text-sm">What you have now</span>
+            <span className="bg-lavender text-violet text-xs px-2 py-0.5 rounded-full font-medium">Trial</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {unlocked.map((f) => (
+              <div key={f} className="flex items-center gap-2 text-sm text-ink">
+                <CheckCircle2 size={14} className="text-green-500 shrink-0" aria-hidden="true" />
+                {f}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-dashed border-gray-soft p-5 opacity-80">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="font-heading font-semibold text-ink text-sm">Unlock on upgrade</span>
+            <span className="bg-yellow text-ink text-xs px-2 py-0.5 rounded-full font-bold">Growth</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {locked.map((f) => (
+              <div key={f} className="flex items-center gap-2 text-sm text-gray-mid">
+                <Lock size={13} className="shrink-0" aria-hidden="true" />
+                {f}
+              </div>
+            ))}
+          </div>
+          <Link
+            href="/upgrade"
+            className="mt-5 w-full flex items-center justify-center gap-2 bg-violet text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-violet-dark transition-colors"
+          >
+            <Zap size={14} aria-hidden="true" /> Upgrade to unlock
+          </Link>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 // ─── Module-level sub-components ─────────────────────────────────────────────
@@ -117,6 +224,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState(null)
 
+  // ── NEW: trial state ────────────────────────────────────────────────────────
+  const [trialData, setTrialData] = useState(null)
+  // ───────────────────────────────────────────────────────────────────────────
+
   const [shortlisted, setShortlisted] = useState([])
   const [onHold, setOnHold] = useState([])
   const [rejected, setRejected] = useState([])
@@ -131,9 +242,17 @@ export default function DashboardPage() {
   })
   const [roleProgress, setRoleProgress] = useState([])
 
+  // ── NEW: show success toast when returning from upgrade ────────────────────
+  const [upgraded, setUpgraded] = useState(false)
+
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('upgraded')) setUpgraded(true)
+}, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [rolesRes, stagesRes, interviewsRes, scoresRes] = await Promise.all([
+    const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes] = await Promise.all([
       supabase.from('roles').select('id, title'),
       supabase.from('stages').select('id, role_id, name'),
       supabase
@@ -143,7 +262,20 @@ export default function DashboardPage() {
         .from('scores')
         .select('id, candidate_name, score, summary, status')
         .order('score', { ascending: false }),
+      // ── NEW: fetch trial/plan data ────────────────────────────────────────
+      supabase
+        .from('settings')
+        .select('plan, trial_started_at, trial_expires_at, trial_interviews_completed, onboarding_completed')
+        .single(),
     ])
+
+    // ── NEW: set trial data ─────────────────────────────────────────────────
+    if (settingsRes.data) setTrialData(settingsRes.data)
+
+if (!settingsRes.data || !settingsRes.data.onboarding_completed) {
+  router.push('/onboarding')
+  return
+}
 
     const roles = rolesRes.data || []
     const stages = stagesRes.data || []
@@ -231,6 +363,19 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
+  // ── NEW: check trial limits before inviting ─────────────────────────────────
+  function handleInviteClick(e) {
+    if (trialData?.plan === 'trial') {
+      const daysLeft = Math.ceil((new Date(trialData.trial_expires_at) - new Date()) / (1000 * 60 * 60 * 24))
+      const interviewsLeft = Math.max(0, 5 - (trialData.trial_interviews_completed || 0))
+      if (interviewsLeft <= 0 || daysLeft <= 0) {
+        e.preventDefault()
+        router.push('/upgrade')
+      }
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   async function deleteRole(roleId, title) {
     const ok = window.confirm(
       `Delete "${title}"?\n\nThis permanently removes the role and all its stages, questions, transcripts, and scores. Cannot be undone.`
@@ -287,6 +432,26 @@ export default function DashboardPage() {
             <Settings size={18} aria-hidden="true" /> Settings
           </Link>
         </nav>
+
+        {/* ── NEW: trial status in sidebar ── */}
+        {trialData?.plan === 'trial' && (
+          <div className="mx-4 mb-4 p-3 bg-lavender rounded-xl border border-violet/20">
+            <div className="text-xs font-semibold text-violet mb-1">Free Trial</div>
+            <div className="text-xs text-ink">
+              {Math.max(0, 5 - (trialData.trial_interviews_completed || 0))} interviews left
+            </div>
+            <div className="mt-2 h-1.5 w-full bg-white/60 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet rounded-full transition-all"
+                style={{ width: `${Math.min(100, ((trialData.trial_interviews_completed || 0) / 5) * 100)}%` }}
+              />
+            </div>
+            <Link href="/upgrade" className="mt-2 block text-xs font-semibold text-violet hover:underline">
+              Upgrade →
+            </Link>
+          </div>
+        )}
+
         <div className="p-4 border-t border-gray-soft">
           <button onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-mid hover:bg-gray-50 hover:text-ink text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
@@ -362,6 +527,17 @@ export default function DashboardPage() {
 
         <div className="p-6 lg:p-10">
 
+          {/* ── NEW: Upgrade success toast ────────────────────────────────── */}
+          {upgraded && (
+            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3 flex items-center gap-3 mb-6">
+              <CheckCircle2 size={16} className="text-green-600 shrink-0" aria-hidden="true" />
+              <span className="text-sm font-medium text-green-700">You're upgraded. Welcome to the full Recrewt experience.</span>
+            </div>
+          )}
+
+          {/* ── NEW: Trial banner ─────────────────────────────────────────── */}
+          <TrialBanner trialData={trialData} />
+
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
@@ -369,8 +545,12 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-mid mt-1">Welcome back. Here&apos;s your hiring activity at a glance.</p>
             </div>
             <div className="flex items-center gap-3">
-              <Link href="/roles"
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-white border border-ink text-ink font-medium px-4 py-2 rounded-lg hover:bg-ink hover:text-white transition-colors text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
+              {/* ── NEW: gated invite button ── */}
+              <Link
+                href="/roles"
+                onClick={handleInviteClick}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-white border border-ink text-ink font-medium px-4 py-2 rounded-lg hover:bg-ink hover:text-white transition-colors text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+              >
                 <Send size={16} aria-hidden="true" /> Invite
               </Link>
               <Link href="/roles"
@@ -394,6 +574,9 @@ export default function DashboardPage() {
               {stats.invitedThisWeek} new invite{stats.invitedThisWeek === 1 ? '' : 's'} this week
             </p>
           </section>
+
+          {/* ── NEW: Trial feature panel — only shown on trial ─────────────── */}
+          {trialData?.plan === 'trial' && <TrialFeaturePanel />}
 
           {/* Interview progress by role */}
           <section aria-labelledby="progress-heading" className="mb-8">

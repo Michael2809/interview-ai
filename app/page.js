@@ -20,6 +20,7 @@ export default function HomePage() {
               <span className="font-heading font-bold text-xl tracking-tight text-ink">Recrewt AI</span>
             </Link>
 
+            {/* Desktop links */}
             <div className="hidden md:flex items-center gap-8">
               <a href="#how-it-works" className="text-sm text-gray-mid hover:text-ink transition-colors">How It Works</a>
               <a href="#benefits" className="text-sm text-gray-mid hover:text-ink transition-colors">Benefits</a>
@@ -27,16 +28,19 @@ export default function HomePage() {
               <a href="#pricing" className="text-sm text-gray-mid hover:text-ink transition-colors">Pricing</a>
             </div>
 
+            {/* Desktop CTAs */}
             <div className="hidden md:flex items-center gap-3">
               <Link href="/login" className="text-sm font-medium text-ink hover:text-violet transition-colors">Log In</Link>
               <Link href="/login" className="bg-violet text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-violet-dark transition-colors">Start Free Trial</Link>
             </div>
 
+            {/* Mobile hamburger */}
             <button onClick={() => setNavOpen(!navOpen)} className="md:hidden text-ink">
               {navOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
 
+          {/* Mobile menu */}
           {navOpen && (
             <div className="md:hidden pb-4 space-y-1">
               <a href="#how-it-works" onClick={() => setNavOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-gray-mid hover:bg-gray-50 hover:text-ink">How It Works</a>
@@ -78,30 +82,43 @@ export default function HomePage() {
       <section id="how-it-works" className="py-20 px-6 lg:px-8 bg-lavender">
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mx-auto text-center mb-12">
-            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">How it works</h2>
-            <p className="mt-3 text-gray-mid">From job posting to scored candidates in three steps.</p>
+            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">
+              How it works
+            </h2>
+            <p className="mt-3 text-gray-mid">
+              From job posting to scored candidates in three steps.
+            </p>
           </div>
+
           <div className="grid md:grid-cols-3 gap-6">
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <div className="w-12 h-12 bg-violet/10 rounded-xl flex items-center justify-center mb-6">
                 <span className="font-heading font-bold text-violet text-xl">1</span>
               </div>
               <h3 className="font-heading font-semibold text-xl text-ink mb-2">Create a role</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Describe the position you're hiring for. Our AI drafts smart interview questions tailored to the role in seconds.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Describe the position you're hiring for. Our AI drafts smart interview questions tailored to the role in seconds.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <div className="w-12 h-12 bg-violet/10 rounded-xl flex items-center justify-center mb-6">
                 <span className="font-heading font-bold text-violet text-xl">2</span>
               </div>
               <h3 className="font-heading font-semibold text-xl text-ink mb-2">Invite candidates</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Send a single link. Candidates complete a guided video interview on their own time — no scheduling, no calls.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Send a single link. Candidates complete a guided video interview on their own time — no scheduling, no calls.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <div className="w-12 h-12 bg-violet/10 rounded-xl flex items-center justify-center mb-6">
                 <span className="font-heading font-bold text-violet text-xl">3</span>
               </div>
               <h3 className="font-heading font-semibold text-xl text-ink mb-2">Review AI scores</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">We score clarity, pace, filler words, and sentiment. Spot top candidates fast and skip the resume guesswork.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                We score clarity, pace, filler words, and sentiment. Spot top candidates fast and skip the resume guesswork.
+              </p>
             </div>
           </div>
         </div>
@@ -111,25 +128,41 @@ export default function HomePage() {
       <section id="benefits" className="py-20 px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mx-auto text-center mb-12">
-            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">Built for recruiters</h2>
-            <p className="mt-3 text-gray-mid">Spend less time screening, more time on the candidates that matter.</p>
+            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">
+              Built for recruiters
+            </h2>
+            <p className="mt-3 text-gray-mid">
+              Spend less time screening, more time on the candidates that matter.
+            </p>
           </div>
+
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Cut screening time by 80%</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Stop scheduling first-round calls. Candidates self-serve their interview, and you review the highlights.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Stop scheduling first-round calls. Candidates self-serve their interview, and you review the highlights.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Consistent, unbiased questions</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Every candidate gets the same set of role-specific questions, so comparisons are fair and apples-to-apples.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Every candidate gets the same set of role-specific questions, so comparisons are fair and apples-to-apples.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">AI-generated scoring</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Speech clarity, pace, filler words, and sentiment analyzed automatically. See a candidate's communication snapshot at a glance.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Speech clarity, pace, filler words, and sentiment analyzed automatically. See a candidate's communication snapshot at a glance.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-gray-soft">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Full transcripts & replays</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Re-watch any interview and read the full transcript. Share clips with your hiring team in one click.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Re-watch any interview and read the full transcript. Share clips with your hiring team in one click.
+              </p>
             </div>
           </div>
         </div>
@@ -139,21 +172,34 @@ export default function HomePage() {
       <section id="candidate-flow" className="py-20 px-6 lg:px-8 bg-yellow">
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mx-auto text-center mb-12">
-            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">A smooth experience for candidates</h2>
-            <p className="mt-3 text-ink/70">No accounts to create. No installs. Just one link and they're in.</p>
+            <h2 className="font-heading font-bold text-3xl md:text-4xl text-ink tracking-tight">
+              A smooth experience for candidates
+            </h2>
+            <p className="mt-3 text-ink/70">
+              No accounts to create. No installs. Just one link and they're in.
+            </p>
           </div>
+
           <div className="grid md:grid-cols-3 gap-6">
             <div className="bg-white rounded-2xl p-8 border border-ink/10">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Click the invite link</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Candidates get a personalized link by email — they open it in any browser, on any device.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Candidates get a personalized link by email — they open it in any browser, on any device.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-ink/10">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Answer at their pace</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">Questions appear one at a time. They take a breath, hit record, and answer — no live pressure, no awkward calls.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                Questions appear one at a time. They take a breath, hit record, and answer — no live pressure, no awkward calls.
+              </p>
             </div>
+
             <div className="bg-white rounded-2xl p-8 border border-ink/10">
               <h3 className="font-heading font-semibold text-lg text-ink mb-2">Submit and done</h3>
-              <p className="text-gray-mid text-sm leading-relaxed">One click to submit. Their interview goes straight to the recruiter's dashboard — fully scored and ready to review.</p>
+              <p className="text-gray-mid text-sm leading-relaxed">
+                One click to submit. Their interview goes straight to the recruiter's dashboard — fully scored and ready to review.
+              </p>
             </div>
           </div>
         </div>
@@ -211,8 +257,11 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mt-6">
-                <Link href="/login" className="block border-2 border-violet text-violet text-center text-sm font-semibold py-2.5 rounded-xl hover:bg-violet hover:text-white transition-colors">
+                <Link href="/login" className="block border-2 border-violet text-violet text-center font-semibold text-sm py-2.5 rounded-xl hover:bg-violet hover:text-white transition-colors">
                   Start Free Trial
+                </Link>
+                <Link href="/upgrade?plan=starter" className="block text-center text-sm text-violet hover:underline mt-2">
+                  Buy Now →
                 </Link>
               </div>
             </div>
@@ -264,8 +313,11 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mt-6">
-                <Link href="/login" className="block bg-violet text-white text-center text-sm font-semibold py-2.5 rounded-xl hover:bg-violet-dark transition-colors">
+                <Link href="/login" className="block bg-violet text-white text-center font-semibold text-sm py-2.5 rounded-xl hover:bg-violet-dark transition-colors">
                   Start Free Trial
+                </Link>
+                <Link href="/upgrade?plan=growth" className="block text-center text-sm text-yellow hover:underline mt-2">
+                  Buy Now →
                 </Link>
               </div>
             </div>
@@ -314,7 +366,7 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mt-6">
-                <a href="https://calendly.com/your-handle/recrewt-demo" target="_blank" rel="noopener noreferrer" className="block border-2 border-ink text-ink text-center text-sm font-semibold py-2.5 rounded-xl hover:bg-ink hover:text-white transition-colors">
+                <a href="https://calendly.com/your-handle/recrewt-demo" target="_blank" rel="noopener noreferrer" className="block border-2 border-ink text-ink text-center font-semibold text-sm py-2.5 rounded-xl hover:bg-ink hover:text-white transition-colors">
                   Talk to Sales
                 </a>
                 <p className="text-center text-xs text-gray-mid mt-2">Scoped to your needs. Volume pricing available.</p>

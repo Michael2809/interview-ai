@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { ScanFace, Eye, EyeOff } from 'lucide-react'
@@ -13,8 +13,15 @@ export default function LoginPage() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [next, setNext] = useState('/dashboard')
   const supabase = createClient()
   const router = useRouter()
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const n = params.get('next')
+    if (n) setNext(n)
+  }, [])
 
   async function handleSubmit() {
     setError('')
@@ -23,11 +30,11 @@ export default function LoginPage() {
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) { setLoading(false); return setError(error.message) }
-      router.push('/dashboard')
+      router.push(next)
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setLoading(false); return setError(error.message) }
-      router.push('/dashboard')
+      router.push(next)
     }
   }
 
