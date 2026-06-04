@@ -35,6 +35,9 @@ export default function InterviewPage() {
     const recognitionRef = useRef(null)
     const transcriptRef = useRef([])
 
+    // ── NEW: tracks the session row id so we can update status later ─────────
+    const sessionRowRef = useRef(null)
+
     // ── Cached voice ref — loaded once on mount ──────────────────────────────
     const cachedVoiceRef = useRef(null)
 
@@ -43,7 +46,6 @@ export default function InterviewPage() {
         initVoices()
     }, [])
 
-    // Pre-load voices and warm up the speech engine as soon as the page opens
     function initVoices() {
         const pickVoice = () => {
             const voices = window.speechSynthesis.getVoices()
@@ -61,7 +63,6 @@ export default function InterviewPage() {
                 voices.find(v => v.lang === 'en-US') ||
                 null
 
-            // Pre-warm the speech engine with a silent utterance
             const warmup = new SpeechSynthesisUtterance(' ')
             warmup.volume = 0
             window.speechSynthesis.speak(warmup)
@@ -96,12 +97,10 @@ export default function InterviewPage() {
         }
     }, [started])
 
-    // ── speakText — uses cached voice, no bad setTimeout ────────────────────
     function speakText(text, onDone) {
         window.speechSynthesis.cancel()
         const utterance = new SpeechSynthesisUtterance(text)
 
-        // Use cached voice — no per-call lookup
         if (cachedVoiceRef.current) utterance.voice = cachedVoiceRef.current
         utterance.rate = 0.95
         utterance.pitch = 1.0
@@ -118,11 +117,7 @@ export default function InterviewPage() {
 
         utterance.onend = fireDone
         utterance.onerror = fireDone
-
-        // 30-second safety net only — not the primary timer
-        // This only fires if the browser fails to fire onend (known Chrome bug)
         setTimeout(fireDone, 30000)
-
         window.speechSynthesis.speak(utterance)
     }
 
@@ -181,10 +176,24 @@ export default function InterviewPage() {
         }
 
         setStarted(true)
+
+        // ── NEW: insert session tracking row, save its id ─────────────────────
+        const { data: sessionRow } = await supabase
+            .from('interviews')
+            .insert({
+                stage_id: stageId,
+                speaker: 'session_start',
+                content: 'in_progress',
+                candidate_name: candidateName,
+                status: 'in_progress',
+            })
+            .select()
+            .single()
+        if (sessionRow) sessionRowRef.current = sessionRow.id
+        // ─────────────────────────────────────────────────────────────────────
+
         const firstQuestion = questions[0].text
         setCurrentQuestion(firstQuestion)
-
-        // ── Fire DB insert and speech simultaneously — no waiting ──
         addLine('interviewer', firstQuestion)
         speakText(firstQuestion)
     }
@@ -235,7 +244,7 @@ export default function InterviewPage() {
                 listeningRef.current = false
                 setListening(false)
             } else if (event.error === 'no-speech') {
-                // silence is fine, just keep listening
+                // silence is fine
             } else {
                 console.error('Speech error:', event.error)
                 setSpeechError('Speech recognition error: ' + event.error + '. Try using Chrome on desktop or Safari on iPhone.')
@@ -428,6 +437,56 @@ export default function InterviewPage() {
 
         await autoScore(stage?.name || 'Interview')
 
+        // ── NEW: mark session completed + increment trial counter ─────────────
+        try {
+            // 1. Flip the session row to completed
+            if (sessionRowRef.current) {
+                await supabase
+                    .from('interviews')
+                    .update({
+                        status: 'completed',
+                        completed_at: new Date().toISOString(),
+                    })
+                    .eq('id', sessionRowRef.current)
+            }
+
+            // 2. Walk stages → roles → settings to find the recruiter
+            const { data: stageRow } = await supabase
+                .from('stages')
+                .select('role_id')
+                .eq('id', stageId)
+                .single()
+
+            if (stageRow) {
+                const { data: roleRow } = await supabase
+                    .from('roles')
+                    .select('user_id')
+                    .eq('id', stageRow.role_id)
+                    .single()
+
+                if (roleRow) {
+                    // 3. Read current count, increment by 1
+                    const { data: settingsRow } = await supabase
+                        .from('settings')
+                        .select('trial_interviews_completed')
+                        .eq('user_id', roleRow.user_id)
+                        .single()
+
+                    if (settingsRow) {
+                        await supabase
+                            .from('settings')
+                            .update({
+                                trial_interviews_completed: (settingsRow.trial_interviews_completed || 0) + 1
+                            })
+                            .eq('user_id', roleRow.user_id)
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Status update error:', err)
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         setUploading(false)
         setFinished(true)
     }
@@ -530,7 +589,7 @@ export default function InterviewPage() {
                                 textAlign: 'center', lineHeight: '1.6',
                                 background: '#111', padding: '10px 12px', borderRadius: '6px'
                             }}>
-                                📱 On iPhone? Use <strong style={{ color: '#ccc' }}>Safari</strong> for voice input — Chrome on iPhone does not support microphone. You can also type your answers instead.
+                                On iPhone? Use <strong style={{ color: '#ccc' }}>Safari</strong> for voice input — Chrome on iPhone does not support microphone. You can also type your answers instead.
                             </p>
                         </div>
                     )}
@@ -609,7 +668,7 @@ export default function InterviewPage() {
                                 borderRadius: '6px', marginTop: '12px', fontSize: '13px', color: '#ff6b6b',
                                 lineHeight: '1.6'
                             }}>
-                                ⚠️ {speechError}
+                                {speechError}
                             </div>
                         )}
                     </div>
