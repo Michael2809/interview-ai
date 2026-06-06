@@ -70,7 +70,7 @@ export default function HomePage() {
               Start Free Trial
               <ArrowRight size={18} />
             </Link>
-            <a href="#book-demo" className="inline-flex items-center gap-2 text-ink font-heading font-semibold px-6 py-3.5 rounded-lg border border-ink hover:bg-ink hover:text-white transition-colors">
+            <a href="https://calendly.com/mike-recrewtai" className="inline-flex items-center gap-2 text-ink font-heading font-semibold px-6 py-3.5 rounded-lg border border-ink hover:bg-ink hover:text-white transition-colors">
               <Calendar size={18} />
               Book Demo
             </a>
