@@ -134,23 +134,6 @@ export default function RolesPage() {
       loadRoles()
     }
   }
-    const { error: insertError } = await supabase.from('roles').insert({
-      title,
-      description: description || null,
-      department: category ? (subcategory ? `${category} — ${subcategory}` : category) : null,
-      employment_type: employmentType,
-      experience_level: experienceLevel,
-    })
-    setLoading(false)
-    if (insertError) {
-      setError('Something went wrong: ' + insertError.message)
-    } else {
-      setMessage(`Role "${title}" created successfully.`)
-      setTitle(''); setDescription(''); setCategory(''); setSubcategory('')
-      setEmploymentType('full-time'); setExperienceLevel('mid')
-      loadRoles()
-    }
-  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
