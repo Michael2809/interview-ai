@@ -113,7 +113,7 @@ function SlidePanel({ open, onClose, title, children }) {
   )
 }
 
-function CandidateRow({ name, email, score, roleTitle, date }) {
+function CandidateRow({ name, email, score, roleTitle, date, stageId }) {
   return (
     <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-lavender/30 transition-colors">
       <div className="flex items-center gap-3 min-w-0">
@@ -317,7 +317,7 @@ export default function DashboardPage() {
       title: `Completed (${stats.completed})`,
       content: completedList.length === 0
         ? <p className="text-sm text-gray-mid text-center py-8">No completed interviews yet</p>
-        : completedList.map((c, i) => <CandidateRow key={i} name={c.name} roleTitle={c.roleTitle} score={c.score} />),
+        : completedList.map((c, i) => <CandidateRow key={i} name={c.name} roleTitle={c.roleTitle} score={c.score} stageId={c.stageId} />),
       link: { href: '/candidates?filter=completed', label: 'View all completed' },
     },
     ongoing: {
@@ -331,7 +331,7 @@ export default function DashboardPage() {
       title: `Top Scored Candidates`,
       content: completedList.filter((c) => c.score != null).length === 0
         ? <p className="text-sm text-gray-mid text-center py-8">No scored candidates yet</p>
-        : completedList.filter((c) => c.score != null).map((c, i) => <CandidateRow key={i} name={c.name} roleTitle={c.roleTitle} score={c.score} />),
+        : completedList.filter((c) => c.score != null).map((c, i) => <CandidateRow key={i} name={c.name} roleTitle={c.roleTitle} score={c.score} stageId={c.stageId} />),
       link: { href: '/candidates?filter=completed', label: 'View all scores' },
     },
   }
