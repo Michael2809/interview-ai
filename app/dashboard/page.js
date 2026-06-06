@@ -597,7 +597,7 @@ if (!settingsRes.data || !settingsRes.data.onboarding_completed) {
             ) : (
               <div className="grid sm:grid-cols-2 gap-4">
                 {roleProgress.map((r) => {
-                  const pct = r.invited ? Math.round((r.completed / r.invited) * 100) : 0
+                  const pct = r.invited ? Math.min(100, Math.round((r.completed / r.invited) * 100)) : 0
                   const isDeleting = deletingId === r.id
                   return (
                     <div key={r.id} className="bg-white rounded-2xl p-5 border border-gray-soft relative">
