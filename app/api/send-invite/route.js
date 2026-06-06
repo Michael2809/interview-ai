@@ -6,6 +6,69 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export async function POST(request) {
   const { stageId, candidateEmail, origin, recruiterName, companyName } = await request.json()
 
+  // ── Quota check ──────────────────────────────────────────────────────────
+  const { data: stageCheck } = await supabase
+    .from('stages')
+    .select('role_id')
+    .eq('id', stageId)
+    .single()
+
+  const { data: roleCheck } = await supabase
+    .from('roles')
+    .select('user_id')
+    .eq('id', stageCheck?.role_id)
+    .single()
+
+  const recruiterId = roleCheck?.user_id
+
+  if (recruiterId) {
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('plan, trial_interviews_completed, interviews_used_this_cycle, billing_cycle_start')
+      .eq('user_id', recruiterId)
+      .single()
+
+    const plan = settings?.plan || 'trial'
+    const interviewLimits = { trial: 5, starter: 100, growth: 500, enterprise: Infinity }
+    const limit = interviewLimits[plan] ?? 5
+
+    let used = 0
+    if (plan === 'trial') {
+      used = settings?.trial_interviews_completed || 0
+    } else {
+      // Reset counter if billing cycle has passed 30 days
+      const cycleStart = new Date(settings?.billing_cycle_start || Date.now())
+      const daysSinceCycle = (Date.now() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)
+      if (daysSinceCycle >= 30) {
+        await supabase.from('settings').update({
+          interviews_used_this_cycle: 0,
+          billing_cycle_start: new Date().toISOString()
+        }).eq('user_id', recruiterId)
+        used = 0
+      } else {
+        used = settings?.interviews_used_this_cycle || 0
+      }
+    }
+
+    if (limit !== Infinity && used >= limit) {
+      return Response.json({
+        error: `Interview limit reached. You've used ${used}/${limit} interviews on your ${plan} plan. Please upgrade to continue.`
+      }, { status: 403 })
+    }
+
+    // Increment the counter
+    if (plan === 'trial') {
+      await supabase.from('settings')
+        .update({ trial_interviews_completed: used + 1 })
+        .eq('user_id', recruiterId)
+    } else {
+      await supabase.from('settings')
+        .update({ interviews_used_this_cycle: used + 1 })
+        .eq('user_id', recruiterId)
+    }
+  }
+  // ── End quota check ───────────────────────────────────────────────────────
+
   const token = crypto.randomUUID()
 
   // Fetch stage and role name
@@ -42,7 +105,6 @@ export async function POST(request) {
 
   const link = origin + '/interview/' + stageId + '?token=' + token
 
-  // Build sender context
   const senderName = recruiterName && companyName
     ? `${recruiterName} from ${companyName}`
     : recruiterName

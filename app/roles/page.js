@@ -91,6 +91,49 @@ export default function RolesPage() {
     setMessage('')
     if (!title) { setError('Please enter a job title first.'); return }
     setLoading(true)
+
+    // Check role limit for plan
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('plan')
+      .eq('user_id', user.id)
+      .single()
+
+    const plan = settings?.plan || 'trial'
+    const roleLimits = { trial: 3, starter: 3, growth: Infinity, enterprise: Infinity }
+    const roleLimit = roleLimits[plan] ?? 3
+
+    if (roleLimit !== Infinity) {
+      const { count } = await supabase
+        .from('roles')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      if (count >= roleLimit) {
+        setError(`You've reached the ${roleLimit}-role limit on your ${plan} plan. Upgrade to Growth for unlimited roles.`)
+        setLoading(false)
+        return
+      }
+    }
+
+    const { error: insertError } = await supabase.from('roles').insert({
+      title,
+      description: description || null,
+      department: category ? (subcategory ? `${category} — ${subcategory}` : category) : null,
+      employment_type: employmentType,
+      experience_level: experienceLevel,
+    })
+    setLoading(false)
+    if (insertError) {
+      setError('Something went wrong: ' + insertError.message)
+    } else {
+      setMessage(`Role "${title}" created successfully.`)
+      setTitle(''); setDescription(''); setCategory(''); setSubcategory('')
+      setEmploymentType('full-time'); setExperienceLevel('mid')
+      loadRoles()
+    }
+  }
     const { error: insertError } = await supabase.from('roles').insert({
       title,
       description: description || null,

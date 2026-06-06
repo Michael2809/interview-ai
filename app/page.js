@@ -366,7 +366,7 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mt-6">
-                <a href="https://calendly.com/your-handle/recrewt-demo" target="_blank" rel="noopener noreferrer" className="block border-2 border-ink text-ink text-center font-semibold text-sm py-2.5 rounded-xl hover:bg-ink hover:text-white transition-colors">
+                <a href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer" className="block border-2 border-ink text-ink text-center font-semibold text-sm py-2.5 rounded-xl hover:bg-ink hover:text-white transition-colors">
                   Talk to Sales
                 </a>
                 <p className="text-center text-xs text-gray-mid mt-2">Scoped to your needs. Volume pricing available.</p>
@@ -391,7 +391,7 @@ export default function HomePage() {
               Start Free Trial
               <ArrowRight size={18} />
             </Link>
-            <a href="https://calendly.com/your-handle/recrewt-demo" className="inline-flex items-center gap-2 bg-white text-ink font-heading font-semibold px-6 py-3.5 rounded-lg hover:bg-yellow transition-colors">
+            <a href="https://calendly.com/mike-recrewtai" className="inline-flex items-center gap-2 bg-white text-ink font-heading font-semibold px-6 py-3.5 rounded-lg hover:bg-yellow transition-colors">
               <Calendar size={18} />
               Book Demo
             </a>
