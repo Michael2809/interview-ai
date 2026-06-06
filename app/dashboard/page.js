@@ -227,7 +227,7 @@ export default function DashboardPage() {
       const key = `${r.stage_id}|${r.candidate_name}`
       const rid = stageRole[r.stage_id]
       const score = scores.find((s) => s.candidate_name === r.candidate_name)
-      if (!compMap[key]) compMap[key] = { name: r.candidate_name, roleTitle: rid ? roleTitle[rid] : null, score: score?.score ?? null }
+      if (!compMap[key]) compMap[key] = { name: r.candidate_name, roleTitle: rid ? roleTitle[rid] : null, score: score?.score ?? null, stageId: r.stage_id }
     })
     const completedArr = Object.values(compMap).sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
 
