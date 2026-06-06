@@ -230,27 +230,21 @@ export default function HomePage() {
               <div className="flex flex-col gap-3 flex-1">
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; 3 active roles</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Run interviews for up to 3 positions simultaneously</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Fully automated screening</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">100 candidates screened while you slept</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; AI writes your questions</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Describe the role. Done. No HR degree needed.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Video interviews on autopilot</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Candidates record on their time. You watch when you're ready.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Auto-scoring & full transcript</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Every candidate scored out of 10. Automatically. Before your morning coffee.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Basic speech analysis</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">See how fast they talk and how clearly they communicate</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Email support</p>
@@ -282,31 +276,24 @@ export default function HomePage() {
               <div className="flex flex-col gap-3 flex-1">
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Unlimited roles</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">No caps. Hire for every position, all at once.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Screening at scale</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Scale your screening without scaling your team</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Full sentiment analysis</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Know if they're confident, nervous, or telling you what you want to hear</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Advanced AI score breakdown</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">A full breakdown by communication, clarity, and confidence</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; CSV bulk invites</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Upload 500 emails. Send 500 invites. One click.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Interview progress dashboard</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">See who's done, who's pending, who ghosted</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; 3 team logins</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Your whole hiring team, one account</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">✓&nbsp; Same-day priority support</p>
@@ -334,35 +321,27 @@ export default function HomePage() {
               <div className="flex flex-col gap-3 flex-1">
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Unlimited everything</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Roles, interviews, candidates. No ceilings, ever.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Unlimited team logins</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Bring your whole recruiting org on board</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Custom integrations</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Connect Recrewt to your existing ATS and tools</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Dedicated account manager</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">A real human, not a ticket queue</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Single sign-on (SSO)</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">Enterprise-grade login for your whole team</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Advanced reporting</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">See exactly where your hiring wins and where it leaks</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Priority feature access</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">You tell us what you need. We build it next.</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">✓&nbsp; Custom onboarding & training</p>
-                  <p className="text-xs text-gray-mid mt-0.5 ml-4 leading-relaxed">We set your team up to win, hands-on</p>
                 </div>
               </div>
               <div className="mt-6">
