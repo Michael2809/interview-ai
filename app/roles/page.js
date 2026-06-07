@@ -93,29 +93,29 @@ export default function RolesPage() {
     setLoading(true)
 
     // Check role limit for plan
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: settings } = await supabase
-      .from('settings')
-      .select('plan')
-      .eq('user_id', user.id)
-      .single()
+const { data: { user } } = await supabase.auth.getUser()
+const { data: settings } = await supabase
+  .from('settings')
+  .select('plan')
+  .eq('user_id', user.id)
+  .single()
 
-    const plan = settings?.plan || 'trial'
-    const roleLimits = { trial: 3, starter: 3, growth: Infinity, enterprise: Infinity }
-    const roleLimit = roleLimits[plan] ?? 3
+const plan = settings?.plan || 'trial'
+const roleLimits = { trial: 3, starter: 3, growth: Infinity, enterprise: Infinity, admin: Infinity }
+const roleLimit = roleLimits[plan] ?? 3
 
-    if (roleLimit !== Infinity) {
-      const { count } = await supabase
-        .from('roles')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
+if (roleLimit !== Infinity) {
+  const { count } = await supabase
+    .from('roles')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
 
-      if (count >= roleLimit) {
-        setError(`You've reached the ${roleLimit}-role limit on your ${plan} plan. Upgrade to Growth for unlimited roles.`)
-        setLoading(false)
-        return
-      }
-    }
+  if (count >= roleLimit) {
+    setError(`You've reached the ${roleLimit}-role limit on your ${plan} plan. Upgrade to Growth for unlimited roles.`)
+    setLoading(false)
+    return
+  }
+}
 
     const { error: insertError } = await supabase.from('roles').insert({
       title,

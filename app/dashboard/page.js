@@ -114,8 +114,8 @@ function SlidePanel({ open, onClose, title, children }) {
 }
 
 function CandidateRow({ name, email, score, roleTitle, date, stageId }) {
-  return (
-    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-lavender/30 transition-colors">
+  const inner = (
+    <>
       <div className="flex items-center gap-3 min-w-0">
         <div className="w-8 h-8 rounded-full bg-lavender text-violet font-heading font-semibold text-xs flex items-center justify-center shrink-0">
           {name ? initials(name) : '?'}
@@ -126,9 +126,29 @@ function CandidateRow({ name, email, score, roleTitle, date, stageId }) {
           {date && <div className="text-xs text-gray-mid">{date}</div>}
         </div>
       </div>
-      {score != null && (
-        <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ml-2 ${scoreColor(score)}`}>{score}/10</span>
-      )}
+      <div className="flex items-center gap-2 shrink-0 ml-2">
+        {score != null && (
+          <span className={`text-xs font-medium px-2 py-1 rounded-full ${scoreColor(score)}`}>{score}/10</span>
+        )}
+        {stageId && <ChevronRight size={15} className="text-gray-mid" />}
+      </div>
+    </>
+  )
+
+  if (stageId) {
+    return (
+      <Link
+        href={`/interview/${stageId}/transcript`}
+        className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-lavender/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+      >
+        {inner}
+      </Link>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-lavender/30 transition-colors">
+      {inner}
     </div>
   )
 }

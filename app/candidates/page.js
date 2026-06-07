@@ -1,8 +1,8 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ScanFace,
@@ -15,8 +15,8 @@ import {
   Menu,
   X,
   Calendar,
-  ExternalLink,
-  Sparkles,
+  Clock,
+  ChevronRight,
 } from 'lucide-react'
 
 function scoreColor(score) {
@@ -34,20 +34,28 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function CandidatesInner() {
+const VALID_TABS = ['completed', 'ongoing', 'invited']
+
+export default function CandidatesPage() {
   const supabase = createClient()
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const initialFilter = searchParams.get('filter') === 'completed' ? 'completed' : 'invited'
 
-  const [tab, setTab] = useState(initialFilter)
+  const [tab, setTab] = useState('completed')
   const [selectedRole, setSelectedRole] = useState('All')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [invited, setInvited] = useState([])
+  const [ongoing, setOngoing] = useState([])
   const [completed, setCompleted] = useState([])
   const [scoreMap, setScoreMap] = useState({})
   const [roleList, setRoleList] = useState([])
+
+  // Read ?filter= from the URL the safe way (no useSearchParams, so no Suspense crash)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const f = params.get('filter')
+    if (VALID_TABS.includes(f)) setTab(f)
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -73,27 +81,32 @@ function CandidatesInner() {
         stageInfo[s.id] = { name: s.name || 'Untitled stage', roleTitle: role?.title || 'Unknown role' }
       })
 
-      // Invited
+      // --- Invited: one row per invited email + stage ---
       const inviteMap = new Map()
-      interviews.filter((r) => r.speaker === 'invite' && r.candidate_email).forEach((r) => {
-        const key = `${r.candidate_email.toLowerCase()}|${r.stage_id}`
-        const existing = inviteMap.get(key)
-        if (!existing || new Date(r.invited_at || 0) > new Date(existing.invited_at || 0)) {
-          inviteMap.set(key, {
-            email: r.candidate_email,
-            stage_id: r.stage_id,
-            stageName: stageInfo[r.stage_id]?.name || 'Unknown stage',
-            roleTitle: stageInfo[r.stage_id]?.roleTitle || 'Unknown role',
-            invited_at: r.invited_at,
-          })
-        }
-      })
-      const invitedList = Array.from(inviteMap.values()).sort((a, b) => new Date(b.invited_at || 0) - new Date(a.invited_at || 0))
-      setInvited(invitedList)
+      interviews
+        .filter((r) => r.speaker === 'invite' && r.candidate_email)
+        .forEach((r) => {
+          const key = `${r.candidate_email.toLowerCase()}|${r.stage_id}`
+          const existing = inviteMap.get(key)
+          if (!existing || new Date(r.invited_at || 0) > new Date(existing.invited_at || 0)) {
+            inviteMap.set(key, {
+              email: r.candidate_email,
+              stage_id: r.stage_id,
+              stageName: stageInfo[r.stage_id]?.name || 'Unknown stage',
+              roleTitle: stageInfo[r.stage_id]?.roleTitle || 'Unknown role',
+              invited_at: r.invited_at,
+            })
+          }
+        })
+      const invitedList = Array.from(inviteMap.values())
+        .sort((a, b) => new Date(b.invited_at || 0) - new Date(a.invited_at || 0))
 
-      // Completed
+      // --- Completed: one row per candidate_name + stage who actually answered ---
+      const answerRows = interviews.filter(
+        (r) => r.speaker !== 'invite' && r.speaker !== 'audio' && r.candidate_name
+      )
       const compMap = new Map()
-      interviews.filter((r) => r.speaker !== 'invite' && r.candidate_name).forEach((r) => {
+      answerRows.forEach((r) => {
         const key = `${r.stage_id}|${r.candidate_name}`
         const existing = compMap.get(key)
         if (!existing) {
@@ -108,10 +121,20 @@ function CandidatesInner() {
           existing.latest = r.created_at
         }
       })
-      const completedList = Array.from(compMap.values()).sort((a, b) => new Date(b.latest || 0) - new Date(a.latest || 0))
-      setCompleted(completedList)
+      const completedList = Array.from(compMap.values())
+        .sort((a, b) => new Date(b.latest || 0) - new Date(a.latest || 0))
 
-      // Unique role titles across all candidates
+      // --- Ongoing: invited people who haven't finished yet ---
+      // Someone counts as finished if their email shows up on an answer row.
+      const finishedEmails = new Set(
+        answerRows.filter((r) => r.candidate_email).map((r) => r.candidate_email.toLowerCase())
+      )
+      const ongoingList = invitedList.filter((c) => !finishedEmails.has(c.email.toLowerCase()))
+
+      setInvited(invitedList)
+      setCompleted(completedList)
+      setOngoing(ongoingList)
+
       const allRoles = [...new Set([...invitedList, ...completedList].map((c) => c.roleTitle))].sort()
       setRoleList(allRoles)
 
@@ -128,11 +151,13 @@ function CandidatesInner() {
   function setFilter(next) {
     setTab(next)
     setSelectedRole('All')
-    router.replace(`/candidates?filter=${next}`)
+    window.history.replaceState(null, '', `/candidates?filter=${next}`)
   }
 
-  const baseList = tab === 'invited' ? invited : completed
+  const baseList = tab === 'completed' ? completed : tab === 'ongoing' ? ongoing : invited
   const filteredList = selectedRole === 'All' ? baseList : baseList.filter((c) => c.roleTitle === selectedRole)
+
+  const tabLabel = tab === 'completed' ? 'completed' : tab === 'ongoing' ? 'in-progress' : 'invited'
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -227,18 +252,22 @@ function CandidatesInner() {
           {/* Header */}
           <div className="mb-6">
             <h1 className="font-heading font-bold text-2xl md:text-3xl text-ink">Candidates</h1>
-            <p className="text-sm text-gray-mid mt-1">Everyone you&apos;ve invited and everyone who&apos;s finished.</p>
+            <p className="text-sm text-gray-mid mt-1">Everyone you&apos;ve invited, who&apos;s still going, and who&apos;s finished.</p>
           </div>
 
-          {/* Invited / Completed tabs */}
+          {/* Tabs */}
           <div className="inline-flex bg-white border border-gray-soft rounded-xl p-1 mb-5" role="tablist" aria-label="Candidate filter">
-            <button role="tab" aria-selected={tab === 'invited'} onClick={() => setFilter('invited')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet ${tab === 'invited' ? 'bg-violet text-white' : 'text-gray-mid hover:text-ink'}`}>
-              Invited ({invited.length})
-            </button>
             <button role="tab" aria-selected={tab === 'completed'} onClick={() => setFilter('completed')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet ${tab === 'completed' ? 'bg-violet text-white' : 'text-gray-mid hover:text-ink'}`}>
               Completed ({completed.length})
+            </button>
+            <button role="tab" aria-selected={tab === 'ongoing'} onClick={() => setFilter('ongoing')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet ${tab === 'ongoing' ? 'bg-violet text-white' : 'text-gray-mid hover:text-ink'}`}>
+              Ongoing ({ongoing.length})
+            </button>
+            <button role="tab" aria-selected={tab === 'invited'} onClick={() => setFilter('invited')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet ${tab === 'invited' ? 'bg-violet text-white' : 'text-gray-mid hover:text-ink'}`}>
+              Invited ({invited.length})
             </button>
           </div>
 
@@ -280,10 +309,22 @@ function CandidatesInner() {
           ) : filteredList.length === 0 ? (
             <div className="bg-white rounded-2xl border border-dashed border-gray-soft p-16 text-center">
               <p className="font-medium text-ink">
-                {selectedRole !== 'All' ? `No ${tab} candidates for ${selectedRole}` : tab === 'invited' ? 'No invites sent yet' : 'No completed interviews yet'}
+                {selectedRole !== 'All'
+                  ? `No ${tabLabel} candidates for ${selectedRole}`
+                  : tab === 'completed'
+                  ? 'No completed interviews yet'
+                  : tab === 'ongoing'
+                  ? 'Nobody in progress right now'
+                  : 'No invites sent yet'}
               </p>
               <p className="text-sm text-gray-mid mt-1">
-                {selectedRole !== 'All' ? 'Try selecting a different role or All.' : tab === 'invited' ? 'Invite candidates from a role to see them here.' : 'Completed interviews show up here automatically.'}
+                {selectedRole !== 'All'
+                  ? 'Try a different role or All.'
+                  : tab === 'completed'
+                  ? 'Completed interviews show up here automatically.'
+                  : tab === 'ongoing'
+                  ? 'People you invited who have not finished yet will show here.'
+                  : 'Invite candidates from a role to see them here.'}
               </p>
               {selectedRole === 'All' && (
                 <Link href="/roles" className="mt-4 inline-flex items-center gap-2 bg-violet text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-violet-dark transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
@@ -295,45 +336,59 @@ function CandidatesInner() {
             <div className="bg-white rounded-2xl border border-gray-soft overflow-hidden">
               <ul className="divide-y divide-gray-soft">
                 {filteredList.map((c, idx) => {
-                  const scoreKey = `${c.stage_id}|${c.candidate_name}`
-                  const scored = tab === 'completed' ? scoreMap[scoreKey] : null
-                  const transcriptUrl = `/interview/${c.stage_id}/transcript`
 
+                  // COMPLETED: whole row is a clickable link to the transcript
+                  if (tab === 'completed') {
+                    const scored = scoreMap[`${c.stage_id}|${c.candidate_name}`]
+                    const transcriptUrl = `/interview/${c.stage_id}/transcript`
+                    return (
+                      <li key={idx}>
+                        <Link
+                          href={transcriptUrl}
+                          className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-lavender text-violet font-heading font-semibold text-xs flex items-center justify-center shrink-0">
+                            {initials(c.candidate_name)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-sm text-ink truncate">{c.candidate_name}</div>
+                            <div className="text-xs text-gray-mid truncate">{c.roleTitle} · {c.stageName}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {scored?.score != null ? (
+                              <span className={`text-xs font-medium px-2 py-1 rounded-full ${scoreColor(scored.score)}`}>
+                                {scored.score}/10
+                              </span>
+                            ) : (
+                              <span className="text-xs font-medium text-violet">Score now</span>
+                            )}
+                            <ChevronRight size={16} className="text-gray-mid" aria-hidden="true" />
+                          </div>
+                        </Link>
+                      </li>
+                    )
+                  }
+
+                  // ONGOING + INVITED: show the email
                   return (
                     <li key={idx} className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors">
-                      <div className="w-10 h-10 rounded-full bg-lavender text-violet font-heading font-semibold text-xs flex items-center justify-center shrink-0">
-                        {tab === 'invited' ? <Mail size={16} aria-hidden="true" /> : initials(c.candidate_name)}
+                      <div className="w-10 h-10 rounded-full bg-lavender text-violet flex items-center justify-center shrink-0">
+                        <Mail size={16} aria-hidden="true" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-sm text-ink truncate">
-                          {tab === 'invited' ? c.email : c.candidate_name}
-                        </div>
-                        <div className="text-xs text-gray-mid truncate">
-                          {c.roleTitle} · {c.stageName}
-                        </div>
+                        <div className="font-medium text-sm text-ink truncate">{c.email}</div>
+                        <div className="text-xs text-gray-mid truncate">{c.roleTitle} · {c.stageName}</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {tab === 'invited' ? (
-                          <span className="hidden sm:flex items-center gap-1.5 text-xs text-gray-mid">
-                            <Calendar size={12} aria-hidden="true" />
-                            {formatDate(c.invited_at)}
+                        {tab === 'ongoing' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">
+                            <Clock size={12} aria-hidden="true" /> In progress
                           </span>
-                        ) : scored?.score ? (
-                          <>
-                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${scoreColor(scored.score)}`}>
-                              {scored.score}/10
-                            </span>
-                            <Link href={transcriptUrl}
-                              className="inline-flex items-center gap-1 text-xs font-medium text-violet hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-violet rounded">
-                              View
-                            </Link>
-                          </>
-                        ) : (
-                          <Link href={transcriptUrl}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium bg-violet text-white px-3 py-1.5 rounded-lg hover:bg-violet-dark transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet">
-                            <Sparkles size={12} aria-hidden="true" /> Score Now
-                          </Link>
                         )}
+                        <span className="hidden sm:flex items-center gap-1.5 text-xs text-gray-mid">
+                          <Calendar size={12} aria-hidden="true" />
+                          {formatDate(c.invited_at)}
+                        </span>
                       </div>
                     </li>
                   )
@@ -344,13 +399,5 @@ function CandidatesInner() {
         </div>
       </main>
     </div>
-  )
-}
-
-export default function CandidatesPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
-      <CandidatesInner />
-    </Suspense>
   )
 }
