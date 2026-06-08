@@ -1,8 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 export async function POST(request) {
-  const { transcript, stageName } = await request.json()
+  const { transcript, stageName, stageId, candidateName } = await request.json()
   const formatted = transcript
     .map((line) => line.speaker + ': ' + line.content)
     .join('\n')
@@ -34,6 +40,18 @@ Use these guidelines for status:
   const clean = text.replace(/```json|```/g, '').trim()
   try {
     const parsed = JSON.parse(clean)
+
+    // Save to DB using service role key if stageId and candidateName are provided
+    if (stageId && candidateName) {
+      await supabase.from('scores').upsert({
+        stage_id: stageId,
+        candidate_name: candidateName,
+        score: parsed.score,
+        summary: parsed.summary,
+        status: parsed.status || 'on-hold',
+      }, { onConflict: 'stage_id,candidate_name' })
+    }
+
     return Response.json(parsed)
   } catch {
     return Response.json({ error: 'Could not parse AI response: ' + text }, { status: 500 })

@@ -334,7 +334,7 @@ export default function InterviewPage() {
             const response = await fetch('/api/score-interview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transcript, stageName }),
+                body: JSON.stringify({ transcript, stageName, stageId, candidateName }),
             })
             const result = await response.json()
             if (result.error) return
