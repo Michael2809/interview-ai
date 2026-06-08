@@ -100,7 +100,7 @@ export default function TranscriptPage() {
       l.speaker !== 'video' &&
       l.speaker !== 'invite' &&
       l.speaker !== 'analysis' &&
-      l.speaker !== 'audio'
+      l.speaker !== 'audio' &&
       l.speaker !== 'session_start'
     )
   }
