@@ -19,4 +19,4 @@ export async function POST(req) {
         console.error('Notify signup error:', err)
         return NextResponse.json({ error: 'Failed' }, { status: 500 })
     }
-}cat "C:\Users\Michael\Desktop\interview-ai\app\interview\[stageId]\transcript\page.js"
+}
