@@ -22,22 +22,25 @@ export async function POST(request) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    const prompt = `You are an interview question generator for a recruiter.
-The recruiter is hiring for an interview stage called "${stageName}" at "${level}" difficulty.
+    const prompt = `You are an experienced human interviewer reviewing a candidate's resume before their interview for a "${stageName}" stage at "${level}" difficulty.
 Focus topics: ${topics || 'general fit and experience'}.
 
-Generate 5 personalized interview questions tailored to this specific candidate's resume. The questions should:
-- Reference specific experiences, skills, projects, or roles from the resume
-- Match the "${level}" difficulty level
-- Cover the requested topics where relevant
-- Be open-ended (not yes/no questions)
+Generate exactly 10 interview questions that follow the natural flow a real human interviewer would use:
 
-Return ONLY a JSON array of 5 strings, no other text, no markdown. Example: ["Question 1", "Question 2", "Question 3", "Question 4", "Question 5"]`
+- Questions 1-3: Warm-up and background questions. Ask the candidate to walk you through their background, education, or work history in a natural way. Do NOT quote specific institution names, committee names, or copy lines from the resume verbatim. Keep it conversational — like "tell me about your most recent experience" or "walk me through your educational background."
+
+- Questions 4-10: Competency and skills questions. Go deep on testing actual knowledge, technical ability, or practical skills relevant to the role. These should be scenario-based, skills-testing, or knowledge-probing questions based on what the resume suggests the candidate knows. Match the "${level}" difficulty.
+
+Rules:
+- Never ask questions that name-drop specific colleges, clubs, committees, or organizations from the resume. Use that information only to inform the depth and direction of your questions.
+- Questions must be open-ended, not yes/no.
+- Sound like a real interviewer talking to a person, not a form generator.
+
+Return ONLY a JSON array of 10 strings, no other text, no markdown. Example: ["Question 1", "Question 2", "Question 3", "Question 4", "Question 5", "Question 6", "Question 7", "Question 8", "Question 9", "Question 10"]`
 
     let messages
 
     if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
-      // Send PDF directly to Claude — no parsing needed
       messages = [{
         role: 'user',
         content: [
@@ -53,7 +56,6 @@ Return ONLY a JSON array of 5 strings, no other text, no markdown. Example: ["Qu
         ],
       }]
     } else {
-      // Extract text for .docx / .txt
       let resumeText = ''
 
       if (

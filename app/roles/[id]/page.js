@@ -23,7 +23,28 @@ import {
   Upload,
   Loader,
   FileUp,
+  ChevronRight,
 } from 'lucide-react'
+
+function scoreColor(score) {
+  if (score >= 7) return 'bg-green-100 text-green-700'
+  if (score >= 4) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-red-100 text-red-700'
+}
+
+function statusBadge(status) {
+  if (status === 'shortlisted') return 'bg-green-100 text-green-700'
+  if (status === 'on-hold') return 'bg-yellow-100 text-yellow-700'
+  if (status === 'rejected') return 'bg-red-100 text-red-700'
+  return 'bg-gray-100 text-gray-500'
+}
+
+function statusLabel(status) {
+  if (status === 'shortlisted') return 'Shortlisted'
+  if (status === 'on-hold') return 'On Hold'
+  if (status === 'rejected') return 'Rejected'
+  return 'Pending'
+}
 
 export default function RoleDetailPage() {
   const params = useParams()
@@ -34,6 +55,7 @@ export default function RoleDetailPage() {
   const [role, setRole] = useState(null)
   const [stages, setStages] = useState([])
   const [questions, setQuestions] = useState([])
+  const [completedMap, setCompletedMap] = useState({}) // stageId -> [{candidate_name, score, status}]
 
   const [name, setName] = useState('')
   const [level, setLevel] = useState('introductory')
@@ -44,9 +66,8 @@ export default function RoleDetailPage() {
   const [uploadingStageId, setUploadingStageId] = useState(null)
   const [origin, setOrigin] = useState('')
 
-  // invite state per stage
   const [inviteText, setInviteText] = useState({})
-  const [csvEmails, setCsvEmails] = useState({})   // stageId -> string[]
+  const [csvEmails, setCsvEmails] = useState({})
   const [sendingStage, setSendingStage] = useState(null)
   const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0 })
 
@@ -61,17 +82,70 @@ export default function RoleDetailPage() {
     const { data } = await supabase.from('roles').select().eq('id', roleId).single()
     if (data) setRole(data)
   }
+
   async function loadStages() {
     const { data } = await supabase
       .from('stages').select().eq('role_id', roleId).order('position', { ascending: true })
     if (data) setStages(data)
   }
+
   async function loadQuestions() {
     const { data } = await supabase.from('questions').select()
     if (data) setQuestions(data)
   }
 
-  useEffect(() => { loadRole(); loadStages(); loadQuestions() }, [])
+  async function loadCompletedCandidates() {
+    // Get all interviews for stages in this role
+    const stagesRes = await supabase.from('stages').select('id').eq('role_id', roleId)
+    const stageIds = (stagesRes.data || []).map(s => s.id)
+    if (stageIds.length === 0) return
+
+    const [interviewsRes, scoresRes] = await Promise.all([
+      supabase.from('interviews')
+        .select('stage_id, candidate_name')
+        .in('stage_id', stageIds)
+        .neq('speaker', 'invite')
+        .neq('speaker', 'audio')
+        .not('candidate_name', 'is', null),
+      supabase.from('scores')
+        .select('stage_id, candidate_name, score, status')
+        .in('stage_id', stageIds),
+    ])
+
+    const interviews = interviewsRes.data || []
+    const scores = scoresRes.data || []
+
+    // Build score lookup: stageId|candidateName -> {score, status}
+    const scoreLookup = {}
+    scores.forEach(s => {
+      scoreLookup[`${s.stage_id}|${s.candidate_name}`] = { score: s.score, status: s.status }
+    })
+
+    // Deduplicate: one entry per stage+candidate combo
+    const seen = new Set()
+    const grouped = {}
+    interviews.forEach(row => {
+      const key = `${row.stage_id}|${row.candidate_name}`
+      if (seen.has(key)) return
+      seen.add(key)
+      const scoreData = scoreLookup[key] || {}
+      if (!grouped[row.stage_id]) grouped[row.stage_id] = []
+      grouped[row.stage_id].push({
+        candidate_name: row.candidate_name,
+        score: scoreData.score ?? null,
+        status: scoreData.status || 'pending',
+      })
+    })
+
+    setCompletedMap(grouped)
+  }
+
+  useEffect(() => {
+    loadRole()
+    loadStages()
+    loadQuestions()
+    loadCompletedCandidates()
+  }, [])
 
   function flashError(msg) { setMessage(''); setError(msg) }
   function flashMessage(msg) { setError(''); setMessage(msg) }
@@ -86,6 +160,7 @@ export default function RoleDetailPage() {
     flashMessage('Interview stage added.')
     setName(''); setTopics(''); setLevel('introductory')
     loadStages()
+    loadCompletedCandidates()
   }
 
   async function draftQuestions(stage) {
@@ -143,7 +218,6 @@ export default function RoleDetailPage() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const text = e.target.result
-      // Extract all email-like strings from any CSV structure
       const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g
       const found = text.match(emailRegex) || []
       const unique = [...new Set(found.map(e => e.toLowerCase()))]
@@ -173,7 +247,6 @@ export default function RoleDetailPage() {
     loadQuestions()
   }
 
-  // Collect emails from both textarea and CSV list, deduped
   function getEmailsForStage(stageId) {
     const fromText = (inviteText[stageId] || '')
       .split(/[\n,;]+/)
@@ -184,14 +257,12 @@ export default function RoleDetailPage() {
   }
 
   async function sendBulkInvites(stageId) {
-  const emails = getEmailsForStage(stageId)
-  if (emails.length === 0) return flashError('No valid email addresses to send to.')
-
-  // Fetch recruiter settings for email personalisation
-  const { data: settingsData } = await supabase.from('settings').select('full_name, company_name').single()
-  const recruiterName = settingsData?.full_name || ''
-  const companyName = settingsData?.company_name || ''
+    const emails = getEmailsForStage(stageId)
     if (emails.length === 0) return flashError('No valid email addresses to send to.')
+
+    const { data: settingsData } = await supabase.from('settings').select('full_name, company_name').single()
+    const recruiterName = settingsData?.full_name || ''
+    const companyName = settingsData?.company_name || ''
 
     setSendingStage(stageId)
     setSendProgress({ sent: 0, total: emails.length })
@@ -365,6 +436,7 @@ export default function RoleDetailPage() {
                 const stageCsvEmails = csvEmails[stage.id] || []
                 const allEmails = getEmailsForStage(stage.id)
                 const totalCount = allEmails.length
+                const stageCandidates = completedMap[stage.id] || []
 
                 return (
                   <div key={stage.id} className="bg-white rounded-2xl border border-gray-soft p-6">
@@ -430,6 +502,54 @@ export default function RoleDetailPage() {
                         ))}
                       </div>
                     )}
+
+                    {/* ── Completed Candidates ── */}
+                    <div className="mt-5 pt-4 border-t border-gray-soft">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-ink">
+                          Completed Candidates
+                          {stageCandidates.length > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-mid">
+                              {stageCandidates.length} {stageCandidates.length === 1 ? 'response' : 'responses'}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      {stageCandidates.length === 0 ? (
+                        <p className="text-xs text-gray-mid">No candidates have completed this stage yet.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {stageCandidates.map((c) => (
+                            <Link
+                              key={c.candidate_name}
+                              href={`/interview/${stage.id}/transcript?candidate=${encodeURIComponent(c.candidate_name)}`}
+                              className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 group transition-colors"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-7 h-7 rounded-full bg-lavender flex items-center justify-center shrink-0">
+                                  <span className="text-xs font-semibold text-violet">
+                                    {c.candidate_name.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <span className="text-sm text-ink truncate">{c.candidate_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {c.score !== null && (
+                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${scoreColor(c.score)}`}>
+                                    {c.score}/10
+                                  </span>
+                                )}
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${statusBadge(c.status)}`}>
+                                  {statusLabel(c.status)}
+                                </span>
+                                <ChevronRight size={14} className="text-gray-mid group-hover:text-ink transition-colors" />
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {/* ── Invite section ── */}
                     <div className="mt-4 pt-4 border-t border-gray-soft space-y-3">
@@ -540,12 +660,6 @@ export default function RoleDetailPage() {
                       </button>
                     </div>
 
-                    <Link
-                      href={'/interview/' + stage.id + '/transcript'}
-                      className="mt-4 inline-flex items-center gap-1 text-sm text-violet font-medium hover:text-violet-dark"
-                    >
-                      <FileText size={14} /> View Transcript
-                    </Link>
                   </div>
                 )
               })}

@@ -107,13 +107,19 @@ export default function OnboardingPage() {
       }).catch(() => {}) // don't block if email fails
 
       // Mark onboarding complete
-      await supabase
-        .from('settings')
-        .update({ onboarding_completed: true })
-        .eq('user_id', user.id)
+await supabase
+    .from('settings')
+    .update({ onboarding_completed: true })
+    .eq('user_id', user.id)
 
-      router.push('/dashboard?onboarded=true')
+// Notify you
+await fetch('/api/notify-signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: user.email, jobTitle }),
+}).catch(() => {})
 
+router.push('/dashboard?onboarded=true')
     } catch (err) {
       console.error(err)
       setError('Something went wrong. Please try again.')
