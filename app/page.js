@@ -379,7 +379,10 @@ export default function LandingPage() {
       <a className="logo" href="#hero" aria-label="Recrewt AI — back to top">
         <img src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" fetchPriority="high" />
       </a>
-      <p className="hd-line" id="hdLine">Adaptive AI interviews for modern hiring teams.</p>
+      <div className="hd-actions">
+        <p className="hd-line" id="hdLine">Adaptive AI interviews for modern hiring teams.</p>
+        <a className="hd-login" href="/login">Log in</a>
+      </div>
     </header>
 
     {/* hero copy */}
