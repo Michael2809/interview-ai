@@ -1,20 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #111111;
+  --background: #0B0D1A;
+  --foreground: #EEEEF5;
 }
 
 @theme inline {
-  /* Brand */
-  --color-ink: #111111;
-  --color-violet: #6C5CE7;
-  --color-violet-dark: #5546d6;
-  --color-yellow: #FFD43B;
-  --color-green: #22C55E;
-  --color-lavender: #EDEBFF;
-  --color-gray-soft: #E8EBED;
-  --color-gray-mid: #6B7280;
+  /* Brand — Electric Midnight */
+  --color-ink:          #EEEEF5;   /* primary text */
+  --color-dark:         #0B0D1A;   /* page bg / dark text on amber */
+  --color-violet:       #6C5CE7;   /* secondary accent */
+  --color-violet-dark:  #5546d6;
+  --color-yellow:       #F5A520;   /* electric amber — primary accent */
+  --color-amber-dark:   #D4891A;   /* amber hover */
+  --color-green:        #22C55E;
+  --color-lavender:     #141728;   /* dark section band */
+  --color-gray-soft:    #252840;   /* subtle border */
+  --color-gray-mid:     #8B8FA6;   /* muted text */
+  --color-surface:      #131526;   /* card / elevated surface */
+  --color-surface-2:    #1A1D35;   /* deeper surface */
 
   /* System */
   --color-background: var(--background);
@@ -22,15 +26,221 @@
 
   /* Fonts */
   --font-heading: var(--font-jakarta);
-  --font-body: var(--font-inter);
+  --font-body:    var(--font-inter);
 }
+
+/* Hallmark · genre: atmospheric · macrostructure: Feature Stack
+ * theme: custom Electric Midnight · nav: N5 Floating pill · footer: Ft1 Mast-headed
+ * pre-emit: P5 H4 E5 S5 R5 V5 */
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  overflow-x: clip;
+}
+
+/* ── Atmospheric blooms (fixed, no animation per genre spec) ──── */
+.bloom {
+  position: fixed;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(90px);
+}
+.bloom-amber {
+  width: clamp(300px, 50vw, 700px);
+  height: clamp(300px, 50vw, 700px);
+  top: -15vw;
+  left: 20%;
+  background: radial-gradient(circle, rgba(245, 165, 32, 0.11) 0%, transparent 70%);
+}
+.bloom-violet {
+  width: clamp(200px, 35vw, 500px);
+  height: clamp(200px, 35vw, 500px);
+  bottom: 20vh;
+  right: 5vw;
+  background: radial-gradient(circle, rgba(108, 92, 231, 0.07) 0%, transparent 70%);
+}
+
+/* ── Motion tokens ─────────────────────────────────────────────── */
+:root {
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro:   120ms;
+  --dur-short:   220ms;
+  --dur-long:    420ms;
+}
+
+/* ── Scroll reveal ─────────────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-long) var(--ease-out) var(--reveal-delay, 0ms),
+    transform var(--dur-long) var(--ease-out) var(--reveal-delay, 0ms);
+}
+
+/* ── Score bar animate on intersect ───────────────────────────── */
+@keyframes grow-bar {
+  from { width: 0 }
+  to   { width: var(--bar-w, 0%) }
+}
+.score-bar {
+  animation: grow-bar 900ms var(--ease-out) both;
+  animation-play-state: paused;
+}
+.score-bar.animate {
+  animation-play-state: running;
+}
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal.visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .score-bar {
+    animation: none;
+    width: var(--bar-w, 0%) !important;
+  }
+}
+
+/* ── AppShell skeleton shimmer ─────────────────────────────────
+ * Subtle luminance shift on the muted rc-soft surface. Respects
+ * prefers-reduced-motion by pausing the animation.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes rc-skeleton-pulse {
+  0%   { opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+.rc-skeleton {
+  animation: rc-skeleton-pulse 1400ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-skeleton { animation: none; opacity: 0.8; }
+}
+
+/* ── AppShell mobile drawer slide-in ───────────────────────────
+ * Extracted from the six inline <style> blocks that previously
+ * lived in each authed page.  Now defined exactly once.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes app-slide-in {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+.animate-app-slide-in {
+  animation: app-slide-in 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-app-slide-in { animation: none; }
+}
+
+/* ============================================================
+   Recrewt editorial design tokens (landing-page-derived)
+   ------------------------------------------------------------
+   Used by every component under components/ui/.
+   The rc- prefix keeps them separate from the Electric Midnight
+   theme above so the two palettes co-exist during migration.
+   Reference the landing page (app/page.js) as the visual source.
+   ============================================================ */
+@theme inline {
+  --color-rc-ink:    #111111;   /* primary text, ink icons               */
+  --color-rc-white:  #FFFFFF;   /* card surface                          */
+  --color-rc-bg:     #FAFAFA;   /* AppShell canvas — page background     */
+  --color-rc-soft:   #F7F7F4;   /* section band / muted card interior    */
+  --color-rc-muted:  #707070;   /* secondary text                        */
+  --color-rc-line:   #DEDEDA;   /* hairline borders + dividers           */
+  --color-rc-line-hover: #B9B9B4; /* border on hover                     */
+  --color-rc-yellow: #F4C430;   /* warm-yellow accent — used sparingly   */
+  --color-rc-warm:   #B58419;   /* small caps labels, section pills      */
+
+  --color-rc-green:  #2A9D57;   /* success / positive score              */
+  --color-rc-orange: #D08624;   /* warning / neutral status              */
+  --color-rc-red:    #C74B3A;   /* danger / negative status              */
+  --color-rc-blue:   #4763EB;   /* status dot — Interview scheduled      */
+  --color-rc-indigo: #6858E8;   /* status dot — Interview completed      */
+  --color-rc-purple: #7C5CFA;   /* status dot — Shortlisted              */
+
+  --font-editorial: var(--font-archivo);
+
+  /* ── Typography scale ─────────────────────────────────────────
+   * One system for every authed page. Sizes are px, weights are
+   * canonical. Line-heights sit inside the components so metric
+   * fonts can breathe consistently across screens.
+   * ──────────────────────────────────────────────────────────── */
+  --type-display: 32px;   /* dashboard greeting                */
+  --type-h1:      24px;   /* page title                        */
+  --type-h2:      18px;   /* section title                     */
+  --type-h3:      15px;   /* card title / row heading          */
+  --type-body:    14px;   /* body copy                         */
+  --type-caption: 12px;   /* muted meta                        */
+  --type-eyebrow: 11px;   /* small-caps label                  */
+
+  /* ── Motion tokens ────────────────────────────────────────────
+   * Canonical durations. Every interactive surface reads from
+   * these instead of inlining ms values.
+   * ──────────────────────────────────────────────────────────── */
+  --dur-hover:    150ms;
+  --dur-page:     180ms;
+  --dur-sidebar:  250ms;
+  --ease-rc-out:  cubic-bezier(.22,.61,.36,1);
+}
+
+/* ── AppShell page fade — 180ms mount ──────────────────────────
+ * Applied to <main> so every route transition inherits the same
+ * gentle fade-in. Respects prefers-reduced-motion.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes rc-page-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rc-page-fade {
+  animation: rc-page-fade var(--dur-page, 180ms) var(--ease-rc-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-page-fade { animation: none; }
+}
+
+/* ── Bulk action bar entrance ─────────────────────────────────
+ * Fade + slight upward slide, matches the calm motion vocabulary.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes rc-bulk-bar-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.rc-bulk-bar-in {
+  animation: rc-bulk-bar-in 220ms var(--ease-rc-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-bulk-bar-in { animation: none; }
+}
+
+/* ── Overflow menu entrance — fade + scale ───────────────────
+ * 150ms per the spec; origin at top-right so it feels tethered
+ * to the three-dot button.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes rc-menu-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.rc-menu-in {
+  transform-origin: top right;
+  animation: rc-menu-in 150ms var(--ease-rc-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-menu-in { animation: none; }
 }

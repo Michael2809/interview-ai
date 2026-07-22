@@ -1,0 +1,21 @@
+[
+  {
+    "date": "2026-06-16",
+    "macrostructure": "Feature Stack",
+    "theme": "custom Electric Midnight (dark navy #0B0D1A · amber #F5A520 · Plus Jakarta Sans)",
+    "theme_axes": "dark / grotesk-sans / warm-amber",
+    "enrichment": "Tier A — CSS mock UI panels (question gen · video grid · score bars · transcript)",
+    "nav": "N5 Floating pill",
+    "footer": "Ft1 Mast-headed",
+    "brief": "Recrewt AI · B2B recruiter SaaS · atmospheric redesign · Electric Midnight palette"
+  },
+  {
+    "date": "2026-06-16",
+    "macrostructure": "Split Studio",
+    "theme": "modern-minimal (brand violet #6C5CE7 · paper white · ink #111)",
+    "enrichment": "none",
+    "nav": "N10 Scroll-morph",
+    "footer": "Ft5 Statement",
+    "brief": "Recrewt AI · B2B recruiter SaaS landing page redesign"
+  }
+]

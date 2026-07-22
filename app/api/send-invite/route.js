@@ -1,5 +1,11 @@
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
+import {
+  canInviteCandidate,
+  recordCandidateInvite,
+  SUBSCRIPTION_ERROR_CODES,
+} from '@/lib/subscription'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -8,9 +14,9 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
-  const { stageId, candidateEmail, origin, recruiterName, companyName } = await request.json()
+  const { stageId, candidateEmail, origin, recruiterName, companyName, personalMessage } = await request.json()
 
-  // ── Quota check ──────────────────────────────────────────────────────────
+  // ── Quota check (via subscription system — single source of truth) ─────
   const { data: stageCheck } = await supabase
     .from('stages')
     .select('role_id')
@@ -26,49 +32,27 @@ export async function POST(request) {
   const recruiterId = roleCheck?.user_id
 
   if (recruiterId) {
-    const { data: settings } = await supabase
-      .from('settings')
-      .select('plan, trial_interviews_completed, interviews_used_this_cycle, billing_cycle_start')
-      .eq('user_id', recruiterId)
-      .single()
+    const gate = await canInviteCandidate(supabase, recruiterId, 1)
+    if (!gate.allowed) {
+      const msg = gate.reason === 'plan_limit'
+        ? `Interview limit reached. You've used ${gate.current}/${gate.limit} interviews on your current plan. Please upgrade to continue.`
+        : gate.reason === 'trial_expired'
+          ? 'Your subscription is no longer active. Please review your plan to continue.'
+          : 'Candidate invites are not available on your current plan.'
+      return Response.json({ error: msg }, { status: 403 })
+    }
 
-    const plan = settings?.plan || 'trial'
-    const interviewLimits = { trial: 5, starter: 100, growth: 500, enterprise: Infinity }
-    const limit = interviewLimits[plan] ?? 5
-
-    let used = 0
-    if (plan === 'trial') {
-      used = settings?.trial_interviews_completed || 0
-    } else {
-      // Reset counter if billing cycle has passed 30 days
-      const cycleStart = new Date(settings?.billing_cycle_start || Date.now())
-      const daysSinceCycle = (Date.now() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)
-      if (daysSinceCycle >= 30) {
-        await supabase.from('settings').update({
-          interviews_used_this_cycle: 0,
-          billing_cycle_start: new Date().toISOString()
-        }).eq('user_id', recruiterId)
-        used = 0
-      } else {
-        used = settings?.interviews_used_this_cycle || 0
+    // Atomic increment via the record_candidate_invite RPC.
+    try {
+      await recordCandidateInvite(supabase, recruiterId, 1)
+    } catch (err) {
+      if (err?.code === SUBSCRIPTION_ERROR_CODES.CANDIDATE_LIMIT_REACHED) {
+        return Response.json({
+          error: 'Interview limit reached. Please upgrade to continue.'
+        }, { status: 403 })
       }
-    }
-
-    if (limit !== Infinity && used >= limit) {
-      return Response.json({
-        error: `Interview limit reached. You've used ${used}/${limit} interviews on your ${plan} plan. Please upgrade to continue.`
-      }, { status: 403 })
-    }
-
-    // Increment the counter
-    if (plan === 'trial') {
-      await supabase.from('settings')
-        .update({ trial_interviews_completed: used + 1 })
-        .eq('user_id', recruiterId)
-    } else {
-      await supabase.from('settings')
-        .update({ interviews_used_this_cycle: used + 1 })
-        .eq('user_id', recruiterId)
+      console.error('send-invite recordCandidateInvite error:', err)
+      return Response.json({ error: 'Failed to record invite.' }, { status: 500 })
     }
   }
   // ── End quota check ───────────────────────────────────────────────────────
@@ -142,6 +126,13 @@ export async function POST(request) {
           <p style="font-size: 15px; color: #444; line-height: 1.6;">
             This is a <strong>${stageName}</strong> interview powered by <strong>Recrewt AI</strong>. Please review the following guidelines carefully before beginning.
           </p>
+
+          ${personalMessage && personalMessage.trim() ? `
+          <div style="background: #fefaea; border-left: 4px solid #FFD84D; padding: 16px 20px; margin: 24px 0; border-radius: 4px;">
+            <p style="font-weight: 600; font-size: 13px; color: #111; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.08em;">A note from ${recruiterName || 'us'}</p>
+            <p style="font-size: 14.5px; color: #333; line-height: 1.6; margin: 0; white-space: pre-line;">${personalMessage.trim().replace(/[<>]/g, '')}</p>
+          </div>
+          ` : ''}
 
           <div style="background: #f9f9f9; border-left: 4px solid #6C5CE7; padding: 20px 24px; margin: 24px 0; border-radius: 4px;">
             <p style="font-weight: bold; font-size: 14px; color: #111; margin-top: 0;">Interview Guidelines</p>
