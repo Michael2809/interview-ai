@@ -4,56 +4,240 @@ import { createClient } from '@supabase/supabase-js'
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
 )
 
-export async function POST(request) {
-  const { transcript, stageName, stageId, candidateName } = await request.json()
-  const formatted = transcript
-    .map((line) => line.speaker + ': ' + line.content)
-    .join('\n')
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 500,
-    messages: [
-      {
-        role: 'user',
-        content: `You are evaluating a candidate interview for the "${stageName}" stage.
-Here is the transcript:
-${formatted}
-
-Respond with only a raw JSON object, no markdown, no backticks, no explanation:
-{
-  "score": <number from 1 to 10>,
-  "summary": "<2-3 sentence evaluation>",
-  "status": "<shortlisted|on-hold|rejected>"
+// ─── Recommendation bands (score 0-10) ─────────────
+function recommendationFromScore(score) {
+  const s = Number(score)
+  if (!Number.isFinite(s)) return 'hold'
+  if (s >= 8.5) return 'strong-hire'
+  if (s >= 6.5) return 'hire'
+  if (s >= 4.5) return 'hold'
+  return 'reject'
 }
 
-Use these guidelines for status:
-- "shortlisted": strong answers, clear fit, score 7-10
-- "on-hold": decent but uncertain, needs more consideration, score 4-6
-- "rejected": poor performance, weak answers, score 1-3`,
-      },
-    ],
-  })
-  const text = response.content[0].text.trim()
-  const clean = text.replace(/```json|```/g, '').trim()
-  try {
-    const parsed = JSON.parse(clean)
+function statusFromRecommendation(rec) {
+  if (rec === 'strong-hire' || rec === 'hire') return 'shortlisted'
+  if (rec === 'hold') return 'on-hold'
+  return 'rejected'
+}
 
-    // Save to DB using service role key if stageId and candidateName are provided
-    if (stageId && candidateName) {
-      await supabase.from('scores').upsert({
-        stage_id: stageId,
-        candidate_name: candidateName,
-        score: parsed.score,
-        summary: parsed.summary,
-        status: parsed.status || 'on-hold',
-      }, { onConflict: 'stage_id,candidate_name' })
+// ─── Confidence (server-side, deterministic) ────────
+function median(nums) {
+  if (!nums.length) return 0
+  const sorted = [...nums].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function stddev(nums) {
+  if (nums.length < 2) return 0
+  const mean = nums.reduce((s, x) => s + x, 0) / nums.length
+  const variance = nums.reduce((s, x) => s + (x - mean) ** 2, 0) / nums.length
+  return Math.sqrt(variance)
+}
+
+function computeConfidence({ transcript, questionReviews, llmConsistency, llmCoveragePct, speechClarityPct }) {
+  const candidateTurns = (transcript || []).filter(
+    (l) => l.speaker && l.speaker !== 'interviewer' && l.content,
+  )
+  const wordCounts = candidateTurns
+    .map((t) => (t.content || '').trim().split(/\s+/).filter(Boolean).length)
+    .filter((n) => n > 0)
+
+  const volume = Math.round(100 * (1 - Math.exp(-candidateTurns.length / 6)))
+  const medWords = median(wordCounts)
+  const depth = Math.max(0, Math.min(100, Math.round((medWords / 40) * 100)))
+  const consistency = Math.max(0, Math.min(100, Math.round(llmConsistency ?? 75)))
+  const coverage = Math.max(0, Math.min(100, Math.round(llmCoveragePct ?? 80)))
+  const clarity = Math.max(0, Math.min(100, Math.round(speechClarityPct ?? 75)))
+
+  const perQ = (questionReviews || []).map((q) => Number(q.score)).filter((n) => Number.isFinite(n))
+  const sd = stddev(perQ)
+  const varianceScore = Math.max(0, Math.min(100, Math.round(100 - (sd / 3.5) * 100)))
+
+  const overall = Math.round(
+    volume * 0.30 +
+    depth * 0.25 +
+    consistency * 0.15 +
+    coverage * 0.15 +
+    clarity * 0.10 +
+    varianceScore * 0.05,
+  )
+  const clamped = Math.max(0, Math.min(100, overall))
+
+  const factors = [
+    { key: 'volume', val: volume, plus: candidateTurns.length + ' substantive answers',
+      minus: candidateTurns.length < 6 ? candidateTurns.length + ' substantive answers only' : null },
+    { key: 'depth', val: depth, plus: 'Detailed responses (median ' + Math.round(medWords) + ' words)',
+      minus: medWords < 15 ? 'Short answers (median ' + Math.round(medWords) + ' words)' : null },
+    { key: 'consistency', val: consistency, plus: 'Consistent reasoning',
+      minus: consistency < 55 ? 'Some contradictions noted' : null },
+    { key: 'coverage', val: coverage, plus: 'Answered every question',
+      minus: coverage < 70 ? 'Skipped or hedged ' + (100 - coverage) + '% of questions' : null },
+    { key: 'clarity', val: clarity, plus: 'Clear delivery',
+      minus: clarity < 60 ? 'Poor speech clarity' : null },
+    { key: 'variance', val: varianceScore, plus: 'Stable across topics',
+      minus: sd > 2.5 ? 'Uneven answers across questions' : null },
+  ]
+
+  const positives = factors
+    .filter((f) => f.val >= 65)
+    .sort((a, b) => b.val - a.val)
+    .slice(0, 3)
+    .map((f) => ({ polarity: '+', label: f.plus }))
+  const negatives = factors
+    .filter((f) => f.minus)
+    .sort((a, b) => a.val - b.val)
+    .slice(0, 2)
+    .map((f) => ({ polarity: '-', label: f.minus }))
+  const reasons = [...positives, ...negatives].slice(0, 5)
+
+  return { confidence: clamped, reasons }
+}
+
+function confidenceBand(pct) {
+  if (pct >= 85) return { key: 'high', label: 'High',
+    copy: 'Evidence is strong and consistent. Act on the recommendation.' }
+  if (pct >= 65) return { key: 'fair', label: 'Fair',
+    copy: 'A couple of soft signals. Skim the transcript before deciding.' }
+  if (pct >= 45) return { key: 'mixed', label: 'Mixed',
+    copy: 'Evidence is uneven. A second review is worth your time.' }
+  return { key: 'low', label: 'Low',
+    copy: 'The AI is not confident. Watch the interview yourself before deciding.' }
+}
+
+// ─── Prompt builder ──────────────────────────
+function buildPrompt({ formatted, stageName, questions }) {
+  const askedList = (questions || []).map((q, i) => (i + 1) + '. ' + q).join('\n') || '(No question list provided.)'
+  return `You are evaluating a candidate interview for the "${stageName || 'interview'}" stage.
+
+Questions the interviewer was told to ask:
+${askedList}
+
+Transcript:
+${formatted}
+
+Return ONLY a raw JSON object - no markdown, no backticks, no prose outside the JSON.
+
+{
+  "score": <number 0.0 to 10.0, one decimal>,
+  "summary": "<2-3 sentence executive verdict for the recruiter>",
+  "strengths": [
+    { "title": "<3-5 word label>", "evidence": "<one direct or paraphrased line grounded in the transcript>" }
+  ],
+  "concerns": [
+    { "title": "<3-5 word label>", "evidence": "<one line grounded in the transcript>" }
+  ],
+  "question_reviews": [
+    {
+      "question": "<question text or paraphrase>",
+      "score": <number 0.0 to 10.0>,
+      "recommendation": "<Strong|Good|Weak|Poor>",
+      "reasoning": "<one sentence explaining the score>",
+      "evidence_quote": "<the candidate's own words that support the score>"
     }
+  ],
+  "internal_consistency": <0-100 - how internally consistent the candidate's claims were>,
+  "coverage_percent":    <0-100 - how many of the asked questions received a substantive answer>
+}
 
-    return Response.json(parsed)
+Rules:
+- Include 1-5 strengths and 0-3 concerns. Only include concerns if they genuinely apply.
+- Every strength and concern MUST have an evidence sentence rooted in what the candidate said.
+- Include one question_reviews entry per asked question if you can identify their answer, otherwise omit that entry.
+- Use these bands for the top-level score: 8.5+ = Strong Hire, 6.5-8.4 = Hire, 4.5-6.4 = Hold, <4.5 = Reject.`
+}
+
+// ─── POST ──────────────────────────
+export async function POST(request) {
+  const { transcript, stageName, stageId, candidateName, questions, speechClarityPct } = await request.json()
+
+  const formatted = (transcript || [])
+    .map((line) => line.speaker + ': ' + line.content)
+    .join('\n')
+
+  const prompt = buildPrompt({ formatted, stageName, questions })
+
+  const response = await anthropic.messages.create({
+    model: 'claude-opus-4-5',
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  const text = (response.content[0] && response.content[0].text) ? response.content[0].text.trim() : ''
+  const clean = text.replace(/```json|```/g, '').trim()
+
+  let parsed
+  try {
+    parsed = JSON.parse(clean)
   } catch {
     return Response.json({ error: 'Could not parse AI response: ' + text }, { status: 500 })
   }
+
+  const scoreNum = Math.max(0, Math.min(10, Number(parsed.score) || 0))
+
+  const strengths = Array.isArray(parsed.strengths)
+    ? parsed.strengths.filter((s) => s && s.title && s.evidence).slice(0, 5)
+    : []
+  const concerns = Array.isArray(parsed.concerns)
+    ? parsed.concerns.filter((c) => c && c.title && c.evidence).slice(0, 3)
+    : []
+  const questionReviews = Array.isArray(parsed.question_reviews)
+    ? parsed.question_reviews
+        .filter((q) => q && q.question)
+        .map((q) => ({
+          question: String(q.question).slice(0, 400),
+          score: Math.max(0, Math.min(10, Number(q.score) || 0)),
+          recommendation: q.recommendation || null,
+          reasoning: q.reasoning || null,
+          evidence_quote: q.evidence_quote || null,
+        }))
+    : []
+
+  const recommendation = recommendationFromScore(scoreNum)
+  const status = statusFromRecommendation(recommendation)
+
+  const { confidence, reasons } = computeConfidence({
+    transcript,
+    questionReviews,
+    llmConsistency: parsed.internal_consistency,
+    llmCoveragePct: parsed.coverage_percent,
+    speechClarityPct,
+  })
+  const band = confidenceBand(confidence)
+
+  const payload = {
+    score: Number(scoreNum.toFixed(1)),
+    summary: parsed.summary || '',
+    recommendation,
+    status,
+    confidence,
+    confidence_band: band.key,
+    confidence_copy: band.copy,
+    confidence_reasons: reasons,
+    strengths,
+    concerns,
+    question_reviews: questionReviews,
+  }
+
+  if (stageId && candidateName) {
+    await supabase.from('scores').upsert({
+      stage_id: stageId,
+      candidate_name: candidateName,
+      score: payload.score,
+      summary: payload.summary,
+      status: payload.status,
+      recommendation: payload.recommendation,
+      confidence: payload.confidence,
+      confidence_copy: payload.confidence_copy,
+      confidence_reasons: payload.confidence_reasons,
+      strengths: payload.strengths,
+      concerns: payload.concerns,
+      question_reviews: payload.question_reviews,
+    }, { onConflict: 'stage_id,candidate_name' })
+  }
+
+  return Response.json(payload)
 }
