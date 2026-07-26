@@ -14,13 +14,29 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [next, setNext] = useState('/dashboard')
+  const [justPaid, setJustPaid] = useState(false)
   const supabase = createClient()
   const router = useRouter()
 
+  // Dodo Payments redirects here after checkout, appending its own
+  // query params (email, status, payment_id) onto whatever redirect_url
+  // the payment link specified — see the two pricing CTAs in
+  // app/page.js. Prefilling email and defaulting to sign-up mode turns
+  // "I paid, now what?" into a single obvious next step: create your
+  // account with this same email and the plan activates immediately
+  // (matched server-side by email in the Dodo webhook).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const n = params.get('next')
     if (n) setNext(n)
+
+    const paidEmail = params.get('email')
+    const status = params.get('status')
+    if (status === 'succeeded' && paidEmail) {
+      setEmail(paidEmail)
+      setIsSignUp(true)
+      setJustPaid(true)
+    }
   }, [])
 
   async function handleSubmit() {
@@ -81,6 +97,11 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded-[18px] bg-white p-8 border border-[color:var(--color-rc-line)] [box-shadow:0_30px_60px_-30px_rgba(17,17,17,0.15),0_2px_6px_rgba(17,17,17,0.02)]">
+          {justPaid && (
+            <p className="mb-5 text-[13px] leading-relaxed text-[color:var(--color-rc-green)] bg-[rgb(42_157_87_/_0.08)] rounded px-3.5 py-3">
+              Payment confirmed for <strong>{email}</strong>. Create your account with this same email and your plan activates immediately — no waiting on support.
+            </p>
+          )}
           <h2
             className="text-[24px] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--color-rc-ink)]"
             style={{ fontFamily: 'var(--font-editorial), inherit' }}
@@ -88,7 +109,9 @@ export default function LoginPage() {
             {isSignUp ? 'Create your account' : 'Welcome back'}
           </h2>
           <p className="mt-1.5 text-[13.5px] text-[color:var(--color-rc-muted)]">
-            {isSignUp
+            {justPaid
+              ? 'One more step — set a password to finish setting up your workspace.'
+              : isSignUp
               ? 'Start screening candidates in minutes.'
               : 'Sign in to your recruiter dashboard.'}
           </p>
@@ -106,7 +129,12 @@ export default function LoginPage() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="w-full h-11 px-3.5 text-[14.5px] bg-white text-[color:var(--color-rc-ink)] leading-none border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0"
+                readOnly={justPaid}
+                title={justPaid ? 'Locked to the email that just paid — use a different email by starting a new checkout.' : undefined}
+                className={
+                  'w-full h-11 px-3.5 text-[14.5px] bg-white text-[color:var(--color-rc-ink)] leading-none border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0' +
+                  (justPaid ? ' opacity-70 cursor-not-allowed' : '')
+                }
               />
             </div>
 

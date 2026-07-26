@@ -286,7 +286,7 @@ function PlanRow({ plan, isCurrent, disabled, onChoose }) {
           fullWidth
           disabled={isCurrent || disabled}
           onClick={() => onChoose(plan)}
-          title={disabled ? 'Payment integration coming soon' : undefined}
+          title={disabled && !isCurrent ? 'Working on it…' : undefined}
         >
           {isCurrent
             ? 'Current plan'
@@ -338,6 +338,18 @@ export default function SubscriptionPage() {
         setUserId(data.user.id)
         setUserEmail(data.user.email)
 
+        // Claim a Dodo payment that arrived before this account existed
+        // (paid via the public pricing page, then signed up) so it's
+        // reflected below instead of showing Trial until a manual
+        // refresh. Best-effort — a failure here shouldn't block the
+        // rest of the page from loading.
+        try {
+          await fetch('/api/subscription/claim-pending', { method: 'POST' })
+        } catch (e) {
+          console.warn('claim-pending check failed (non-fatal)', e)
+        }
+        if (cancelled) return
+
         const [ent, settingsRes] = await Promise.all([
           getWorkspaceEntitlements(supabase, data.user.id),
           supabase.from('settings').select('company_name,full_name').eq('user_id', data.user.id).maybeSingle(),
@@ -380,12 +392,43 @@ export default function SubscriptionPage() {
     }
   }
 
-  function handleChoosePlan(plan) {
+  const [changingPlan, setChangingPlan] = useState(false)
+
+  async function handleChoosePlan(plan) {
     if (plan.key === PLAN_KEYS.ENTERPRISE) {
       window.location.href = 'mailto:hello@recrewt.ai?subject=Recrewt%20Enterprise%20enquiry'
       return
     }
-    flashMessage('Plan changes will be enabled after Dodo Payments integration.')
+    if (changingPlan) return
+    setChangingPlan(true)
+    try {
+      const res = await fetch('/api/subscription/change-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toPlanKey: plan.key }),
+      })
+      const body = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setToast({ tone: 'error', message: body?.error || 'Could not change plan. Try again shortly.' })
+        return
+      }
+      if (body?.requiresCheckout && body?.checkoutUrl) {
+        window.location.href = body.checkoutUrl
+        return
+      }
+
+      flashMessage(`You're now on ${plan.name}.`)
+      // Refresh entitlements so the Current Plan / Usage sections reflect
+      // the change immediately rather than waiting for a manual reload.
+      const ent = await getWorkspaceEntitlements(supabase, userId)
+      setEntitlements(ent)
+    } catch (e) {
+      console.error('Plan change failed', e)
+      setToast({ tone: 'error', message: 'Network error — try again in a moment.' })
+    } finally {
+      setChangingPlan(false)
+    }
   }
 
   return (
@@ -478,13 +521,13 @@ export default function SubscriptionPage() {
                       key={p.key}
                       plan={p}
                       isCurrent={p.key === currentPlanKey}
-                      disabled={p.key !== PLAN_KEYS.ENTERPRISE}
+                      disabled={changingPlan}
                       onChoose={handleChoosePlan}
                     />
                   ))}
               </div>
               <p className="mt-3 text-[12.5px] text-[color:var(--color-rc-muted)]">
-                Upgrades and downgrades will be enabled after Dodo Payments integration.
+                Plan changes bill immediately with prorated charges or credits. Enterprise moves go through sales.
               </p>
             </Section>
 
@@ -573,12 +616,12 @@ export default function SubscriptionPage() {
             {/* Section 6 — Upgrade */}
             <Section
               title="Upgrade plan"
-              description="Move up or down between tiers once billing is enabled."
+              description="Plan changes happen from the Plans grid above — this section just points you back there."
             >
-              <ComingSoonTile
+              <EmptyRow
                 icon={<Zap size={16} aria-hidden="true" />}
-                title="Upgrade & downgrade"
-                description="Instant plan changes will be available after payment integration. Meanwhile, this page always reflects your current entitlements."
+                title="Use the Plans section above to switch tiers."
+                description="Choosing Growth or Scale there bills immediately (prorated) and updates your entitlements right away. Enterprise moves go through sales."
               />
             </Section>
 

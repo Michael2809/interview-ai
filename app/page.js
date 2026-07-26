@@ -417,7 +417,7 @@ export default function LandingPage() {
         <a className="btn btn-primary" href="#pricing">
           Start Hiring Smarter <span className="arrow" aria-hidden="true">→</span>
         </a>
-        <a className="btn btn-secondary" href="#book">Book a Demo</a>
+        <a className="btn btn-secondary" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a Demo</a>
       </div>
     </div>
 
@@ -926,7 +926,7 @@ export default function LandingPage() {
           'Basic speech analysis',
           'Email support',
         ]}
-        cta={{ label: 'Start with Growth', variant: 'secondary', href: '#book' }}
+        cta={{ label: 'Start with Growth', variant: 'secondary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2h5VbmxX3JNDLIKz1P?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
 
       <PricingCard
@@ -948,7 +948,7 @@ export default function LandingPage() {
           'Interview progress dashboard',
           'Same-day priority support',
         ]}
-        cta={{ label: 'Start with Scale', variant: 'primary', href: '#book' }}
+        cta={{ label: 'Start with Scale', variant: 'primary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2hHWPwycoOZW6NdF3T?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
 
       <PricingCard
@@ -1004,7 +1004,7 @@ export default function LandingPage() {
     </h2>
     <p className="cta-copy reveal">Recrewt works quietly in the background so every interview is consistent, every decision is supported, and you can focus on what really matters—hiring great people.</p>
     <div className="cta-actions reveal">
-      <a className="cta-btn" href="mailto:hello@recrewt.ai?subject=15-minute%20walkthrough">Book a 15-minute walkthrough <span className="arrow" aria-hidden="true">→</span></a>
+      <a className="cta-btn" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a 15-minute walkthrough <span className="arrow" aria-hidden="true">→</span></a>
       <p className="cta-note">No commitment. Just a conversation about your hiring process.</p>
     </div>
   </div>
