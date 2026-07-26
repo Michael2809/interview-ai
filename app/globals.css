@@ -229,6 +229,21 @@ body {
   .rc-bulk-bar-in { animation: none; }
 }
 
+/* ── Toast entrance ────────────────────────────────────────────
+ * Subtle fade + 4px settle used by every recruiter-side <Toast>.
+ * Short enough to feel responsive, long enough to register.
+ * ─────────────────────────────────────────────────────────────── */
+@keyframes rc-toast-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rc-toast-in {
+  animation: rc-toast-in 220ms var(--ease-rc-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-toast-in { animation: none; }
+}
+
 /* ── Overflow menu entrance — fade + scale ───────────────────
  * 150ms per the spec; origin at top-right so it feels tethered
  * to the three-dot button.

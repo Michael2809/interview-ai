@@ -151,8 +151,42 @@ Rules:
 }
 
 // ─── POST ──────────────────────────
+// Idempotency window: if a scored row for this (stage_id, candidate_name)
+// already exists AND was written within the last SCORE_TTL_MS, return the
+// cached row instead of paying for another LLM call. This absorbs the
+// duplicate requests that happen when the interview page's finishInterview
+// and the transcript page's safety-net kick both fire for the same
+// interview. Manual re-score (recruiter clicks Retry) still overrides via
+// the `force: true` flag.
+const SCORE_TTL_MS = 5 * 60 * 1000
+
 export async function POST(request) {
-  const { transcript, stageName, stageId, candidateName, questions, speechClarityPct } = await request.json()
+  const body = await request.json()
+  const { transcript, stageName, stageId, candidateName, questions, speechClarityPct, force } = body
+
+  // ── Short-window idempotency ─────────────────────
+  // Concurrent requests are common: the interview page fires one and
+  // the transcript page may fire another before the first lands.
+  // Serving the existing row here prevents wasted LLM spend and,
+  // more importantly, prevents two upserts racing on the unique key.
+  if (!force && stageId && candidateName) {
+    try {
+      const existing = await supabase
+        .from('scores')
+        .select()
+        .eq('stage_id', stageId)
+        .eq('candidate_name', candidateName)
+        .maybeSingle()
+      if (existing.data && existing.data.score != null) {
+        const ageMs = Date.now() - new Date(existing.data.created_at).getTime()
+        if (Number.isFinite(ageMs) && ageMs < SCORE_TTL_MS) {
+          return Response.json({ ...existing.data, cached: true })
+        }
+      }
+    } catch (err) {
+      console.warn('idempotency check failed, continuing to re-score:', err)
+    }
+  }
 
   const formatted = (transcript || [])
     .map((line) => line.speaker + ': ' + line.content)
@@ -223,7 +257,13 @@ export async function POST(request) {
   }
 
   if (stageId && candidateName) {
-    await supabase.from('scores').upsert({
+    // CRITICAL: check the upsert error. Prior code awaited without
+    // inspecting the result — a schema mismatch, RLS block, or size
+    // constraint would fail silently and the endpoint would return
+    // 200 with a computed payload but no persisted row. That's the
+    // exact failure mode where recruiters saw "Automatic Analysis
+    // Failed" despite the server returning 200.
+    const { error: upsertErr } = await supabase.from('scores').upsert({
       stage_id: stageId,
       candidate_name: candidateName,
       score: payload.score,
@@ -237,6 +277,17 @@ export async function POST(request) {
       concerns: payload.concerns,
       question_reviews: payload.question_reviews,
     }, { onConflict: 'stage_id,candidate_name' })
+    if (upsertErr) {
+      console.error('scores upsert failed:', upsertErr)
+      return Response.json(
+        { error: 'Failed to persist score. ' + upsertErr.message },
+        { status: 500 },
+      )
+    }
+  } else {
+    // Persistence context missing — the caller can still use the
+    // returned payload but the recruiter surface won't pick it up.
+    console.warn('score-interview: missing stageId or candidateName; skipping persist', { stageId, candidateName })
   }
 
   return Response.json(payload)

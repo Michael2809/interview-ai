@@ -11,10 +11,12 @@ import {
   Download, Clock, Users, Mail, Pencil, ArrowUpRight, AlertTriangle,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import { SkeletonLine } from '@/components/AppShell/Skeleton'
 import {
   Button, Drawer, Modal, EmptyState, Spinner, TextField, Select,
-  ScoreBadge, StatusBadge,
+  ScoreBadge, StatusBadge, Toast,
 } from '@/components/ui'
+import { getCandidateDisplayName, getCandidateDisplayEmail, getCandidateInitials } from '@/lib/candidates'
 
 /* ─────────────────────────────────────────────────────────────
  * Constants
@@ -116,11 +118,65 @@ function SectionHeading({ children, className = '' }) {
   )
 }
 
+/**
+ * LoadingBlock — Role Details skeleton. Mirrors the loaded shape:
+ * a header block (title + meta + action row), then a tab strip,
+ * then a content grid. Prevents the giant vertical shift users saw
+ * when the spinner card was replaced by the real header + tabs.
+ */
 function LoadingBlock() {
   return (
-    <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]">
-      <div className="text-[color:var(--color-rc-muted)]">
-        <Spinner size={18} />
+    <div aria-hidden="true" className="rc-skeleton">
+      {/* Header — title, meta line, primary action */}
+      <div className="mb-8">
+        <SkeletonLine className="w-24" height="h-2.5" />
+        <div className="mt-3 flex items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <SkeletonLine className="w-2/3 max-w-[420px]" height="h-8" />
+            <div className="mt-3 flex items-center gap-3">
+              <SkeletonLine className="w-24" height="h-3" />
+              <SkeletonLine className="w-32" height="h-3" />
+              <SkeletonLine className="w-20" height="h-3" />
+            </div>
+          </div>
+          <SkeletonLine className="w-32 shrink-0" height="h-10" />
+        </div>
+      </div>
+
+      {/* Tab strip */}
+      <div className="mb-8 flex items-center gap-6 border-b border-[color:var(--color-rc-line)] pb-3">
+        <SkeletonLine className="w-16" height="h-3" />
+        <SkeletonLine className="w-24" height="h-3" />
+        <SkeletonLine className="w-20" height="h-3" />
+      </div>
+
+      {/* Two-column body: main content + sidebar */}
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-3">
+          <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+            <SkeletonLine className="w-40" height="h-4" />
+            <div className="mt-4 space-y-2">
+              <SkeletonLine className="w-full" height="h-3" />
+              <SkeletonLine className="w-11/12" height="h-3" />
+              <SkeletonLine className="w-3/4" height="h-3" />
+            </div>
+          </div>
+          <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+            <SkeletonLine className="w-32" height="h-4" />
+            <div className="mt-4 space-y-2">
+              <SkeletonLine className="w-full" height="h-3" />
+              <SkeletonLine className="w-5/6" height="h-3" />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+          <SkeletonLine className="w-28" height="h-3" />
+          <div className="mt-4 space-y-3">
+            <SkeletonLine className="w-full" height="h-3" />
+            <SkeletonLine className="w-3/4" height="h-3" />
+            <SkeletonLine className="w-2/3" height="h-3" />
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -656,7 +712,7 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
     >
       <input
         type="checkbox"
-        aria-label={`Select ${cand.name || cand.email}`}
+        aria-label={`Select ${getCandidateDisplayName(cand)}`}
         checked={selected}
         onChange={() => onToggleSelect(cand.email)}
         className={
@@ -670,7 +726,10 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
         style={{ fontFamily: 'var(--font-editorial), inherit' }}
         aria-hidden="true"
       >
-        {initials(cand.name || cand.email)}
+        {/* Presentation helper — never renders internal composite
+            keys like `anon:1|minne`. Underlying cand.name/cand.email
+            are still used verbatim for lookups elsewhere. */}
+        {getCandidateInitials(cand)}
       </div>
 
       <div className="min-w-0">
@@ -680,17 +739,19 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
               href={transcriptHref}
               className="text-[15px] font-medium text-[color:var(--color-rc-ink)] truncate hover:underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded"
             >
-              {cand.name || cand.email}
+              {getCandidateDisplayName(cand)}
             </Link>
           ) : (
             <span className="text-[15px] font-medium text-[color:var(--color-rc-ink)] truncate">
-              {cand.name || cand.email}
+              {getCandidateDisplayName(cand)}
             </span>
           )}
         </div>
-        <div className="mt-0.5 text-[12.5px] text-[color:var(--color-rc-muted)] truncate">
-          {cand.email}
-        </div>
+        {getCandidateDisplayEmail(cand) && (
+          <div className="mt-0.5 text-[12.5px] text-[color:var(--color-rc-muted)] truncate">
+            {getCandidateDisplayEmail(cand)}
+          </div>
+        )}
       </div>
 
       {/* Current stage — most prominent secondary element */}
@@ -725,7 +786,7 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          aria-label={`Actions for ${cand.name || cand.email}`}
+          aria-label={`Actions for ${getCandidateDisplayName(cand)}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           className="h-9 w-9 grid place-items-center rounded text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
@@ -2279,7 +2340,7 @@ export default function RoleDetailPage() {
 
   async function handleSetCandidateStatus(cand, status) {
     await upsertVerdicts([cand], status)
-    flashMessage(`Marked ${cand.name || cand.email} as ${status.replace('-', ' ')}.`)
+    flashMessage(`Marked ${getCandidateDisplayName(cand)} as ${status.replace('-', ' ')}.`)
   }
 
   async function handleBulkShortlist() {
@@ -2302,7 +2363,8 @@ export default function RoleDetailPage() {
     const rows = [
       ['Name', 'Email', 'Current stage', 'Progress', 'Score', 'Status', 'Last activity'],
       ...list.map((c) => [
-        c.name || '', c.email, c.currentStageName,
+        // Never leak internal composite keys into the exported CSV.
+        c.name || '', (getCandidateDisplayEmail(c) || ''), c.currentStageName,
         `${c.completedCount}/${c.stagesTotal}`,
         c.latestScore ?? '',
         c.latestStatus || c.derivedStatus,
@@ -2564,18 +2626,8 @@ export default function RoleDetailPage() {
           <ArrowLeft size={13} /> Back to roles
         </Link>
 
-        {message && (
-          <div className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]" role="status" aria-live="polite">
-            <CheckCircle2 size={16} className="text-[color:var(--color-rc-green)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{message}</span>
-          </div>
-        )}
-        {errorMsg && (
-          <div className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-red)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]" role="alert">
-            <AlertTriangle size={16} className="text-[color:var(--color-rc-red)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{errorMsg}</span>
-          </div>
-        )}
+        <Toast kind="success" message={message} />
+        <Toast kind="error" message={errorMsg} />
 
         <StatusBanner
           status={status}

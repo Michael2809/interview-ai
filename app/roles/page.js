@@ -22,6 +22,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import { SkeletonRow, SkeletonLine } from '@/components/AppShell/Skeleton'
 import { getWorkspaceEntitlements, isUnlimited, PLAN_KEYS } from '@/lib/subscription'
 import {
   Button,
@@ -31,6 +32,7 @@ import {
   Spinner,
   TextField,
   Select,
+  Toast,
 } from '@/components/ui'
 
 /* ─────────────────────────────────────────────────────────────
@@ -125,6 +127,46 @@ function contextualAction(role) {
   return { label: 'View role', variant: 'ghost', href: base, iconRight: true }
 }
 
+/**
+ * Derive a single "health" signal per role — the recruiter reads
+ * one word and knows what to do. Order matters: paused/closed
+ * lifecycle wins, then attention-required, then activity health.
+ *
+ * Returns { key, label, dot } where `dot` is one of the shared
+ * StatusDot palette tokens ('amber' | 'red' | 'green' | 'muted').
+ */
+const STALE_MS = 7 * 24 * 60 * 60 * 1000
+
+function roleHealth(role) {
+  const status = role.status || 'active'
+  if (status === 'paused')   return { key: 'paused',       label: 'Paused',           dot: 'muted' }
+  if (status === 'archived') return { key: 'closed',       label: 'Closed',           dot: 'muted' }
+  if (role.waiting > 0)      return { key: 'needs-review', label: 'Needs Review',     dot: 'amber' }
+  const now = Date.now()
+  const last = role.lastActivityAt ? new Date(role.lastActivityAt).getTime() : null
+  const stale = last && (now - last) > STALE_MS
+  if ((role.invited > 0) && stale) {
+    return { key: 'behind', label: 'Behind Schedule', dot: 'red' }
+  }
+  if (role.invited === 0) {
+    return { key: 'no-invites', label: 'No candidates yet', dot: 'muted' }
+  }
+  return { key: 'healthy', label: 'Healthy', dot: 'green' }
+}
+
+/** Numeric priority for sort — smaller = higher priority. */
+function healthPriority(role) {
+  const key = roleHealth(role).key
+  if (key === 'needs-review') return 0
+  if (key === 'behind')       return 1
+  // Healthy active roles with in-progress work sit above idle ones.
+  if (key === 'healthy' && role.ongoing > 0) return 2
+  if (key === 'healthy')      return 3
+  if (key === 'no-invites')   return 4
+  if (key === 'paused')       return 5
+  return 6
+}
+
 function employmentLabel(v) {
   return { 'full-time': 'Full-time', 'part-time': 'Part-time', 'contract': 'Contract' }[v] || v
 }
@@ -159,12 +201,28 @@ function SectionHeading({ children, className = '' }) {
   )
 }
 
-function LoadingBlock() {
+/**
+ * LoadingBlock — row-shaped skeleton stack that matches the roles
+ * list layout. Prevents the "spinner card → real rows" layout jump
+ * users used to see on this page.
+ */
+function LoadingBlock({ rows = 5 }) {
   return (
-    <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]">
-      <div className="text-[color:var(--color-rc-muted)]">
-        <Spinner size={18} />
-      </div>
+    <div aria-hidden="true" className="grid divide-y divide-[color:var(--color-rc-line)] border-y border-[color:var(--color-rc-line)]">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 py-5 px-3 rc-skeleton">
+          <div className="min-w-0 flex-1">
+            <SkeletonLine className={i % 2 ? 'w-64' : 'w-56'} height="h-4" />
+            <div className="mt-2 flex items-center gap-3">
+              <SkeletonLine className="w-24" height="h-2.5" />
+              <SkeletonLine className="w-32" height="h-2.5" />
+            </div>
+          </div>
+          <SkeletonLine className="w-14 hidden md:block" height="h-3" />
+          <SkeletonLine className="w-20 hidden md:block" height="h-3" />
+          <SkeletonLine className="w-6" height="h-3" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -197,13 +255,15 @@ function SummaryMetric({ label, value, highlight = false }) {
   )
 }
 
-function SummaryStrip({ activeRoles, interviewsRunning, waiting, totalCandidates }) {
+function SummaryStrip({ activeRoles, interviewsRunning, waiting, totalCandidates, needsAttention }) {
   return (
-    <div className="mt-8 pt-6 border-t border-[color:var(--color-rc-line)] grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6">
-      <SummaryMetric label="Active roles" value={activeRoles} />
-      <SummaryMetric label="Interviews running" value={interviewsRunning} />
-      <SummaryMetric label="Waiting for review" value={waiting} highlight />
-      <SummaryMetric label="Total candidates" value={totalCandidates} />
+    <div className="mt-5 pt-5 border-t border-[color:var(--color-rc-line)] grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-5">
+      {/* Attention metric leads — it's the only one that answers
+          "What needs my attention today?" */}
+      <SummaryMetric label="Waiting for review"   value={waiting} highlight />
+      <SummaryMetric label="Roles needing action" value={needsAttention} />
+      <SummaryMetric label="Interviews running"   value={interviewsRunning} />
+      <SummaryMetric label="Active roles"         value={activeRoles} />
     </div>
   )
 }
@@ -219,7 +279,7 @@ function FilterBar({
   sort,   onSort,
 }) {
   return (
-    <div className="mt-10 mb-8 flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4">
+    <div className="mt-6 mb-6 flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4">
       <div className="relative flex-1 min-w-0">
         <Search
           size={15}
@@ -282,35 +342,72 @@ function FilterBar({
 }
 
 /* ─────────────────────────────────────────────────────────────
- * PulseMeta — icon + count for each of "waiting", "in progress",
- * "invited".  Yellow reserved for the waiting attention indicator.
+ * RoleHealthChip — single-word health signal driven by roleHealth().
+ * Same 24px chip shape used across the app; colour maps to the shared
+ * status-dot palette so recruiters read the state the same way here
+ * as on Dashboard, Candidate List, and Candidate Details.
  * ────────────────────────────────────────────────────────── */
 
-function PulseMeta({ waiting, ongoing, invited, lastActivity }) {
+function RoleHealthChip({ health }) {
+  const dotClass =
+    health.dot === 'green'  ? 'bg-[color:var(--color-rc-green)]' :
+    health.dot === 'amber'  ? 'bg-[color:var(--color-rc-yellow)]' :
+    health.dot === 'red'    ? 'bg-[color:var(--color-rc-red)]' :
+    health.dot === 'blue'   ? 'bg-[color:var(--color-rc-blue)]' :
+                              'bg-[color:var(--color-rc-muted)]'
   return (
-    <div className="mt-3 flex items-center flex-wrap gap-x-5 gap-y-2 text-[12.5px] text-[color:var(--color-rc-muted)]">
-      {waiting > 0 && (
-        <span className="inline-flex items-center gap-1.5 text-[color:var(--color-rc-warm)] font-medium">
-          <span
-            aria-hidden="true"
-            className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-yellow)]"
-          />
-          <span className="sr-only">Attention required. </span>
-          {waiting} waiting on you
-        </span>
-      )}
-      <span className="inline-flex items-center gap-1.5">
-        <Clock size={13} strokeWidth={1.75} aria-hidden="true" />
-        {ongoing} in progress
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Users size={13} strokeWidth={1.75} aria-hidden="true" />
-        {invited} invited
-      </span>
+    <span
+      role="status"
+      aria-label={`Role health: ${health.label}`}
+      className="inline-flex items-center gap-1.5 h-5 pl-1.5 pr-2 rounded-full bg-[color:var(--color-rc-soft)] text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)] whitespace-nowrap"
+    >
+      <span aria-hidden="true" className={'h-1.5 w-1.5 rounded-full ' + dotClass} />
+      {health.label}
+    </span>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * PipelineBreakdown — five-column candidate breakdown surfaced on
+ * every role row. Recruiters see Awaiting · In Progress · Shortlisted
+ * · On Hold · Rejected without opening the role. Muted zero states,
+ * ink-black values when there's activity — hierarchy through weight,
+ * not colour.
+ * ────────────────────────────────────────────────────────── */
+
+function PipelineCell({ label, value }) {
+  const isZero = !value || value === 0
+  return (
+    <div className="min-w-0">
+      <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)]">
+        {label}
+      </div>
+      <div
+        className={
+          'mt-1 text-[15px] tabular-nums leading-none ' +
+          (isZero ? 'text-[color:var(--color-rc-muted)]/60 font-normal' : 'text-[color:var(--color-rc-ink)] font-semibold')
+        }
+      >
+        {value ?? 0}
+      </div>
+    </div>
+  )
+}
+
+function PipelineBreakdown({ waiting, ongoing, shortlisted, onHold, rejected, lastActivity }) {
+  return (
+    <div className="mt-4">
+      <div className="grid grid-cols-5 gap-x-4 md:gap-x-6">
+        <PipelineCell label="Awaiting"    value={waiting} />
+        <PipelineCell label="In progress" value={ongoing} />
+        <PipelineCell label="Shortlisted" value={shortlisted} />
+        <PipelineCell label="On hold"     value={onHold} />
+        <PipelineCell label="Rejected"    value={rejected} />
+      </div>
       {lastActivity && (
-        <span className="hidden sm:inline text-[color:var(--color-rc-muted)]">
-          · updated {lastActivity}
-        </span>
+        <div className="mt-2 text-[11.5px] text-[color:var(--color-rc-muted)]">
+          Updated {lastActivity}
+        </div>
       )}
     </div>
   )
@@ -444,17 +541,7 @@ function RoleRow({ role, onDuplicate, onSetStatus, onDelete, hasStatusColumn = t
   const status = role.status || 'active'
   const isMuted = status !== 'active'
   const primaryHref = `/roles/${role.id}`
-
-  const statusPill =
-    status === 'paused' ? (
-      <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-[color:var(--color-rc-soft)] text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
-        <PauseCircle size={10} aria-hidden="true" /> Paused
-      </span>
-    ) : status === 'archived' ? (
-      <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-[color:var(--color-rc-soft)] text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)]">
-        <Archive size={10} aria-hidden="true" /> Archived
-      </span>
-    ) : null
+  const health = roleHealth(role)
 
   return (
     <div
@@ -481,7 +568,10 @@ function RoleRow({ role, onDuplicate, onSetStatus, onDelete, hasStatusColumn = t
                 {role.title}
               </h3>
             </Link>
-            {statusPill}
+            {/* Single health chip subsumes the old status pill — it
+                already covers Paused / Closed and adds Needs Review /
+                Behind Schedule / Healthy on top. No duplicate signal. */}
+            <RoleHealthChip health={health} />
           </div>
           <p className="mt-1.5 text-[13px] text-[color:var(--color-rc-muted)] truncate">
             {[
@@ -490,10 +580,12 @@ function RoleRow({ role, onDuplicate, onSetStatus, onDelete, hasStatusColumn = t
               role.experience_level ? experienceLabel(role.experience_level) : null,
             ].filter(Boolean).join(' · ')}
           </p>
-          <PulseMeta
+          <PipelineBreakdown
             waiting={role.waiting}
             ongoing={role.ongoing}
-            invited={role.invited}
+            shortlisted={role.shortlisted}
+            onHold={role.onHold}
+            rejected={role.rejected}
             lastActivity={role.lastActivityAt ? relativeTime(role.lastActivityAt) : null}
           />
         </div>
@@ -777,6 +869,7 @@ export default function RolesPage() {
     interviewsRunning: 0,
     waiting: 0,
     totalCandidates: 0,
+    needsAttention: 0,
   })
   const [trialData, setTrialData] = useState(null)
 
@@ -908,9 +1001,14 @@ export default function RolesPage() {
     })
 
     const rolesArr = Object.values(roleMap).map((r) => {
-      const invitedCount   = r.invited.size
-      const completedCount = r.completed.size
-      const waitingCount   = r.completedCandidates.filter((c) => !c.status).length
+      const invitedCount     = r.invited.size
+      const completedCount   = r.completed.size
+      const waitingCount     = r.completedCandidates.filter((c) => !c.status).length
+      // Verdict breakdown — surfaced on each row so recruiters see
+      // the full pipeline shape without opening the role.
+      const shortlistedCount = r.completedCandidates.filter((c) => c.status === 'shortlisted').length
+      const onHoldCount      = r.completedCandidates.filter((c) => c.status === 'on-hold').length
+      const rejectedCount    = r.completedCandidates.filter((c) => c.status === 'rejected').length
       return {
         id: r.id,
         title: r.title,
@@ -921,22 +1019,32 @@ export default function RolesPage() {
         status: r.status,
         created_at: r.created_at,
         lastActivityAt: r.lastActivityAt,
-        invited:  invitedCount,
-        completed: completedCount,
-        ongoing:  Math.max(invitedCount - completedCount, 0),
-        waiting:  waitingCount,
+        invited:     invitedCount,
+        completed:   completedCount,
+        ongoing:     Math.max(invitedCount - completedCount, 0),
+        waiting:     waitingCount,
+        shortlisted: shortlistedCount,
+        onHold:      onHoldCount,
+        rejected:    rejectedCount,
       }
     })
 
     setRawRoles(rolesArr)
 
-    // Global summary strip (across all Active roles only — waiting/running
-    // are meaningless once a role is paused/archived)
+    // Global summary strip — active roles only (waiting/running are
+    // meaningless once a role is paused/archived). "Needs attention"
+    // counts roles that a recruiter should look at today — the same
+    // priority buckets the sort surfaces first.
     const activeOnly = rolesArr.filter((r) => (r.status || 'active') === 'active')
+    const needsAttentionCount = activeOnly.filter((r) => {
+      const k = roleHealth(r).key
+      return k === 'needs-review' || k === 'behind'
+    }).length
     setTotals({
       interviewsRunning: activeOnly.reduce((n, r) => n + r.ongoing, 0),
       waiting:           activeOnly.reduce((n, r) => n + r.waiting, 0),
       totalCandidates:   activeOnly.reduce((n, r) => n + r.invited, 0),
+      needsAttention:    needsAttentionCount,
     })
 
     setLoading(false)
@@ -1037,11 +1145,22 @@ export default function RolesPage() {
   function sortRoles(list) {
     const arr = [...list]
     if (sort === 'priority') {
+      // Priority sort — Needs Review first, then Behind Schedule,
+      // then Healthy roles with in-progress work, then everything
+      // else. Break ties inside each bucket on waiting count →
+      // stale-ness → invited count so the noisiest role always
+      // surfaces at the top of its band.
       arr.sort((a, b) => {
-        const pa = a.waiting > 0 ? 0 : a.ongoing > 0 ? 1 : 2
-        const pb = b.waiting > 0 ? 0 : b.ongoing > 0 ? 1 : 2
+        const pa = healthPriority(a)
+        const pb = healthPriority(b)
         if (pa !== pb) return pa - pb
         if (b.waiting !== a.waiting) return b.waiting - a.waiting
+        const la = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0
+        const lb = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0
+        // For Behind Schedule bucket, oldest activity is most urgent.
+        if (healthPriority(a) === 1) return la - lb
+        // Everywhere else, most recent activity comes first.
+        if (la !== lb) return lb - la
         if (b.ongoing !== a.ongoing) return b.ongoing - a.ongoing
         return b.invited - a.invited
       })
@@ -1108,76 +1227,49 @@ export default function RolesPage() {
   return (
     <AppShell>
       <div className="max-w-[1180px] mx-auto">
-        {message && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]"
-          >
-            <CheckCircle2 size={16} className="text-[color:var(--color-rc-green)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{message}</span>
-          </div>
-        )}
-        {errorMsg && (
-          <div
-            role="alert"
-            aria-live="assertive"
-            className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]"
-          >
-            <AlertTriangle size={16} className="text-[color:var(--color-rc-red)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{errorMsg}</span>
-          </div>
-        )}
+        <Toast kind="success" message={message} />
+        <Toast kind="error" message={errorMsg} />
 
-        {/* Header */}
-        <header className="mb-8">
-          <SectionLabel>Roles</SectionLabel>
-          <div className="mt-4 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-            <div className="min-w-0">
-              <h1
-                className="text-[34px] md:text-[46px] leading-[1.02] font-semibold tracking-[-0.038em] text-[color:var(--color-rc-ink)] max-w-[22ch]"
-                style={{ fontFamily: 'var(--font-editorial), inherit' }}
-              >
-                {loading
-                  ? 'Your hiring processes.'
-                  : activeRolesCount === 0
-                    ? 'No hiring processes running.'
-                    : (
-                      <>
-                        You have {activeRolesCount} hiring{' '}
-                        process{activeRolesCount === 1 ? '' : 'es'} currently running.
-                      </>
-                    )}
-              </h1>
-              {!loading && (pausedCount > 0 || archivedCount > 0) && (
-                <p className="mt-3 text-[14px] text-[color:var(--color-rc-muted)]">
-                  {pausedCount > 0 && `${pausedCount} paused`}
-                  {pausedCount > 0 && archivedCount > 0 && ' · '}
-                  {archivedCount > 0 && `${archivedCount} archived`}
-                </p>
-              )}
-              {showTrialHint && (
-                <p className="mt-4 text-[13px] text-[color:var(--color-rc-muted)]">
-                  {slotsLeft} of {limit} role slots remaining.{' '}
-                  <Link href="/upgrade" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 hover:decoration-[3px]">
-                    Upgrade &rarr;
-                  </Link>
-                </p>
-              )}
-            </div>
-            <div className="shrink-0">
-              <Button
-                variant="primary"
-                size="md"
-                iconLeft={<Plus size={16} />}
-                onClick={() => { setDrawerPrefill(null); setDrawerOpen(true) }}
-                disabled={atLimit}
-                aria-label={atLimit ? 'Role limit reached — upgrade to create more' : 'Create role'}
-              >
-                Create role
-              </Button>
-            </div>
+        {/* Header — compact application chrome. Title, description
+            and Create-Role button sit on one baseline so the first
+            role cards appear near the top of the viewport. */}
+        <header className="mb-6">
+          <div className="flex items-baseline justify-between gap-4 flex-wrap">
+            <h1
+              className="text-[26px] md:text-[28px] leading-[1.15] font-semibold tracking-[-0.02em] text-[color:var(--color-rc-ink)]"
+              style={{ fontFamily: 'var(--font-editorial), inherit' }}
+            >
+              Roles
+            </h1>
+            <Button
+              variant="primary"
+              size="md"
+              iconLeft={<Plus size={16} />}
+              onClick={() => { setDrawerPrefill(null); setDrawerOpen(true) }}
+              disabled={atLimit}
+              aria-label={atLimit ? 'Role limit reached — upgrade to create more' : 'Create role'}
+            >
+              Create role
+            </Button>
           </div>
+          <p className="mt-1.5 text-[14px] text-[color:var(--color-rc-muted)]">
+            Manage all hiring roles across your organisation.
+            {!loading && (pausedCount > 0 || archivedCount > 0) && (
+              <span className="ml-2 text-[color:var(--color-rc-muted)]/80">
+                · {pausedCount > 0 && `${pausedCount} paused`}
+                {pausedCount > 0 && archivedCount > 0 && ' · '}
+                {archivedCount > 0 && `${archivedCount} archived`}
+              </span>
+            )}
+          </p>
+          {showTrialHint && (
+            <p className="mt-1.5 text-[13px] text-[color:var(--color-rc-muted)]">
+              {slotsLeft} of {limit} role slots remaining.{' '}
+              <Link href="/upgrade" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 hover:decoration-[3px]">
+                Upgrade &rarr;
+              </Link>
+            </p>
+          )}
 
           {!loading && (
             <SummaryStrip
@@ -1185,6 +1277,7 @@ export default function RolesPage() {
               interviewsRunning={totals.interviewsRunning}
               waiting={totals.waiting}
               totalCandidates={totals.totalCandidates}
+              needsAttention={totals.needsAttention}
             />
           )}
         </header>
@@ -1206,25 +1299,39 @@ export default function RolesPage() {
         ) : totalRolesCount === 0 ? (
           <EmptyState
             icon={<Briefcase size={22} />}
-            title="Every hire starts with a role."
-            description="Describe a position and Recrewt drafts tailored interview questions for it."
+            title="No roles yet"
+            description="Create your first hiring role to begin interviewing candidates. Recrewt drafts tailored questions from the role description."
             action={
               <Button
                 variant="primary"
                 iconLeft={<Plus size={16} />}
                 onClick={() => { setDrawerPrefill(null); setDrawerOpen(true) }}
               >
-                Create your first role
+                Create Role
               </Button>
             }
           />
         ) : shownRoles === 0 ? (
           <EmptyState
             icon={<Search size={22} />}
-            title="No roles match your filters."
-            description={anyFilters
-              ? 'Try adjusting the search or filters to widen your results.'
-              : 'Nothing to show yet.'}
+            title={
+              anyFilters
+                ? 'No roles match these filters.'
+                : status === 'archived'
+                  ? "You haven't archived any roles yet."
+                  : status === 'paused'
+                    ? "You haven't paused any roles."
+                    : 'No roles here yet.'
+            }
+            description={
+              anyFilters
+                ? 'The current search, status, or department filter is hiding every role. Widen the filters to see more.'
+                : status === 'archived'
+                  ? 'Roles archived from the overflow menu land here. Nothing has been archived so far.'
+                  : status === 'paused'
+                    ? 'Paused roles stop accepting new invites but keep every candidate. Pause a role from its overflow menu.'
+                    : "You have roles but the current filter is showing zero. Switch to All to see them."
+            }
             action={anyFilters ? (
               <Button variant="secondary" onClick={clearFilters}>Clear filters</Button>
             ) : undefined}

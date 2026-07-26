@@ -52,23 +52,26 @@ export default function TrialWidget({ onNavigate }) {
   const pct = trial.total > 0 ? Math.min(100, (trial.used / trial.total) * 100) : 0;
 
   return (
-    <div className="mx-4 mb-4 p-3 bg-lavender rounded-xl border border-violet/20">
-      <div className="text-xs font-semibold text-violet mb-1">Free Trial</div>
-      <div className="text-xs text-ink">
+    <div className="mx-3 mb-4 p-3.5 rounded-[12px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)]">
+      <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--color-rc-warm)] mb-1.5">
+        Free Trial
+      </div>
+      <div className="text-[13px] leading-snug text-[color:var(--color-rc-ink)]">
         {trial.expired ? 'Trial expired' : `${left} interview${left === 1 ? '' : 's'} left`}
       </div>
-      <div className="mt-2 h-1.5 w-full bg-white/60 rounded-full overflow-hidden">
+      <div className="mt-2.5 h-1 w-full bg-white rounded-full overflow-hidden border border-[color:var(--color-rc-line)]">
         <div
-          className="h-full bg-violet rounded-full"
+          className="h-full bg-[color:var(--color-rc-ink)] rounded-full transition-[width] duration-[250ms] ease-[cubic-bezier(.22,.61,.36,1)]"
           style={{ width: `${pct}%` }}
         />
       </div>
       <Link
         href="/subscription"
         onClick={onNavigate}
-        className="mt-2 block text-xs font-semibold text-violet hover:underline"
+        className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[color:var(--color-rc-ink)] hover:text-[color:var(--color-rc-warm)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded transition-colors"
       >
-        Upgrade →
+        Upgrade
+        <span aria-hidden="true">→</span>
       </Link>
     </div>
   );

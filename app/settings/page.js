@@ -7,7 +7,8 @@ import {
   Mail, KeyRound, ShieldAlert, ChevronDown, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
-import { Button, Modal, Spinner, TextField } from '@/components/ui'
+import { SkeletonForm } from '@/components/AppShell/Skeleton'
+import { Button, Modal, Spinner, TextField, Toast } from '@/components/ui'
 
 /* ─────────────────────────────────────────────────────────────
  * Shared editorial primitives (unchanged vocabulary; lighter card
@@ -276,31 +277,9 @@ function DangerZone({ userEmail }) {
   )
 }
 
-/* ─────────────────────────────────────────────────────────────
- * Toast — small, bottom-right, auto-dismissing.  Replaces the
- * inline success banner.
- * ────────────────────────────────────────────────────────── */
-
-function Toast({ tone = 'success', message, onDismiss }) {
-  useEffect(() => {
-    if (!message) return
-    const t = setTimeout(() => onDismiss(), 3000)
-    return () => clearTimeout(t)
-  }, [message, onDismiss])
-  if (!message) return null
-  const Icon = tone === 'error' ? AlertTriangle : CheckCircle2
-  const color = tone === 'error' ? 'text-[color:var(--color-rc-red)]' : 'text-[color:var(--color-rc-green)]'
-  return (
-    <div
-      role={tone === 'error' ? 'alert' : 'status'}
-      aria-live={tone === 'error' ? 'assertive' : 'polite'}
-      className="fixed bottom-6 right-6 z-50 max-w-[380px] rounded-[12px] bg-white border border-[color:var(--color-rc-line)] px-4 py-3 flex items-center gap-2.5 [box-shadow:0_20px_40px_-16px_rgba(17,17,17,0.18)]"
-    >
-      <Icon size={15} className={color + ' shrink-0'} aria-hidden="true" />
-      <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{message}</span>
-    </div>
-  )
-}
+// The local Toast component that used to live here has been
+// replaced with the shared <Toast> from @/components/ui so every
+// recruiter surface renders confirmations the same way.
 
 /* ─────────────────────────────────────────────────────────────
  * SettingsPage
@@ -376,9 +355,17 @@ export default function SettingsPage() {
     )
   }, [firstName, fullName, companyName, companyWebsite, notifyOnCompletion])
 
-  const flashMessage = useCallback((message) => setToast({ tone: 'success', message }), [])
-  const flashError   = useCallback((message) => setToast({ tone: 'error',   message }), [])
-  const dismissToast = useCallback(() => setToast((t) => ({ ...t, message: '' })), [])
+  // Shared <Toast> doesn't auto-dismiss (caller owns timing), so
+  // we schedule the fade-out here. 3.2s matches the other recruiter
+  // pages that also use setTimeout dismissal.
+  const flashMessage = useCallback((message) => {
+    setToast({ tone: 'success', message })
+    setTimeout(() => setToast((t) => (t.message === message ? { ...t, message: '' } : t)), 3200)
+  }, [])
+  const flashError = useCallback((message) => {
+    setToast({ tone: 'error', message })
+    setTimeout(() => setToast((t) => (t.message === message ? { ...t, message: '' } : t)), 4200)
+  }, [])
 
   const saveChanges = useCallback(async () => {
     if (!isDirty || saving) return
@@ -460,9 +447,7 @@ export default function SettingsPage() {
         </header>
 
         {loading ? (
-          <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center">
-            <Spinner size={18} />
-          </div>
+          <SkeletonForm fields={5} />
         ) : (
           <>
             <Section
@@ -543,7 +528,10 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <Toast tone={toast.tone} message={toast.message} onDismiss={dismissToast} />
+      {/* Shared toast — rendered ABOVE the form when a message is set.
+          Anchored inline instead of floating so it doesn't overlap the
+          sticky Save button on shorter viewports. */}
+      <Toast kind={toast.tone} message={toast.message} />
     </AppShell>
   )
 }

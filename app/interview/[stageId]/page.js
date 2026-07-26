@@ -4,7 +4,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import Link from 'next/link'
-import { ScanFace, Camera, Mic, Wifi, Globe, CheckCircle2, XCircle, Circle, Sparkles, ArrowLeft, ArrowRight, Type, RefreshCcw, AlertTriangle, Loader } from 'lucide-react'
+import { ScanFace, Camera, Mic, Wifi, Globe, CheckCircle2, XCircle, Circle, Sparkles, ArrowLeft, ArrowRight, Type, RefreshCcw, AlertTriangle } from 'lucide-react'
+import Button from '../../../components/ui/Button'
+import Spinner from '../../../components/ui/Spinner'
 
 /* ─────────────────────────────────────────────────────────────
  * Constants
@@ -74,6 +76,30 @@ function EditorialText({ children, className = '' }) {
   )
 }
 
+/**
+ * Big editorial 3-2-1 countdown between "Ready to Answer" and mic
+ * activation. Uses the display font at hero scale for that
+ * "start-of-a-broadcast" feel, and keeps the semantic label visible
+ * for screen-readers so the countdown isn't purely decorative.
+ */
+function CountdownBadge({ value }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-4" role="status" aria-live="polite">
+      <span className="sr-only">Starting in {value}</span>
+      <span
+        aria-hidden="true"
+        className="text-[64px] md:text-[80px] leading-none font-semibold tracking-[-0.04em] text-[color:var(--color-rc-ink)] motion-safe:animate-pulse tabular-nums"
+        style={{ fontFamily: 'var(--font-editorial), inherit' }}
+      >
+        {value}
+      </span>
+      <span className="mt-3 text-[11.5px] uppercase tracking-[0.18em] font-semibold text-[color:var(--color-rc-muted)]">
+        Get ready…
+      </span>
+    </div>
+  )
+}
+
 function Wordmark() {
   return (
     <div className="inline-flex items-center gap-2.5">
@@ -113,54 +139,64 @@ function ActionRow({ children, className = '' }) {
   )
 }
 
-function PrimaryButton({ children, onClick, disabled, loading, as = 'button', href, iconRight, iconLeft, size = 'md' }) {
-  const heightClass = size === 'lg' ? 'h-12 px-6 text-[15.5px]' : 'h-11 px-5 text-[14.5px]'
-  const Component = as === 'a' ? 'a' : 'button'
-  const isDisabled = disabled || loading
-  const cls =
-    'inline-flex items-center justify-center gap-2 rounded font-medium leading-none ' +
-    'bg-[color:var(--color-rc-ink)] text-white hover:bg-black transition-colors duration-150 ' +
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] focus-visible:ring-offset-2 ' +
-    'disabled:opacity-60 disabled:cursor-not-allowed ' + heightClass
+/**
+ * Thin adapter aliases over the shared <Button> primitive.
+ *
+ * The candidate-facing interview experience used to ship its own
+ * inline PrimaryButton / SecondaryButton / GhostButton triple with
+ * a lucide <Loader> spinner. That gave the candidate flow a subtly
+ * different loading state, focus ring proximity, and disabled tone
+ * than every recruiter surface. We now route everything through the
+ * shared Button (which uses <Spinner>, aria-busy, and the canonical
+ * focus ring) — the aliases stay so call sites don't need to change.
+ */
+function PrimaryButton({ children, onClick, disabled, loading, as = 'button', href, iconRight, iconLeft, size }) {
+  const btnSize = size === 'lg' ? 'lg' : 'md'
   return (
-    <Component
-      className={cls}
-      onClick={as === 'a' ? undefined : onClick}
+    <Button
+      variant="primary"
+      size={btnSize}
+      onClick={onClick}
+      disabled={disabled}
+      loading={loading}
+      iconLeft={iconLeft}
+      iconRight={iconRight}
+      as={as}
       href={href}
-      disabled={as === 'a' ? undefined : isDisabled}
-      aria-disabled={isDisabled || undefined}
     >
-      {loading ? <Loader size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : iconLeft}
       {children}
-      {!loading && iconRight}
-    </Component>
+    </Button>
   )
 }
 
 function SecondaryButton({ children, onClick, disabled, iconLeft, iconRight, as = 'button', href }) {
-  const Component = as === 'a' ? 'a' : 'button'
-  const cls =
-    'inline-flex items-center justify-center gap-2 h-11 px-5 rounded font-medium text-[14.5px] leading-none ' +
-    'bg-white border border-[color:var(--color-rc-ink)] text-[color:var(--color-rc-ink)] ' +
-    'hover:bg-[color:var(--color-rc-ink)] hover:text-white transition-colors duration-150 ' +
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] focus-visible:ring-offset-2 ' +
-    'disabled:opacity-60 disabled:cursor-not-allowed'
   return (
-    <Component className={cls} onClick={as === 'a' ? undefined : onClick} href={href} disabled={as === 'a' ? undefined : disabled}>
-      {iconLeft}{children}{iconRight}
-    </Component>
+    <Button
+      variant="secondary"
+      onClick={onClick}
+      disabled={disabled}
+      iconLeft={iconLeft}
+      iconRight={iconRight}
+      as={as}
+      href={href}
+    >
+      {children}
+    </Button>
   )
 }
 
 function GhostButton({ children, onClick, iconLeft, iconRight, ariaLabel }) {
-  const cls =
-    'inline-flex items-center justify-center gap-2 h-10 px-3 rounded font-medium text-[13.5px] leading-none ' +
-    'text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)] transition-colors duration-150 ' +
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
   return (
-    <button type="button" className={cls} onClick={onClick} aria-label={ariaLabel}>
-      {iconLeft}{children}{iconRight}
-    </button>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onClick}
+      iconLeft={iconLeft}
+      iconRight={iconRight}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </Button>
   )
 }
 
@@ -577,7 +613,43 @@ function HowToScreen({ recruiter, questionCount, onBack, onContinue }) {
 
 const WARMUP_QUESTION = 'In one sentence, tell me your name and what you do for work today.'
 
-function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listening, transcript, onRetry }) {
+/**
+ * Question schema — capability flags, not type strings.
+ *
+ * Every interview question carries:
+ *   • `type`     — descriptive label (intro, ai, followup, practice, …)
+ *   • `adaptive` — should we generate a follow-up / rebuttal after this?
+ *   • `scored`   — should this answer land in the /api/score-interview payload?
+ *   • `recorded` — should we open the mic and persist a transcript row?
+ *
+ * The interview engine checks the flags, never the type string. New
+ * question types (coding, behavioral, culture-fit, multiple-choice…)
+ * can be added by picking the right flag combination — no engine
+ * changes required.
+ */
+function makeIntroQuestion(text) {
+  return { type: 'intro', adaptive: false, scored: true, recorded: true, text }
+}
+function makeFollowupQuestion(text) {
+  return { type: 'followup', adaptive: false, scored: true, recorded: true, text }
+}
+function makePracticeQuestion(text) {
+  // Practice / warm-up: never recorded, never scored, never adaptive.
+  return { type: 'practice', adaptive: false, scored: false, recorded: false, text }
+}
+function toAiQuestion(row) {
+  // Recruiter-approved AI-generated question. Everything on, so it
+  // gets recorded, scored, and may spawn one adaptive follow-up.
+  return { ...row, type: 'ai', adaptive: true, scored: true, recorded: true }
+}
+
+const INTRO_QUESTIONS = [
+  makeIntroQuestion('Tell me a little about yourself.'),
+  makeIntroQuestion('Walk me through your background — what kind of work or experience have you had so far?'),
+  makeIntroQuestion('What made you interested in applying for this kind of role?'),
+]
+
+function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listening, transcript, onRetry, awaitingStart, onStartSpeaking, countdown }) {
   return (
     <PageShell>
       <div className="flex items-center gap-3 mb-3">
@@ -592,24 +664,33 @@ function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listen
       <div className="mt-8 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
         <div className="min-w-0 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6 min-h-[180px]">
           {isSpeaking ? (
-            <p className="text-[13.5px] text-[color:var(--color-rc-warm)]">Interviewer is speaking…</p>
+            <p className="text-[13.5px] text-[color:var(--color-rc-warm)]">
+              <span aria-hidden="true" className="mr-1.5">🔊</span> Speaking…
+            </p>
+          ) : countdown > 0 ? (
+            <CountdownBadge value={countdown} />
           ) : transcript ? (
             <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">{transcript}</p>
-          ) : (
+          ) : awaitingStart ? (
             <div>
               <p className="text-[14.5px] text-[color:var(--color-rc-ink)] leading-relaxed">
-                Take a moment to think.
+                Take a beat. Click when you&rsquo;re ready.
               </p>
-              <p className="mt-1 text-[14.5px] text-[color:var(--color-rc-muted)] leading-relaxed">
-                Start speaking whenever you&rsquo;re ready.
-              </p>
-              {listening && (
-                <p className="mt-4 text-[12px] text-[color:var(--color-rc-muted)]">
-                  <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-ink)] mr-1.5 motion-safe:animate-pulse" />
-                  Listening
-                </p>
-              )}
+              <div className="mt-5">
+                <PrimaryButton onClick={onStartSpeaking} disabled={isSpeaking} iconLeft={<span aria-hidden="true">🎤</span>}>
+                  Ready to Answer
+                </PrimaryButton>
+              </div>
             </div>
+          ) : listening ? (
+            <p className="text-[12px] text-[color:var(--color-rc-muted)]">
+              <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-ink)] mr-1.5 motion-safe:animate-pulse" />
+              Listening
+            </p>
+          ) : (
+            <p className="text-[14.5px] text-[color:var(--color-rc-muted)] leading-relaxed">
+              Take a moment to think.
+            </p>
           )}
         </div>
         <div className="rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden aspect-square">
@@ -636,6 +717,7 @@ function LiveScreen({
   stream, videoRef, currentIndex, totalQuestions, question, isSpeaking, listening,
   transcript, typedAnswer, setTypedAnswer, typingMode, setTypingMode,
   onRepeat, onDone, remainingMinutes, recording, isFollowUp,
+  awaitingStart, onStartSpeaking, countdown,
 }) {
   const progressCount = currentIndex + 1
   const answering = transcript.trim().length > 0 || typedAnswer.trim().length > 0
@@ -662,12 +744,15 @@ function LiveScreen({
 
       <div className="flex-1 max-w-[980px] mx-auto w-full px-6 py-12 md:py-16 grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
         <div className="min-w-0">
-          <SectionLabel>{isSpeaking ? 'Interviewer is speaking' : 'Question'}</SectionLabel>
+          <SectionLabel>{isSpeaking ? '🔊 Interviewer is speaking' : countdown > 0 ? 'Get ready…' : awaitingStart ? 'Your turn' : listening ? '🎤 Listening' : 'Question'}</SectionLabel>
           <Display size="question" className="mt-3 max-w-[28ch]">
             &ldquo;{question}&rdquo;
           </Display>
 
-          {/* Transcript / typing panel */}
+          {/* Transcript / typing panel — Ready-to-Answer gate appears
+              once TTS finishes; the 3-2-1 countdown then delays mic
+              activation so the transcript starts clean instead of
+              catching coughs, throat-clears, or "ums". */}
           <div className="mt-8 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6 min-h-[200px]">
             {typingMode ? (
               <div>
@@ -684,30 +769,43 @@ function LiveScreen({
               </div>
             ) : transcript ? (
               <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">{transcript}</p>
-            ) : (
+            ) : isSpeaking ? (
+              <p className="text-[13.5px] text-[color:var(--color-rc-warm)]">
+                <span aria-hidden="true" className="mr-1.5">🔊</span> Speaking… the microphone is off.
+              </p>
+            ) : countdown > 0 ? (
+              <CountdownBadge value={countdown} />
+            ) : awaitingStart ? (
               <div>
-                <p
-                  className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]"
-                  style={{ fontFamily: 'var(--font-editorial), inherit' }}
-                >
-                  Take a moment to think.
+                <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+                  Take a beat. When you click, we&rsquo;ll count you in from three.
                 </p>
-                <p className="mt-1.5 text-[15.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
-                  Start speaking whenever you&rsquo;re ready.
-                </p>
-                {listening && !isSpeaking && (
-                  <p className="mt-5 text-[12px] text-[color:var(--color-rc-muted)]">
-                    <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-ink)] mr-1.5 motion-safe:animate-pulse" />
-                    Listening
-                  </p>
-                )}
+                <div className="mt-5">
+                  <PrimaryButton
+                    onClick={onStartSpeaking}
+                    disabled={isSpeaking}
+                    iconLeft={<span aria-hidden="true">🎤</span>}
+                  >
+                    Ready to Answer
+                  </PrimaryButton>
+                </div>
               </div>
+            ) : listening ? (
+              <p className="text-[12px] text-[color:var(--color-rc-muted)]">
+                <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-ink)] mr-1.5 motion-safe:animate-pulse" />
+                Listening
+              </p>
+            ) : (
+              <p className="text-[14.5px] text-[color:var(--color-rc-muted)] leading-relaxed">
+                Take a moment to think.
+              </p>
             )}
           </div>
 
-          {/* Controls */}
+          {/* Controls — Done stays disabled until the candidate has
+              actually answered. Repeat is disabled during TTS. */}
           <ActionRow>
-            <PrimaryButton onClick={onDone} disabled={isSpeaking || !answering} iconRight={<ArrowRight size={15} />}>
+            <PrimaryButton onClick={onDone} disabled={isSpeaking || awaitingStart || countdown > 0 || !answering} iconRight={<ArrowRight size={15} />}>
               Done answering
             </PrimaryButton>
             <SecondaryButton onClick={onRepeat} disabled={isSpeaking} iconLeft={<RefreshCcw size={14} />}>
@@ -802,7 +900,7 @@ function TransitionScreen() {
 function SavingScreen({ status }) {
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 text-center" role="status" aria-live="polite">
-      <Loader size={22} className="text-[color:var(--color-rc-ink)] motion-safe:animate-spin" aria-hidden="true" />
+      <Spinner size={22} color="var(--color-rc-ink)" label="Saving your interview" />
       <p
         className="mt-6 text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-[color:var(--color-rc-ink)]"
         style={{ fontFamily: 'var(--font-editorial), inherit' }}
@@ -865,6 +963,15 @@ export default function InterviewPage() {
   const [typedAnswer, setTypedAnswer] = useState('')
   const [isFollowUp, setIsFollowUp] = useState(false)
   const [askedFollowUp, setAskedFollowUp] = useState(false)
+  // Set to true after AI TTS finishes; the mic never opens until the
+  // candidate clicks the visible "Ready to Answer" CTA. This guarantees
+  // the interviewer's own voice is never captured by speech
+  // recognition and never leaks into the answer transcript.
+  const [awaitingStart, setAwaitingStart] = useState(false)
+  // Countdown between "Ready to Answer" click and mic activation.
+  // Values: 3 → 2 → 1 → 0 (mic open). Gives the candidate a beat
+  // to settle so we don't record coughs, chair adjustments, or "ums".
+  const [countdown, setCountdown] = useState(0)
 
   const [uploadStatus, setUploadStatus] = useState('')
   const [videoSaveFailed, setVideoSaveFailed] = useState(false)
@@ -910,7 +1017,14 @@ export default function InterviewPage() {
 
       const { data: qData } = await supabase
         .from('questions').select().eq('stage_id', stageId).eq('approved', true)
-      if (qData) setQuestions(qData)
+      if (qData) {
+        // Prepend the standard introduction questions before the
+        // recruiter's approved AI questions. Each question carries
+        // its own capability flags (adaptive / scored / recorded),
+        // so submitAnswer() gates behaviour on the flags — not on
+        // the type string.
+        setQuestions([...INTRO_QUESTIONS, ...qData.map(toAiQuestion)])
+      }
 
       // Recruiter name (from role.user_id → settings.full_name)
       if (roleRow?.user_id) {
@@ -1132,38 +1246,90 @@ export default function InterviewPage() {
     setTypingMode(false)
     setIsFollowUp(!!followUp)
     setAskedFollowUp(false)
+    setAwaitingStart(false)
+    setCountdown(0)
     addTranscriptRow('interviewer', text)
     speakText(text, () => {
-      // After AI finishes speaking, gently start listening.
-      startListening({ persistLive: true })
+      // Do NOT auto-start listening. Speech recognition and the
+      // browser's microphone stay closed until the candidate
+      // explicitly clicks "Ready to Answer" — otherwise the AI's TTS
+      // gets echoed back into the transcript.
+      setAwaitingStart(true)
     })
   }
 
   function repeatCurrentQuestion() {
     if (!currentQuestion) return
     stopListening()
-    speakText(currentQuestion, () => { startListening({ persistLive: true }) })
+    setAwaitingStart(false)
+    setCountdown(0)
+    speakText(currentQuestion, () => { setAwaitingStart(true) })
   }
+
+  /**
+   * Candidate clicked "Ready to Answer" — we run a 3-2-1 countdown
+   * and only then open the microphone.
+   *
+   * Why the countdown: without it, the transcript often starts with
+   * "cough… um… okay…" as the candidate settles. Three beats keeps
+   * the recording clean and mirrors a real interviewer's pause after
+   * asking a question.
+   */
+  function handleStartSpeaking() {
+    if (isSpeaking) return       // ignore stray clicks while AI is talking
+    if (countdown > 0) return    // countdown already in flight
+    if (listening) return        // mic already open
+    setAwaitingStart(false)
+    setCountdown(3)
+  }
+
+  // Drive the 3 → 2 → 1 → mic-open transition. Runs entirely off
+  // the countdown state so it stays cancellable — anything that
+  // resets countdown to 0 aborts the sequence cleanly.
+  useEffect(() => {
+    if (countdown <= 0) return
+    if (countdown === 1) {
+      const id = setTimeout(() => {
+        setCountdown(0)
+        startListening({ persistLive: true })
+      }, 900)
+      return () => clearTimeout(id)
+    }
+    const id = setTimeout(() => setCountdown((n) => n - 1), 900)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown])
 
   async function submitAnswer() {
     stopListening()
+    setCountdown(0)
+    setAwaitingStart(false)
     const answer = (typingMode ? typedAnswer : transcript).trim()
     if (!answer) return
-    addTranscriptRow('candidate', answer)
 
-    // Simple follow-up: if the answer is very short and we haven't asked one yet,
-    // the AI gently probes.  Otherwise advance.
-    if (!askedFollowUp && answer.split(/\s+/).length < 25 && !isFollowUp) {
+    const currentQ = questions[currentIndex]
+
+    // Persist the answer only for questions that opt into transcript
+    // recording. Practice questions never touch the transcript.
+    if (currentQ?.recorded !== false) {
+      addTranscriptRow('candidate', answer)
+    }
+
+    // Adaptive follow-up: gated on question.adaptive, not on type
+    // equality. New question types automatically inherit correct
+    // behaviour by declaring adaptive:true|false.
+    const canFollowUp = !!currentQ?.adaptive && !askedFollowUp && !isFollowUp
+    if (canFollowUp && answer.split(/\s+/).length < 25) {
       setAskedFollowUp(true)
       setStep('transition')
       setTimeout(() => {
         setStep('live')
-        const followUpText = 'Could you tell me more about that? Feel free to share an example.'
-        setCurrentQuestion(followUpText)
+        const followUp = makeFollowupQuestion('Could you tell me more about that? Feel free to share an example.')
+        setCurrentQuestion(followUp.text)
         setTranscript(''); setTypedAnswer(''); setTypingMode(false)
         setIsFollowUp(true)
-        addTranscriptRow('interviewer', followUpText)
-        speakText(followUpText, () => { startListening({ persistLive: true }) })
+        addTranscriptRow('interviewer', followUp.text)
+        speakText(followUp.text, () => { setAwaitingStart(true) })
       }, 700)
       return
     }
@@ -1285,18 +1451,37 @@ export default function InterviewPage() {
       // double-counted every candidate, so it was removed.
     } catch (err) { console.error('completion housekeeping:', err) }
 
-    // Auto-score
+    // ── Auto-score ──
+    // Single non-blocking fire-and-forget. The server now:
+    //   • checks its upsert error (no more silent 200 with no row)
+    //   • idempotently returns the cached row for concurrent duplicate
+    //     requests (see SCORE_TTL_MS in /api/score-interview)
+    // So retries at this layer just doubled LLM spend and burned time
+    // on the "saving" screen. We fire once with keepalive:true so the
+    // request survives page unload, and let the transcript-page
+    // safety net cover the case where this request never reaches the
+    // server at all (e.g., candidate on flaky Wi-Fi at that moment).
     try {
       const transcriptRows = transcriptRef.current.map((l) => ({ speaker: l.speaker, content: l.content }))
-      fetch('/api/score-interview', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: transcriptRows, stageName: stage?.name || 'Interview',
-          stageId: String(stageId), candidateName,
-          questions: questions.map((q) => q.text),
-        }),
+      const body = JSON.stringify({
+        transcript: transcriptRows,
+        stageName: stage?.name || 'Interview',
+        stageId: String(stageId),
+        candidateName,
+        questions: questions.map((q) => q.text),
       })
-    } catch (err) { console.error('auto-score kickoff failed:', err) }
+      // keepalive:true survives page unload; we do NOT await so the
+      // candidate isn't blocked on the "saving" screen for 30-90s
+      // while Claude Opus reasons through the transcript.
+      fetch('/api/score-interview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch((err) => console.warn('score-interview kick failed:', err))
+    } catch (err) {
+      console.error('Auto-score orchestration failed:', err)
+    }
 
     setStep('done')
     // On completion, clear the resume marker
@@ -1313,19 +1498,25 @@ export default function InterviewPage() {
   function handleContinueFromDevice() { setStep('howto') }
   function handleBackFromHowto() { setStep('device') }
   function handleContinueFromHowto() {
-    // Warm-up: no recording, just SR live transcript.
+    // Warm-up: never recorded or scored (practice question). Mic stays
+    // closed until candidate clicks Ready to Answer, then a 3-2-1
+    // countdown gives them a beat to settle before recording begins.
     setWarmupTranscript('')
+    setAwaitingStart(false)
+    setCountdown(0)
     setStep('warmup')
-    // Speak the practice question, then listen.
     setTimeout(() => {
-      speakText(WARMUP_QUESTION, () => { startListening({ persistLive: false }) })
+      speakText(WARMUP_QUESTION, () => setAwaitingStart(true))
     }, 400)
   }
-  function handleWarmupSkip() { stopListening(); setStep('howto'); setTimeout(() => setStep('live-precursor'), 0); beginLiveInterview() }
-  function handleWarmupContinue() { stopListening(); beginLiveInterview() }
+  function handleWarmupSkip()     { stopListening(); setAwaitingStart(false); setCountdown(0); setStep('howto'); setTimeout(() => setStep('live-precursor'), 0); beginLiveInterview() }
+  function handleWarmupContinue() { stopListening(); setAwaitingStart(false); setCountdown(0); beginLiveInterview() }
   function handleWarmupRetry() {
-    stopListening(); setWarmupTranscript('')
-    setTimeout(() => speakText(WARMUP_QUESTION, () => startListening({ persistLive: false })), 200)
+    stopListening()
+    setAwaitingStart(false)
+    setCountdown(0)
+    setWarmupTranscript('')
+    setTimeout(() => speakText(WARMUP_QUESTION, () => setAwaitingStart(true)), 200)
   }
 
   function handleDoneAnswer() { submitAnswer() }
@@ -1413,6 +1604,9 @@ export default function InterviewPage() {
         isSpeaking={isSpeaking}
         listening={listening}
         transcript={warmupTranscript}
+        awaitingStart={awaitingStart}
+        onStartSpeaking={handleStartSpeaking}
+        countdown={countdown}
       />
     )
   }
@@ -1453,6 +1647,9 @@ export default function InterviewPage() {
         remainingMinutes={remainingMinutes}
         recording={true}
         isFollowUp={isFollowUp}
+        awaitingStart={awaitingStart}
+        onStartSpeaking={handleStartSpeaking}
+        countdown={countdown}
       />
     )
   }

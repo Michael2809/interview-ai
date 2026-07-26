@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 import './landing.css';
+import PricingCard from '../components/PricingCard';
+import '../components/PricingCard.css';
 
 export default function LandingPage() {
   useEffect(() => {
@@ -99,10 +101,24 @@ export default function LandingPage() {
             io.unobserve(en.target);
           });
         }, { threshold: 0.3 });
-        reveals.forEach(function (el) { io.observe(el); });
+        // Defer observe() calls to the next animation frame so the
+        // observer's initial synchronous callback batch — which
+        // adds the `.in` class to elements already in view — cannot
+        // interleave with React 19 concurrent hydration and produce
+        // "server rendered HTML didn't match client" warnings.
+        // useEffect alone runs post-commit, but IntersectionObserver
+        // callbacks are microtasks that can still land inside a
+        // hydration pass on deeply-nested content.
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            reveals.forEach(function (el) { io.observe(el); });
+          });
+        });
       } else {
-        reveals.forEach(function (el) { el.classList.add("in"); });
-        playConnector();
+        requestAnimationFrame(function () {
+          reveals.forEach(function (el) { el.classList.add("in"); });
+          playConnector();
+        });
       }
     
       var howBody = document.getElementById("howBody");
@@ -874,91 +890,105 @@ export default function LandingPage() {
 </section>
 
 {/* ============================================================
-     SECTION — Pricing (three-card editorial comparison)
+     SECTION — Pricing (editorial, premium, three equal cards)
+     Structure mirrors the recruiter Billing surface: plan name +
+     large price + short blurb, hairline divider, WHAT'S INCLUDED
+     eyebrow, three stacked usage rows (icon + big value + label),
+     hairline divider, checkmark features, CTA pinned to the foot.
+     Scale carries a subtle yellow ribbon + small MOST POPULAR pill.
+     No billing toggle, no promo badges — this section presents the
+     plans; subscription flow lives on /subscription.
      ============================================================ */}
 <section className="pricing" id="pricing" aria-labelledby="pricing-heading">
   <div className="container">
     <div className="pr-head reveal">
-      <span className="pr-label">Pricing</span>
-      <h2 id="pricing-heading">Choose the way you hire.</h2>
-      <p>Every plan includes the complete Recrewt interview experience. Choose the one that matches your hiring volume.</p>
+      <span className="pr-label">Plans</span>
+      <h2 id="pricing-heading">Choose the plan that fits your hiring.</h2>
+      <p>Start with the volume that matches how you hire today. Every plan includes the complete Recrewt interview experience.</p>
     </div>
 
     <div className="pr-grid reveal">
+      <PricingCard
+        name="Growth"
+        price="$420"
+        priceSuffix="/ month"
+        blurb="Perfect for teams hiring consistently."
+        limits={[
+          { type: 'candidates', value: '200', label: 'Candidates / month' },
+          { type: 'roles',      value: '10',  label: 'Active hiring roles' },
+          { type: 'seats',      value: '1',   label: 'Recruiter seat' },
+        ]}
+        features={[
+          'Fully automated screening',
+          'AI writes interview questions',
+          'Video interviews on autopilot',
+          'Auto-scoring & transcript',
+          'Basic speech analysis',
+          'Email support',
+        ]}
+        cta={{ label: 'Start with Growth', variant: 'secondary', href: '#book' }}
+      />
 
-      <article className="pr-card">
-        <h3 className="pr-name">Growth</h3>
-        <div className="pr-price">
-          <span className="amt">$420</span>
-          <span className="per">/ month</span>
-        </div>
-        <p className="pr-blurb">Perfect for teams hiring consistently.</p>
-        <ul className="pr-limits">
-          <li><b>200</b> Candidates / Month</li>
-          <li><b>5</b> Active Roles</li>
-        </ul>
-        <ul className="pr-feats">
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Fully automated screening</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>AI writes your questions</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Video interviews on autopilot</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Auto-scoring & full transcript</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Basic speech analysis</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Email support</li>
-        </ul>
-        <a className="pr-cta" href="#book">Start with Growth <span className="arrow" aria-hidden="true">→</span></a>
-      </article>
+      <PricingCard
+        state="featured"
+        name="Scale"
+        price="$620"
+        priceSuffix="/ month"
+        blurb="For growing hiring teams."
+        limits={[
+          { type: 'candidates', value: '500',       label: 'Candidates / month' },
+          { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
+          { type: 'seats',      value: '5',         label: 'Recruiter seats' },
+        ]}
+        featuresHeading="Everything in Growth, plus:"
+        features={[
+          'Full sentiment analysis',
+          'Advanced AI score breakdown',
+          'CSV bulk invites',
+          'Interview progress dashboard',
+          'Same-day priority support',
+        ]}
+        cta={{ label: 'Start with Scale', variant: 'primary', href: '#book' }}
+      />
 
-      <article className="pr-card pr-card-featured">
-        <span className="pr-badge">Most popular</span>
-        <h3 className="pr-name">Scale</h3>
-        <div className="pr-price">
-          <span className="amt">$620</span>
-          <span className="per">/ month</span>
-        </div>
-        <p className="pr-blurb">For growing hiring teams.</p>
-        <ul className="pr-limits">
-          <li><b>Unlimited</b> Candidates</li>
-          <li><b>Unlimited</b> Roles</li>
-        </ul>
-        <ul className="pr-feats">
-          <li className="is-heading"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Everything in Growth</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Screening at scale</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Full sentiment analysis</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Advanced AI score breakdown</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>CSV bulk invites</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Interview progress dashboard</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>3 team logins</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Same-day priority support</li>
-        </ul>
-        <a className="pr-cta" href="#book">Start with Scale <span className="arrow" aria-hidden="true">→</span></a>
-      </article>
-
-      <article className="pr-card">
-        <h3 className="pr-name">Enterprise</h3>
-        <div className="pr-price">
-          <span className="amt">Custom</span>
-        </div>
-        <p className="pr-blurb">Built for organizations that hire at scale.</p>
-        <ul className="pr-limits">
-          <li><b>Unlimited</b> Candidates</li>
-          <li><b>Unlimited</b> Roles</li>
-        </ul>
-        <ul className="pr-feats">
-          <li className="is-heading"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Everything in Scale</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Unlimited team logins</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Custom integrations</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Dedicated account manager</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Single sign-on (SSO)</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Advanced reporting</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Priority feature access</li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 6.5 11.5 13 5"/></svg>Custom onboarding & training</li>
-        </ul>
-        <a className="pr-cta" href="mailto:hello@recrewt.ai?subject=Recrewt%20Enterprise%20enquiry">Talk to Sales <span className="arrow" aria-hidden="true">→</span></a>
-      </article>
-
+      <PricingCard
+        name="Enterprise"
+        price="Custom"
+        priceSuffix="By quotation"
+        blurb="Built for organizations that hire at scale."
+        limits={[
+          { type: 'candidates', value: 'Unlimited', label: 'Candidates / month' },
+          { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
+          { type: 'seats',      value: 'Unlimited', label: 'Recruiter seats' },
+        ]}
+        featuresHeading="Everything in Scale, plus:"
+        features={[
+          'API access',
+          'ATS integrations',
+          'Custom integrations',
+          'Advanced reporting',
+          'Dedicated account manager',
+          'Single sign-on (SSO)',
+          'Custom onboarding & training',
+        ]}
+        cta={{
+          label: 'Talk to Sales',
+          variant: 'secondary',
+          href: 'mailto:hello@recrewt.ai?subject=Recrewt%20Enterprise%20enquiry',
+        }}
+      />
     </div>
 
-    <p className="pr-foot reveal">Cancel anytime. No hidden fees.</p>
+    {/* Trust statement — understated primary line about what every
+        plan shares. Kept truthful: no "credit card required" copy
+        because Recrewt is paid SaaS. */}
+    <p className="pr-trust reveal">
+      All plans include secure cloud hosting, automatic AI improvements, and standard email support.
+    </p>
+    {/* Quieter secondary — flexibility signal. Reduces purchase
+        anxiety and communicates that a plan choice today isn't
+        permanent. */}
+    <p className="pr-foot reveal">Cancel anytime. Upgrade anytime.</p>
   </div>
 </section>
 

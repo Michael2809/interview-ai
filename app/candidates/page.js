@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import { writeReviewQueue, clearReviewQueue } from '@/components/AppShell/ReviewQueue'
+import { SkeletonRow as SharedSkeletonRow } from '@/components/AppShell/Skeleton'
 import {
   Button, Select, Modal, EmptyState, Spinner, StatusDot, resolveStatus,
   Display, H2, Body, Caption, Eyebrow,
@@ -858,42 +859,11 @@ function BulkBtn({ children, onClick, primary, danger }) {
  * Widths vary per row so the skeleton feels like real data, not a
  * uniform bar.
  */
-const SKELETON_WIDTHS = [
-  { name: 'w-40', role: 'w-56', ts: 'w-24' },
-  { name: 'w-32', role: 'w-64', ts: 'w-20' },
-  { name: 'w-48', role: 'w-52', ts: 'w-28' },
-  { name: 'w-36', role: 'w-60', ts: 'w-16' },
-  { name: 'w-44', role: 'w-48', ts: 'w-24' },
-  { name: 'w-40', role: 'w-56', ts: 'w-20' },
-]
-
+// Skeleton row wrapper — thin alias over the shared SkeletonRow so
+// this file continues to reference `SkeletonRow` without changing
+// every call site. The variant matches the candidate list grid.
 function SkeletonRow({ i = 0 }) {
-  const w = SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]
-  return (
-    <li
-      aria-hidden="true"
-      className="grid grid-cols-[28px_10px_minmax(0,1fr)_auto_auto_18px] items-center gap-x-4 md:gap-x-5 py-3 px-3 rc-skeleton"
-    >
-      {/* Avatar-substitute: the checkbox slot */}
-      <span className="h-4 w-4 rounded-[4px] bg-[color:var(--color-rc-soft)] justify-self-center" />
-      {/* Status dot slot */}
-      <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-soft)]" />
-      {/* Name + role · timestamp */}
-      <div className="min-w-0">
-        <div className={`h-3.5 rounded bg-[color:var(--color-rc-soft)] ${w.name}`} />
-        <div className="mt-2 flex items-center gap-2">
-          <div className={`h-2.5 rounded bg-[color:var(--color-rc-soft)] ${w.role}`} />
-          <div className={`h-2.5 rounded bg-[color:var(--color-rc-soft)]/70 ${w.ts} hidden sm:block`} />
-        </div>
-      </div>
-      {/* Score chip */}
-      <div className="h-6 w-28 rounded-full bg-[color:var(--color-rc-soft)] hidden lg:block" />
-      {/* Status chip */}
-      <div className="h-6 w-28 rounded-full bg-[color:var(--color-rc-soft)] hidden md:block" />
-      {/* Chevron slot */}
-      <div className="h-3 w-3 rounded bg-[color:var(--color-rc-soft)]/70" />
-    </li>
-  )
+  return <SharedSkeletonRow variant="candidate" i={i} />
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1561,11 +1531,11 @@ export default function CandidatesPage() {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<Users size={22} />}
-            title="No candidates yet."
-            description="Invite candidates from a role and they&rsquo;ll appear here as they progress."
+            title="No candidates yet"
+            description="Candidates will appear here once you invite them from a role."
             action={
               <Button as="a" href="/roles" variant="primary" iconLeft={<Briefcase size={16} />}>
-                Go to roles
+                Invite Candidate
               </Button>
             }
           />

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx remotion *)",
+      "Bash(npm install *)",
+      "PowerShell(npx remotion still Scene-01-Hook out/scene1-frame70.png --frame=70 --scale=0.25 2>&1)",
+      "PowerShell(npm run dev)",
+      "PowerShell(npx remotion still Scene-02-Dashboard out/scene2-frame120.png --frame=120 --scale=0.5 2>&1)",
+      "Bash(npx --yes sharp-cli resize 700 --input out/scene2-frame120-full.png --output out/scene2-sidebar.png)",
+      "Bash(python3 -c ' *)",
+      "PowerShell(cd C:\\\\Users\\\\Michael\\\\Desktop\\\\interview-ai\\\\launch-video; foreach \\($f in 115,125,325,335,535,545,715,725,895\\) { npx remotion still LaunchVideo \"out/master-frame$f.png\" --frame=$f --scale=0.35 2>&1 | Select-Object -Last 1 })",
+      "PowerShell(cd C:\\\\Users\\\\Michael\\\\Desktop\\\\interview-ai\\\\launch-video; foreach \\($f in 539,540,541,719,720,721\\) { npx remotion still LaunchVideo \"out/check-$f.png\" --frame=$f --scale=0.35 2>&1 | Select-Object -Last 1 })"
+    ]
+  }
+}

@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import QueueNav, { readReviewQueue } from '@/components/AppShell/ReviewQueue'
+import { SkeletonLine } from '@/components/AppShell/Skeleton'
 import {
-  Button, Modal, EmptyState, Spinner, TextField, ScoreBadge, StatusBadge,
+  Button, Modal, EmptyState, Spinner, TextField, ScoreBadge, StatusBadge, Toast,
 } from '@/components/ui'
 
 /* ─────────────────────────────────────────────────────────────
@@ -153,11 +154,66 @@ function SectionHeading({ children, className = '' }) {
   )
 }
 
+/**
+ * LoadingBlock — Transcript page skeleton. Mirrors the loaded shape:
+ * candidate header (name + role + status), an evaluation card,
+ * a two-column body with argument + timeline. Prevents the huge
+ * vertical shift when the real content lands.
+ */
 function LoadingBlock() {
   return (
-    <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]">
-      <div className="text-[color:var(--color-rc-muted)]">
-        <Spinner size={18} />
+    <div aria-hidden="true" className="rc-skeleton">
+      {/* Verdict header */}
+      <div className="mb-8">
+        <SkeletonLine className="w-36" height="h-2.5" />
+        <div className="mt-3">
+          <SkeletonLine className="w-2/3 max-w-[420px]" height="h-8" />
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <SkeletonLine className="w-24" height="h-3" />
+          <SkeletonLine className="w-32" height="h-3" />
+        </div>
+      </div>
+
+      {/* AI Evaluation card */}
+      <div className="mt-10 rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] p-5 md:p-6">
+        <SkeletonLine className="w-32" height="h-2.5" />
+        <div className="mt-3">
+          <SkeletonLine className="w-1/2 max-w-[280px]" height="h-4" />
+        </div>
+        <div className="mt-4 space-y-2">
+          <SkeletonLine className="w-full" height="h-3" />
+          <SkeletonLine className="w-5/6" height="h-3" />
+        </div>
+      </div>
+
+      {/* Two-column body */}
+      <div className="mt-8 grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="space-y-3">
+          <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+            <SkeletonLine className="w-40" height="h-4" />
+            <div className="mt-4 space-y-2">
+              <SkeletonLine className="w-full" height="h-3" />
+              <SkeletonLine className="w-11/12" height="h-3" />
+              <SkeletonLine className="w-4/6" height="h-3" />
+            </div>
+          </div>
+          <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+            <SkeletonLine className="w-32" height="h-4" />
+            <div className="mt-4 space-y-2">
+              <SkeletonLine className="w-full" height="h-3" />
+              <SkeletonLine className="w-4/5" height="h-3" />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] p-5">
+          <SkeletonLine className="w-24" height="h-3" />
+          <div className="mt-4 space-y-3">
+            <SkeletonLine className="w-full" height="h-3" />
+            <SkeletonLine className="w-3/4" height="h-3" />
+            <SkeletonLine className="w-2/3" height="h-3" />
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -768,42 +824,150 @@ function VerdictHeader({
  * decorative gradient, no oversized number, no charts. Structure does
  * the work.
  */
+// Multi-stage progress copy for the auto-score pipeline. Ordered
+// to match `autoScoreStage` values from the transcript-page effect.
+const ANALYSIS_STAGES = [
+  'Building transcript',
+  'Reviewing responses',
+  'Evaluating competencies',
+  'Calculating recommendation',
+  'Updating hiring pipeline',
+]
+
+function AnalysisProgressList({ stage }) {
+  // stage 0..4 marks the currently-active step; anything before it
+  // is complete, anything after it is pending. When stage >= 5,
+  // all steps read as complete.
+  return (
+    <ul className="mt-4 space-y-2.5">
+      {ANALYSIS_STAGES.map((label, i) => {
+        const complete = stage > i
+        const active = stage === i
+        return (
+          <li key={label} className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className={
+                'inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none font-semibold ' +
+                (complete
+                  ? 'bg-[color:var(--color-rc-green)]/15 text-[color:var(--color-rc-green)]'
+                  : active
+                  ? 'bg-[color:var(--color-rc-blue)]/15 text-[color:var(--color-rc-blue)] motion-safe:animate-pulse'
+                  : 'bg-[color:var(--color-rc-line)] text-[color:var(--color-rc-muted)]')
+              }
+            >
+              {complete ? '✓' : active ? '·' : '○'}
+            </span>
+            <span
+              className={
+                'text-[13px] ' +
+                (complete
+                  ? 'text-[color:var(--color-rc-ink)]'
+                  : active
+                  ? 'text-[color:var(--color-rc-ink)] font-medium'
+                  : 'text-[color:var(--color-rc-muted)]')
+              }
+            >
+              {label}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function AIEvaluationCard({
   score, recommendation, confidence, strengths, concerns, analyzedAt,
-  rescoring, canScore, onRun,
+  rescoring, canScore, onRun, autoAnalyzing, analysisStage, analysisFailed,
 }) {
   const scoreText = scoreDisplay(score)
   const rec = recommendation || recommendationFromScore(score)
   const analyzed = scoreText != null
 
   if (!analyzed) {
+    // Three sub-states, in priority order:
+    //   • analyzing        → multi-stage live progress, no button
+    //   • analysisFailed   → recovery path with a Retry Analysis button
+    //   • idle             → first-visit state with Run AI Analysis
+    const analyzing = !!autoAnalyzing || !!rescoring
+    const failed = !!analysisFailed && !analyzing
+    const stage = Math.max(0, Math.min(analysisStage ?? 0, ANALYSIS_STAGES.length))
     return (
       <section id="section-ai-evaluation" className="mt-10 scroll-mt-24">
         <div className="rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] p-5 md:p-6">
           <SectionLabel>AI Evaluation</SectionLabel>
           <div className="mt-3 flex items-center gap-2">
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[color:var(--color-rc-muted)]/60" />
+            <span
+              aria-hidden="true"
+              className={
+                'h-2 w-2 rounded-full ' +
+                (analyzing
+                  ? 'bg-[color:var(--color-rc-blue)] motion-safe:animate-pulse'
+                  : failed
+                  ? 'bg-[color:var(--color-rc-red)]'
+                  : 'bg-[color:var(--color-rc-muted)]/60')
+              }
+            />
             <span className="text-[11.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-muted)]">
-              Not Yet Analyzed
+              {analyzing
+                ? 'AI Interview Analysis in progress'
+                : failed
+                ? 'Automatic Analysis Failed'
+                : 'Not Yet Analyzed'}
             </span>
           </div>
-          <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[52ch]">
-            Run AI to generate a score, recommendation, confidence, top strengths,
-            top concerns, and per-question review.
-          </p>
-          <div className="mt-5">
-            <Button
-              variant="primary"
-              size="md"
-              iconLeft={<Sparkles size={14} />}
-              onClick={onRun}
-              loading={rescoring}
-              disabled={!canScore}
-              aria-label="Run AI Analysis"
-            >
-              Run AI Analysis
-            </Button>
-          </div>
+
+          {analyzing ? (
+            <>
+              <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[52ch]">
+                Claude is reviewing the interview end-to-end. The recruiter
+                report will appear here automatically — no refresh needed.
+              </p>
+              <AnalysisProgressList stage={stage} />
+            </>
+          ) : failed ? (
+            <>
+              <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[52ch]">
+                We couldn&rsquo;t complete the automatic analysis. The interview
+                and transcript are safely saved — try running the analysis
+                again below.
+              </p>
+              <div className="mt-5">
+                <Button
+                  variant="primary"
+                  size="md"
+                  iconLeft={<Sparkles size={14} />}
+                  onClick={onRun}
+                  loading={rescoring}
+                  disabled={!canScore}
+                  aria-label="Retry Analysis"
+                >
+                  Retry Analysis
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[52ch]">
+                Run AI to generate a score, recommendation, confidence, top
+                strengths, top concerns, and per-question review.
+              </p>
+              <div className="mt-5">
+                <Button
+                  variant="primary"
+                  size="md"
+                  iconLeft={<Sparkles size={14} />}
+                  onClick={onRun}
+                  loading={rescoring}
+                  disabled={!canScore}
+                  aria-label="Run AI Analysis"
+                >
+                  Run AI Analysis
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </section>
     )
@@ -1479,6 +1643,21 @@ export default function TranscriptPage() {
 
   const [loading, setLoading] = useState(true)
   const [rescoring, setRescoring] = useState(false)
+  // True while the transcript-page auto-score safety net is
+  // actively polling for a score row. Drives the multi-stage
+  // "Analyzing interview…" state in <AIEvaluationCard>.
+  const [autoScoring, setAutoScoring] = useState(false)
+  // Multi-stage progress driver:
+  //   0 → Building transcript
+  //   1 → Reviewing responses
+  //   2 → Evaluating competencies
+  //   3 → Calculating recommendation
+  //   4 → Updating hiring pipeline
+  //   5 → complete
+  const [autoScoreStage, setAutoScoreStage] = useState(0)
+  // Set to true when auto-scoring has exhausted retries + timeout
+  // and the recruiter should see the Retry Analysis recovery path.
+  const [autoScoreFailed, setAutoScoreFailed] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [message, setMessage] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -1652,6 +1831,174 @@ export default function TranscriptPage() {
 
   const rec = currentScoreRow?.recommendation || recommendationFromScore(currentScoreRow?.score)
   const currentStatus = currentScoreRow?.status || null
+
+  /* ── Auto-score safety net ────────────────
+   * If the candidate has a transcript but no score row, the client-
+   * side auto-score on the interview page probably didn't survive
+   * page unload. We kick off the scoring server-side ourselves and
+   * wait on Supabase Realtime for the score row to appear (with
+   * polling as a graceful fallback if Realtime is unavailable).
+   *
+   * Recruiters never see the "Score Now" state under normal
+   * circumstances — only if every recovery path fails.
+   */
+  const autoScoreTriedRef = useRef(new Set())
+  useEffect(() => {
+    if (!selected) return
+    if (transcriptLines.length === 0) return
+    if (currentScoreRow?.score != null) return   // already scored
+    if (rescoring) return                        // manual re-score in flight
+    const key = `${stageId}|${selected}`
+    if (autoScoreTriedRef.current.has(key)) return
+    autoScoreTriedRef.current.add(key)
+
+    let cancelled = false
+    let channel = null
+    let stageTimers = []
+    setAutoScoring(true)
+    setAutoScoreFailed(false)
+    setAutoScoreStage(0)
+
+    const onScoreLanded = (row) => {
+      if (cancelled) return
+      setRowByCandidate((prev) => ({ ...prev, [selected.toLowerCase()]: row }))
+      // Fast-forward the last two progress bullets so the recruiter
+      // sees the pipeline update tick before the final card swaps in.
+      setAutoScoreStage(5)
+      setAutoScoring(false)
+    }
+
+    ;(async () => {
+      try {
+        // ── Primary channel: Supabase Realtime ─────────
+        // Open BEFORE the safety-net POST so any INSERT/UPDATE that
+        // beats our own network round-trip still reaches the UI.
+        //
+        // Case-insensitive candidate_name comparison — the server
+        // preserves whatever the candidate typed, but recruiter-side
+        // lookups normalize to lowercase; Realtime payloads carry the
+        // raw stored value.
+        const selectedNorm = (selected || '').toLowerCase()
+        try {
+          channel = supabase
+            .channel(`score-${stageId}-${selectedNorm}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'scores',
+                filter: `stage_id=eq.${String(stageId)}`,
+              },
+              (payload) => {
+                const row = payload?.new
+                if (!row) return
+                if ((row.candidate_name || '').toLowerCase() !== selectedNorm) return
+                if (row.score == null) return
+                onScoreLanded(row)
+              },
+            )
+            .subscribe((status) => {
+              // If Realtime rejects the subscription, we still have
+              // polling as a fallback below — no need to alert.
+              if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                console.warn('Realtime channel state:', status, '— falling back to polling.')
+              }
+            })
+        } catch (err) {
+          console.warn('Realtime subscribe failed, using polling only:', err)
+        }
+
+        // ── Multi-stage progress cadence ──────────────
+        // The scoring API doesn't emit granular progress, so we
+        // simulate a natural-feeling cadence for the recruiter.
+        // Real completion (Realtime or poll) fast-forwards to
+        // stage 5, so this is UI polish, not a data source.
+        stageTimers.push(setTimeout(() => !cancelled && setAutoScoreStage((s) => Math.max(s, 1)), 2500))
+        stageTimers.push(setTimeout(() => !cancelled && setAutoScoreStage((s) => Math.max(s, 2)), 12000))
+        stageTimers.push(setTimeout(() => !cancelled && setAutoScoreStage((s) => Math.max(s, 3)), 30000))
+        stageTimers.push(setTimeout(() => !cancelled && setAutoScoreStage((s) => Math.max(s, 4)), 60000))
+
+        // ── Grace window BEFORE firing our safety-net POST ──
+        // The interview page fires the primary scoring request the
+        // moment the candidate finishes. If the recruiter opens the
+        // transcript within seconds, we'd fire a duplicate request
+        // that races against that one. A 15-second grace lets the
+        // primary request either land (Realtime notifies us and we
+        // cancel out) or clearly fail (we then take over).
+        const graceMs = 15_000
+        for (let waited = 0; waited < graceMs && !cancelled; waited += 3000) {
+          await new Promise((r) => setTimeout(r, 3000))
+          if (cancelled) return
+          const { data } = await supabase
+            .from('scores')
+            .select()
+            .eq('stage_id', String(stageId))
+            .eq('candidate_name', selected)
+            .maybeSingle()
+          if (data && data.score != null) {
+            onScoreLanded(data)
+            return
+          }
+        }
+        // Still no row — fire our safety-net POST. Server-side
+        // idempotency (see SCORE_TTL_MS in /api/score-interview)
+        // makes this a no-op if the interview page's request just
+        // finished writing.
+        const askedQuestions = questions.map((q) => q.text)
+        const payloadTranscript = transcriptLines.map((l) => ({ speaker: l.speaker, content: l.content }))
+        fetch('/api/score-interview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript: payloadTranscript,
+            stageName: stage?.name,
+            stageId: String(stageId),
+            candidateName: selected,
+            questions: askedQuestions,
+          }),
+          keepalive: true,
+        }).catch((err) => console.warn('Transcript-page safety-net POST failed:', err))
+
+        // ── Fallback poll: 3s cadence, 180s ceiling ──
+        // Opus 4.5 with a long transcript can genuinely take 60-120s.
+        // The old 90s ceiling was too tight and caused "failed" state
+        // to fire while the row was seconds away from landing.
+        const deadline = Date.now() + 180_000
+        while (!cancelled && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 3000))
+          if (cancelled) return
+          const { data } = await supabase
+            .from('scores')
+            .select()
+            .eq('stage_id', String(stageId))
+            .eq('candidate_name', selected)
+            .maybeSingle()
+          if (data && data.score != null) {
+            onScoreLanded(data)
+            return
+          }
+        }
+        // ── Timed out with no score row → recovery path ──
+        // The interview + transcript are still intact. The recruiter
+        // sees "Automatic analysis failed" with a Retry Analysis
+        // button — the candidate never has to re-interview.
+        if (!cancelled) setAutoScoreFailed(true)
+      } catch (err) {
+        console.warn('Auto-score orchestration ended:', err)
+        if (!cancelled) setAutoScoreFailed(true)
+      } finally {
+        if (!cancelled) setAutoScoring(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      stageTimers.forEach((t) => clearTimeout(t))
+      if (channel) { try { supabase.removeChannel(channel) } catch {} }
+      setAutoScoring(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, transcriptLines.length, currentScoreRow?.score])
 
   /* ── Notes IO ────────────────────────────── */
 
@@ -1845,18 +2192,8 @@ export default function TranscriptPage() {
           </div>
         </InQueueGate>
 
-        {message && (
-          <div className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)] print:hidden" role="status" aria-live="polite">
-            <CheckCircle2 size={16} className="text-[color:var(--color-rc-green)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{message}</span>
-          </div>
-        )}
-        {errorMsg && (
-          <div className="mb-6 rounded-[14px] bg-white border border-[color:var(--color-rc-red)] px-5 py-3 flex items-center gap-3 print:hidden" role="alert">
-            <AlertTriangle size={16} className="text-[color:var(--color-rc-red)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">{errorMsg}</span>
-          </div>
-        )}
+        <Toast kind="success" message={message} className="print:hidden" />
+        <Toast kind="error" message={errorMsg} className="print:hidden" />
 
         {loading ? (
           <div className="pt-4"><LoadingBlock /></div>
@@ -1936,6 +2273,9 @@ export default function TranscriptPage() {
               concerns={currentScoreRow?.concerns}
               analyzedAt={currentScoreRow?.created_at}
               rescoring={rescoring}
+              autoAnalyzing={autoScoring}
+              analysisStage={autoScoreStage}
+              analysisFailed={autoScoreFailed}
               canScore={transcriptLines.length > 0}
               onRun={() => setReScoreOpen(true)}
             />

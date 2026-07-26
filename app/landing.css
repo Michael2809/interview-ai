@@ -988,104 +988,54 @@
 }
 
 /* ============================================================
-   SECTION — Pricing (three-card editorial comparison)
-   Calm, premium, matches Hero typography. All cards white.
-   Featured (Scale) is subtle: raised 8px, same border colour at
-   1px weight, 3px yellow top rule, small MOST POPULAR pill.
+   SECTION — Pricing (editorial, premium, three equal cards)
+   Mirrors the recruiter Billing surface anatomy:
+     • plan name → large price → short blurb
+     • hairline divider
+     • WHAT'S INCLUDED eyebrow + three stacked usage rows
+       (icon slot + big value + small label)
+     • hairline divider
+     • checkmark feature list
+     • CTA pinned to the card foot (secondary outline; primary
+       ink-fill on the featured Scale card)
+   All three cards are the same height and width; buttons land on
+   a shared baseline. Scale is highlighted with a subtle yellow top
+   ribbon + small MOST POPULAR pill — no gradients, no glow.
    ============================================================ */
 .rc-landing .pricing { padding-block: clamp(96px, 14vh, 168px); background: var(--soft); }
 
-.rc-landing .pr-head { text-align: center; max-width: 640px; margin-inline: auto;
-  margin-bottom: clamp(28px, 4.5vh, 56px); }
+.rc-landing .pr-head { text-align: center; max-width: 720px; margin-inline: auto;
+  margin-bottom: clamp(48px, 6.5vh, 84px); }
 .rc-landing .pr-label { display: inline-flex; align-items: center; gap: 12px;
   font-size: 12px; font-weight: 700; letter-spacing: 0.18em;
   text-transform: uppercase; color: #B58419; }
 .rc-landing .pr-label::before, .rc-landing .pr-label::after {
   content: ""; display: block; width: 18px; height: 1px; background: currentColor; }
 .rc-landing .pr-head h2 { margin-top: 24px; font-family: var(--display);
-  font-size: clamp(46px, 5.6vw, 74px); line-height: 1.02; font-weight: 700;
-  letter-spacing: -0.035em; color: var(--ink); }
-.rc-landing .pr-head p { margin-top: 26px; font-size: clamp(15.5px, 1.15vw, 17.5px);
-  line-height: 1.6; color: var(--muted); max-width: 44ch; margin-inline: auto; }
+  font-size: clamp(40px, 5vw, 64px); line-height: 1.03; font-weight: 700;
+  letter-spacing: -0.032em; color: var(--ink); }
+.rc-landing .pr-head p { margin-top: 22px; font-size: clamp(15.5px, 1.15vw, 17.5px);
+  line-height: 1.6; color: var(--muted); max-width: 54ch; margin-inline: auto; }
 
-.rc-landing .pr-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px; align-items: stretch; padding-top: 22px;
-  max-width: 1240px; margin-inline: auto; }
+/* Card + grid + inner rhythm now live in components/PricingCard.css
+   and are shared with the recruiter Billing page. Only the section
+   chrome (background, head, trust footer) stays landing-specific
+   because the recruiter Billing page has its own header. */
 
-.rc-landing .pr-card { position: relative; background: var(--white);
-  border: 0.5px solid var(--line); border-radius: 18px;
-  padding: 40px 34px 34px;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 60px -42px rgba(17,17,17,0.10), 0 2px 6px rgba(17,17,17,0.02);
-  transition: transform .28s cubic-bezier(.22,.61,.36,1), box-shadow .28s ease, border-color .28s ease; }
-.rc-landing .pr-card:hover { transform: translateY(-2px);
-  border-color: rgba(17,17,17,0.15);
-  box-shadow: 0 40px 72px -40px rgba(17,17,17,0.14), 0 3px 8px rgba(17,17,17,0.03); }
+/* Trust statement — quiet single line placed under the card grid.
+   Reinforces confidence in what every plan shares (hosting, updates,
+   AI improvements, standard support) without expanding the feature
+   inventory. Kept understated: hairline top rule, muted body colour,
+   narrow measure so it reads as a footnote, not a headline. */
+.rc-landing .pr-trust { margin: clamp(48px, 6vh, 72px) auto 0;
+  padding-top: clamp(28px, 4vh, 40px);
+  border-top: 1px solid var(--line);
+  max-width: 720px; text-align: center;
+  font-size: 13.5px; line-height: 1.55; color: var(--muted);
+  letter-spacing: -0.005em; }
 
-.rc-landing .pr-card-featured { border: 1px solid var(--line); transform: translateY(-8px);
-  box-shadow: 0 44px 90px -44px rgba(17,17,17,0.16), 0 3px 10px rgba(17,17,17,0.04); }
-.rc-landing .pr-card-featured:hover { transform: translateY(-10px); border-color: rgba(17,17,17,0.20); }
-.rc-landing .pr-card-featured::before { content: ""; position: absolute;
-  top: -1px; left: -1px; right: -1px; height: 3px;
-  background: var(--yellow); border-radius: 18px 18px 0 0; }
-.rc-landing .pr-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
-  background: var(--yellow); color: var(--ink);
-  padding: 5px 14px 6px; border-radius: 999px;
-  font-family: var(--body); font-size: 10.5px; font-weight: 700;
-  letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(17,17,17,0.08); }
-
-.rc-landing .pr-name { font-family: var(--display); font-size: 20px; font-weight: 600;
-  letter-spacing: -0.01em; color: var(--ink); }
-.rc-landing .pr-price { margin-top: 18px; display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
-.rc-landing .pr-price .amt { font-family: var(--display);
-  font-size: clamp(56px, 5.6vw, 76px); font-weight: 700;
-  line-height: 1; letter-spacing: -0.045em; color: var(--ink); }
-.rc-landing .pr-price .per { font-family: var(--body);
-  font-size: 13px; font-weight: 400; color: #9A9A95; letter-spacing: -0.005em; }
-.rc-landing .pr-blurb { margin-top: 8px; font-size: 14px; line-height: 1.55;
-  font-weight: 400; color: #8E8E88; }
-
-.rc-landing .pr-limits { margin-top: 36px; list-style: none;
-  display: flex; flex-direction: column; gap: 6px; }
-.rc-landing .pr-limits li { font-size: 14px; color: var(--muted); letter-spacing: -0.005em; }
-.rc-landing .pr-limits li b { font-weight: 600; color: var(--ink); margin-right: 6px; }
-
-.rc-landing .pr-feats { margin-top: 32px; list-style: none;
-  display: flex; flex-direction: column; gap: 9px; flex: 1; }
-.rc-landing .pr-feats li { display: flex; align-items: flex-start; gap: 12px;
-  font-size: 14px; line-height: 1.5; color: var(--ink); letter-spacing: -0.005em; }
-.rc-landing .pr-feats li svg { width: 14px; height: 14px; flex: none; margin-top: 4px;
-  color: var(--ink); opacity: 0.7; }
-.rc-landing .pr-feats li.is-heading { font-weight: 600; color: var(--ink); }
-.rc-landing .pr-feats li.is-heading svg { opacity: 0.9; }
-
-.rc-landing .pr-cta { margin-top: 48px; display: inline-flex; align-items: center;
-  justify-content: center; gap: 10px;
-  padding: 15px 20px;
-  border: 1px solid var(--ink); border-radius: 4px;
-  background: var(--white); color: var(--ink);
-  font-family: var(--body); font-size: 14.5px; font-weight: 600;
-  letter-spacing: -0.005em; text-decoration: none; cursor: pointer;
-  transition: background-color .2s ease, color .2s ease, transform .12s ease; }
-.rc-landing .pr-cta:hover { background: var(--ink); color: var(--white); }
-.rc-landing .pr-cta:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
-.rc-landing .pr-cta:active { transform: translateY(1px); }
-.rc-landing .pr-cta .arrow { transition: transform .2s ease; }
-.rc-landing .pr-cta:hover .arrow { transform: translateX(3px); }
-
-.rc-landing .pr-foot { margin-top: clamp(48px, 6vh, 72px); text-align: center;
-  font-size: 14px; color: var(--muted); letter-spacing: -0.005em; }
-
-@media (max-width: 980px) {
-  .rc-landing .pr-grid { grid-template-columns: 1fr; max-width: 480px; gap: 20px; padding-top: 22px; }
-  .rc-landing .pr-card-featured { transform: none; }
-  .rc-landing .pr-card-featured:hover { transform: translateY(-2px); }
-}
-@media (max-width: 560px) {
-  .rc-landing .pr-card { padding: 32px 26px 28px; }
-  .rc-landing .pr-price .amt { font-size: 56px; }
-}
+.rc-landing .pr-foot { margin-top: 14px; text-align: center;
+  font-size: 12.5px; color: #9A9A95; letter-spacing: -0.005em; }
 
 /* ============================================================
    SECTION — Closing CTA (calm, editorial, subtle asymmetry)
@@ -1218,8 +1168,235 @@
   border-radius: 3px;
 }
 
-/* Mobile: tagline still hides (per original), Log in remains. */
+/* ============================================================
+   MOBILE (≤760px)
+   ------------------------------------------------------------
+   Desktop identity preserved (same tokens, tone, typography
+   family). Only the sections that don't physically translate
+   to a 390px viewport are adapted:
+
+     • Hero: replaces the 240vh scrub + full-bleed desk photo
+       (designed for wide monitors) with a static editorial
+       hero — same eyebrow, headline, sub, CTAs, just at native
+       mobile scale so the story reads instantly.
+     • Fit timeline: replaces the awkward 3-col / empty-middle
+       grid with a clean vertical rail (same nodes, same yellow
+       accent on Interview → Evidence).
+     • Section padding: trimmed where clamps left excessive
+       whitespace between sections at mobile heights.
+     • Display headings: scaled down JUST where 46-90px clamps
+       force isolated poster screens at 390px. Same font,
+       tracking, weight — just proportional to viewport.
+   ============================================================ */
 @media (max-width: 760px) {
+  /* ── Hero header ────────────────────────────────────────── */
   .rc-landing .hero-hd .hd-actions { gap: 0; }
-  .rc-landing .hero-hd .hd-login   { font-size: 14px; }
+  .rc-landing .hero-hd .hd-login   { font-size: 14px; white-space: nowrap; }
+
+  /* ── Hero — static premium version, no desk photo ──────
+     Desktop uses a 100vh pinned scrub with a wide desk
+     photograph. At 390px the photo either crops awkwardly
+     or (with aspect-ratio) forces the whole hero into an
+     image-first layout that reads as a different design.
+     On mobile we hide the whole visual stage and render a
+     clean editorial hero — same eyebrow, headline, subtitle,
+     CTAs — that stands on its own. */
+  .rc-landing .hero      { height: auto; }
+  .rc-landing .hero-pin  { position: relative; height: auto;
+    padding: 0 0 clamp(56px, 8vh, 80px); background: var(--white); }
+  .rc-landing .stage,
+  .rc-landing .readfield,
+  .rc-landing .note,
+  .rc-landing .monitor,
+  .rc-landing .payoff    { display: none; }
+
+  .rc-landing .hero-hd { position: relative; top: auto; left: auto; right: auto;
+    padding: 20px clamp(24px, 6vw, 32px) 0; }
+  .rc-landing .hero-hd .logo img { width: 168px; }
+
+  .rc-landing .hero-copy { position: relative; top: auto; left: auto; right: auto;
+    width: auto; max-width: none;
+    padding: clamp(40px, 7vh, 64px) clamp(24px, 6vw, 32px) 0; }
+  .rc-landing .hc-eyebrow { font-size: 12px; letter-spacing: 0.16em; }
+  .rc-landing .hc-eyebrow::before { width: 24px; height: 3px; }
+  .rc-landing .hc-headline {
+    margin-top: 20px;
+    font-size: clamp(36px, 9.5vw, 46px);
+    line-height: 1.04; letter-spacing: -0.034em;
+    text-shadow: none;
+  }
+  .rc-landing .hc-sub {
+    margin-top: 20px; font-size: 15.5px; line-height: 1.6;
+    color: #5c5c5a; max-width: 46ch; text-shadow: none;
+  }
+  .rc-landing .hc-actions { margin-top: 28px; gap: 10px; }
+  .rc-landing .btn { flex: 1 1 auto; padding: 15px 22px;
+    font-size: 15px; justify-content: center; }
+
+  /* ── Brand interlude — compress from 112vh to a single beat */
+  .rc-landing .interlude { height: auto; padding-block: clamp(56px, 8vh, 80px); }
+  .rc-landing .il-pin { position: relative; top: auto; transform: none;
+    padding-inline: 24px; }
+  .rc-landing .il-inner { gap: 24px; }
+  .rc-landing .il-logo   { width: 180px; opacity: 1; }
+  .rc-landing .il-belief { opacity: 1; transform: none;
+    font-size: clamp(24px, 6.5vw, 30px); line-height: 1.2;
+    letter-spacing: -0.024em; max-width: 24ch; }
+
+  /* ── SECTION 2 — How it works ─────────────────────────── */
+  .rc-landing .how { padding-block: 56px 72px; }
+  .rc-landing .how-head { padding-bottom: 40px; }
+  .rc-landing .how-head::before { height: 26px; margin-bottom: 18px; }
+  .rc-landing .how-head h2 {
+    margin-top: 12px;
+    font-size: clamp(32px, 8.4vw, 40px);
+    line-height: 1.06; letter-spacing: -0.028em;
+    max-width: 18ch;
+  }
+  .rc-landing .how-sub { margin-top: 16px; font-size: 15.5px;
+    line-height: 1.55; max-width: 42ch; }
+
+  /* Step 01 typography */
+  .rc-landing .s1-title { font-size: clamp(26px, 7vw, 30px); line-height: 1.08; }
+  .rc-landing .s1-copy  { margin-top: 14px; font-size: 15px; line-height: 1.55; }
+
+  /* Step 02 — interview mock */
+  .rc-landing .step2 { padding-block: 56px; gap: 36px; }
+  .rc-landing .s2-intro .s1-title { font-size: clamp(28px, 7.5vw, 34px);
+    line-height: 1.08; }
+  .rc-landing .s2-intro p { margin-top: 14px; font-size: 15px; line-height: 1.55; }
+  .rc-landing .cr-app-iv .cr-main { padding: 18px 16px 20px; gap: 18px; }
+  .rc-landing .iv-video-lg { min-height: 260px; }
+
+  /* "Next up" chip — flex-child min-width:0 lets ellipsis trigger */
+  .rc-landing .iv-nextup { min-width: 0; }
+  .rc-landing .iv-next {
+    min-width: 0; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Step 03 — evaluation section */
+  .rc-landing .step3 { padding-block: 56px; gap: 32px; }
+  .rc-landing .s3-h { margin-top: 16px;
+    font-size: clamp(34px, 9vw, 42px);
+    line-height: 1.05; letter-spacing: -0.032em; }
+  .rc-landing .s3-h .under { display: none; }
+  .rc-landing .s3-sub { margin-top: 18px; font-size: 15px;
+    line-height: 1.55; max-width: 40ch; }
+
+  /* ── FIT (built for your process) — clean vertical rail ──
+     Replaces the 3-col/2-row grid where the middle cell of
+     row 2 was empty (Application/Interview/Evidence on top,
+     Decision/•/Offer below). Vertical stack keeps the story
+     order and the yellow rail becomes a left-anchored guide. */
+  .rc-landing .fit { padding-block: 24px 72px; }
+  .rc-landing .fit-h { margin-top: 20px;
+    font-size: clamp(32px, 8.4vw, 40px);
+    line-height: 1.08; letter-spacing: -0.028em; }
+  .rc-landing .fit-h .l2 .under { display: none; }
+  .rc-landing .fit-sub { margin-top: 24px; font-size: 15px;
+    line-height: 1.55; max-width: 42ch; }
+  .rc-landing .fit-timeline { margin-top: 40px;
+    padding-inline: 24px; padding-bottom: 8px;
+    max-width: 420px; }
+  .rc-landing .fit-stages {
+    grid-template-columns: 1fr;
+    column-gap: 0; row-gap: 16px;
+    justify-items: start;
+  }
+  .rc-landing .fit-stages::before,
+  .rc-landing .fit-stages::after,
+  .rc-landing .fit-annotation { display: none; }
+  .rc-landing .fit-stage {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+  }
+  .rc-landing .fit-node { width: 44px; height: 44px; }
+  .rc-landing .fit-node svg { width: 18px; height: 18px; }
+  .rc-landing .fit-name { font-size: 15px; }
+  /* Left-edge vertical rail replacing the horizontal one.
+     Positioned to align with the centre of each 44px node. */
+  .rc-landing .fit-stages {
+    position: relative;
+    padding-left: 0;
+  }
+  .rc-landing .fit-stages::before {
+    content: "" !important;
+    display: block !important;
+    position: absolute;
+    top: 22px; bottom: 22px;
+    left: 21px;
+    width: 1px; height: auto;
+    background: rgba(17, 17, 17, 0.09);
+  }
+  /* Yellow accent segment: from Interview (2nd) to Evidence (3rd) */
+  .rc-landing .fit-stages::after {
+    content: "" !important;
+    display: block !important;
+    position: absolute;
+    left: 21px;
+    top: calc(44px + 16px + 22px);
+    height: calc(44px + 16px);
+    width: 1px;
+    background: var(--yellow);
+  }
+
+  /* ── PRICING section chrome ────────────────────────────── */
+  .rc-landing .pricing { padding-block: 56px; }
+  .rc-landing .pr-head { margin-bottom: 36px; }
+  .rc-landing .pr-head h2 { margin-top: 18px;
+    font-size: clamp(28px, 7.5vw, 34px); line-height: 1.08;
+    letter-spacing: -0.028em; }
+  .rc-landing .pr-head p { margin-top: 16px; font-size: 15px;
+    line-height: 1.55; }
+  .rc-landing .pr-trust { margin-top: 40px; padding-top: 24px;
+    font-size: 13px; line-height: 1.55; max-width: 42ch; }
+  .rc-landing .pr-foot { margin-top: 12px; font-size: 12px; }
+
+  /* ── Closing CTA ───────────────────────────────────────── */
+  .rc-landing .cta { padding-block: 72px 96px; }
+  .rc-landing .cta-h { margin-top: 20px;
+    font-size: clamp(30px, 8vw, 40px); line-height: 1.08;
+    letter-spacing: -0.032em; }
+  .rc-landing .cta-copy { margin-top: 24px; font-size: 15px;
+    line-height: 1.65; max-width: 44ch; }
+  .rc-landing .cta-actions { margin-top: 28px; padding-left: 0; }
+  .rc-landing .cta-btn { padding: 14px 20px; font-size: 14.5px; }
+  .rc-landing .cta-note { margin-top: 18px; margin-left: 0;
+    font-size: 12.5px; line-height: 1.55; max-width: 42ch; }
+
+  /* ── Footer ────────────────────────────────────────────── */
+  .rc-landing .ft { padding: 22px 0 32px; }
+  .rc-landing .ft-nav { gap: 22px; }
+  .rc-landing .ft-nav a, .rc-landing .ft-email { font-size: 13.5px; }
+  .rc-landing .ft-bottom { margin-top: 28px; font-size: 12px; }
+
+  /* ── Reveal animation — slightly shorter travel + duration
+        so mobile scrolling isn't dragged down by long fades. */
+  .rc-landing .reveal { transform: translateY(10px);
+    transition: opacity .32s cubic-bezier(.22,.61,.36,1),
+                transform .32s cubic-bezier(.22,.61,.36,1); }
+
+  /* ── /privacy and /terms — trim the desktop 96px top padding
+        so the top rail doesn't sit half a screen down on phones,
+        and stack the top rail vertically when the "Back to home"
+        link would otherwise crowd the logo. */
+  .rc-landing .doc-wrap { padding: 32px 20px 72px; }
+  .rc-landing .doc-top  { margin-bottom: 40px; gap: 12px; }
+  .rc-landing .doc-logo img { width: 108px; }
+  .rc-landing .doc-h1 { font-size: clamp(30px, 8vw, 40px); line-height: 1.08;
+    letter-spacing: -0.028em; }
+  .rc-landing .doc-h2 { margin-top: 32px; font-size: 18px; }
+  .rc-landing .doc-p  { font-size: 15px; line-height: 1.6; }
+  .rc-landing .doc-foot { margin-top: 64px; }
 }
+
+/* v19 mobile-restyle block reverted in v20. The pre-existing
+   responsive rules (stacks at 980 / 760 / 640 / 620 / 560 / 480)
+   already handle genuine breakage; the aggressive v19 block was
+   redesigning mobile rather than adapting it, which the approved
+   direction is not to do. */

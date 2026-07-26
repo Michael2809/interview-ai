@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import { SkeletonLine } from '@/components/AppShell/Skeleton'
 import { Button, Spinner } from '@/components/ui'
 import {
   getWorkspaceEntitlements,
@@ -201,6 +202,9 @@ function Toast({ tone = 'success', message, onDismiss }) {
 /* ─────────────────────────────────────────────────────────────
  * Plan comparison — read-only card row shown under Current Plan.
  * No checkout: the "Choose" buttons only register intent (Coming Soon).
+ *
+ * Original compact editorial layout — plan name + price + 3-col
+ * metric strip + condensed feature list + full-width action button.
  * ────────────────────────────────────────────────────────── */
 
 function PlanRow({ plan, isCurrent, disabled, onChoose }) {
@@ -208,6 +212,8 @@ function PlanRow({ plan, isCurrent, disabled, onChoose }) {
   const cadence = plan.billing_period === 'monthly'
     ? '/ month'
     : plan.billing_period === 'annual' ? '/ year' : ''
+  // Seats label pluralises so a 1-seat plan doesn't read as "1 seats".
+  const seatLabel = plan.seat_limit === 1 ? 'Seat' : 'Seats'
 
   return (
     <div className={
@@ -232,21 +238,32 @@ function PlanRow({ plan, isCurrent, disabled, onChoose }) {
         {isCurrent && <StatusBadge status="active" />}
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-4">
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-warm)]">Roles</div>
+      {/* 3-column metric strip.
+          Overlap fix: dropped the "/ mo" suffix on the Candidates
+          label (context is already the plan's monthly price row
+          above), tightened tracking, and let labels wrap naturally
+          so no column overflows into its neighbour at narrow widths. */}
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] leading-snug break-words">
+            Roles
+          </div>
           <div className="mt-1 text-[15px] font-medium text-[color:var(--color-rc-ink)] tabular-nums">
             {displayLimit(plan.role_limit)}
           </div>
         </div>
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-warm)]">Candidates / mo</div>
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] leading-snug break-words">
+            Candidates
+          </div>
           <div className="mt-1 text-[15px] font-medium text-[color:var(--color-rc-ink)] tabular-nums">
             {displayLimit(plan.candidate_limit)}
           </div>
         </div>
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-warm)]">Team</div>
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] leading-snug break-words">
+            Recruiter {seatLabel}
+          </div>
           <div className="mt-1 text-[15px] font-medium text-[color:var(--color-rc-ink)] tabular-nums">
             {displayLimit(plan.seat_limit)}
           </div>
@@ -393,8 +410,27 @@ export default function SubscriptionPage() {
         </header>
 
         {loading ? (
-          <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center">
-            <Spinner size={18} />
+          <div aria-hidden="true" className="rc-skeleton space-y-6">
+            {/* Current plan card */}
+            <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6">
+              <SkeletonLine className="w-28" height="h-2.5" />
+              <div className="mt-3">
+                <SkeletonLine className="w-1/3 max-w-[240px]" height="h-6" />
+              </div>
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between"><SkeletonLine className="w-24" height="h-3" /><SkeletonLine className="w-16" height="h-3" /></div>
+                <div className="flex items-center justify-between"><SkeletonLine className="w-32" height="h-3" /><SkeletonLine className="w-20" height="h-3" /></div>
+                <div className="flex items-center justify-between"><SkeletonLine className="w-28" height="h-3" /><SkeletonLine className="w-14" height="h-3" /></div>
+              </div>
+            </div>
+            {/* Usage card */}
+            <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6">
+              <SkeletonLine className="w-20" height="h-2.5" />
+              <div className="mt-3">
+                <SkeletonLine className="w-1/4 max-w-[160px]" height="h-6" />
+              </div>
+              <div className="mt-5 h-2 w-full rounded-full bg-[color:var(--color-rc-soft)]" />
+            </div>
           </div>
         ) : error ? (
           <div className="rounded-[14px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] px-5 py-4 text-[13.5px] text-[color:var(--color-rc-ink)]">

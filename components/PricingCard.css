@@ -1,0 +1,283 @@
+/* ============================================================
+   PricingCard — shared visual language.
+   ------------------------------------------------------------
+   These styles were extracted from app/landing.css so a single
+   set of rules powers both the marketing pricing section on the
+   landing page and the plan comparison on the recruiter Billing
+   page. Classes are unscoped on purpose; the `pr-` prefix is
+   reserved for this component and used nowhere else.
+
+   Future pricing tweaks (spacing, colors, feature rhythm) should
+   only need to be made here.
+   ============================================================ */
+
+/* Grid — 3 equal columns on desktop, 2 with Enterprise centred
+   on its own row at tablet widths, single stack on mobile. */
+.pr-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch;
+  max-width: 1240px;
+  margin-inline: auto;
+}
+@media (max-width: 1080px) {
+  .pr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 780px; }
+  .pr-grid > article:nth-child(3) { grid-column: 1 / -1; max-width: 380px; margin-inline: auto; }
+}
+@media (max-width: 720px) {
+  .pr-grid { grid-template-columns: 1fr; max-width: 480px; gap: 20px; }
+  .pr-grid > article:nth-child(3) { max-width: none; }
+}
+
+/* Card scaffold — identical geometry across all plans so heights
+   match. Featured/active states are announced with a ribbon +
+   pill, never with padding or dimension shifts. */
+.pr-card {
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid var(--color-rc-line, #DEDEDA);
+  border-radius: 20px;
+  padding: 40px 34px 34px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 30px 60px -42px rgba(17, 17, 17, 0.10), 0 2px 6px rgba(17, 17, 17, 0.02);
+  transition: transform .28s cubic-bezier(.22, .61, .36, 1), box-shadow .28s ease, border-color .28s ease;
+}
+.pr-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(17, 17, 17, 0.15);
+  box-shadow: 0 40px 72px -40px rgba(17, 17, 17, 0.14), 0 3px 8px rgba(17, 17, 17, 0.03);
+}
+@media (max-width: 720px) {
+  .pr-card { padding: 36px 26px 30px; }
+}
+
+/* Featured (landing "MOST POPULAR" Scale card) and Active (billing
+   current-plan card) share a subtle yellow ribbon so a returning
+   customer immediately reads the emphasis as "the recommended one"
+   translating to "yours". Border picks up a hint of yellow. */
+.pr-card-featured,
+.pr-card-active {
+  border-color: var(--color-rc-yellow, #F4C430);
+}
+.pr-card-featured::before,
+.pr-card-active::before {
+  content: "";
+  position: absolute;
+  top: -1px; left: -1px; right: -1px;
+  height: 3px;
+  background: var(--color-rc-yellow, #F4C430);
+  border-radius: 20px 20px 0 0;
+}
+.pr-badge {
+  position: absolute;
+  top: -12px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-rc-yellow, #F4C430);
+  color: var(--color-rc-ink, #111111);
+  padding: 4px 12px 5px;
+  border-radius: 999px;
+  font-family: var(--font-inter, inherit);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(17, 17, 17, 0.08);
+}
+
+/* Head zone — plan name, big price, short blurb. min-height keeps
+   plans that omit "/ month" (e.g., Enterprise) aligned with the
+   priced plans across the row. */
+.pr-card-head { min-height: 154px; }
+@media (max-width: 720px) {
+  .pr-card-head { min-height: 0; }
+}
+.pr-name {
+  font-family: var(--font-archivo, inherit);
+  font-size: 18px; font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--color-rc-ink, #111111);
+}
+.pr-price {
+  margin-top: 14px;
+  display: flex; align-items: baseline; gap: 8px;
+  color: var(--color-rc-ink, #111111);
+}
+.pr-price .amt {
+  font-family: var(--font-archivo, inherit);
+  font-size: clamp(52px, 5vw, 64px);
+  font-weight: 700; line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--color-rc-ink, #111111);
+  font-variant-numeric: tabular-nums;
+}
+.pr-price .per {
+  font-family: var(--font-inter, inherit);
+  font-size: 13px; font-weight: 400;
+  color: #9A9A95;
+  letter-spacing: -0.005em;
+}
+.pr-blurb {
+  margin-top: 12px;
+  font-size: 14px; line-height: 1.55; font-weight: 400;
+  color: #8E8E88;
+}
+@media (max-width: 480px) {
+  .pr-price .amt { font-size: 48px; }
+}
+
+/* Divider — hairline rule partitioning card into three zones:
+   head → what's included → features + CTA. */
+.pr-divider {
+  height: 1px;
+  background: var(--color-rc-line, #DEDEDA);
+  margin: 28px 0;
+}
+
+/* "What's included" — small-caps eyebrow, then three stacked
+   metric rows. Numbers are the primary visual weight; icon slots
+   support without competing. */
+.pr-eyebrow {
+  display: block;
+  font-family: var(--font-inter, inherit);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: #9A9A95;
+}
+.pr-limits {
+  margin: 18px 0 0; padding: 0;
+  list-style: none;
+  display: flex; flex-direction: column;
+  gap: 21px;
+}
+.pr-limits li { display: flex; align-items: center; gap: 14px; }
+.pr-limit-icon {
+  flex: none;
+  height: 40px; width: 40px;
+  border-radius: 10px;
+  background: var(--color-rc-soft, #F7F7F4);
+  display: grid; place-items: center;
+  color: #A0A099;
+}
+.pr-limit-icon svg {
+  width: 18px; height: 18px;
+  stroke-width: 1.5;
+}
+.pr-limit-copy {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.pr-limit-copy b {
+  font-family: var(--font-archivo, inherit);
+  font-size: 18px; font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-rc-ink, #111111);
+  line-height: 1.15;
+}
+.pr-limit-copy em {
+  font-style: normal;
+  font-size: 12.5px;
+  color: #8E8E88;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+}
+
+/* Feature list — green checkmarks, evenly spaced. flex:1 pushes
+   the CTA to the card foot regardless of copy length. */
+.pr-feats-heading {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  color: var(--color-rc-ink, #111111);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.pr-feats {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1;
+}
+.pr-feats li {
+  display: flex; align-items: flex-start; gap: 12px;
+  font-size: 14px; line-height: 1.5;
+  color: var(--color-rc-ink, #111111);
+  letter-spacing: -0.005em;
+}
+.pr-feats li svg {
+  width: 14px; height: 14px;
+  flex: none; margin-top: 4px;
+  color: var(--color-rc-green, #2A9D57);
+}
+
+/* CTA — pinned to card foot. Secondary variant matches the shared
+   outline button treatment; primary flips ink-filled for the
+   featured / recommended card. Disabled variant reads as a settled,
+   quiet confirmation ("Current plan"), not a broken interaction. */
+.pr-cta {
+  margin-top: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-radius: 4px;
+  font-family: var(--font-inter, inherit);
+  font-size: 14.5px; font-weight: 600;
+  letter-spacing: -0.005em;
+  text-decoration: none; cursor: pointer;
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .2s cubic-bezier(.22, .61, .36, 1);
+}
+/* .pr-card ancestor selector on the color rules — bumps
+   specificity to 0,2,0 so they beat scoped landing rules like
+   `.rc-landing a { color: inherit }` (0,1,1) that would otherwise
+   drag the anchor's color back to the parent ink, making the
+   white label on the primary CTA invisible against its black
+   background. */
+.pr-cta-secondary {
+  border: 1px solid var(--color-rc-ink, #111111);
+  background: #FFFFFF;
+}
+.pr-card .pr-cta-secondary { color: var(--color-rc-ink, #111111); }
+.pr-cta-secondary:hover {
+  background: var(--color-rc-ink, #111111);
+  border-color: #000;
+  transform: translateY(-1px);
+}
+.pr-card .pr-cta-secondary:hover { color: #FFFFFF; }
+.pr-cta-primary {
+  border: 1px solid var(--color-rc-ink, #111111);
+  background: var(--color-rc-ink, #111111);
+}
+.pr-card .pr-cta-primary { color: #FFFFFF; }
+.pr-cta-primary:hover {
+  background: #000;
+  border-color: #000;
+}
+.pr-card .pr-cta-primary:hover { color: #FFFFFF; }
+.pr-cta:focus-visible {
+  outline: 2px solid var(--color-rc-yellow, #F4C430);
+  outline-offset: 3px;
+}
+.pr-cta:active { transform: translateY(0); }
+.pr-cta .arrow { transition: transform .2s ease; }
+.pr-cta:hover .arrow { transform: translateX(3px); }
+
+/* Disabled CTA — the "Current plan" state. Reads as intentional
+   confirmation, never as a broken button. Muted ink text on a
+   soft neutral surface; hover animations suppressed. */
+.pr-cta-disabled,
+.pr-cta:disabled {
+  cursor: default;
+  border: 1px solid var(--color-rc-line, #DEDEDA);
+  background: var(--color-rc-soft, #F7F7F4);
+  transform: none;
+}
+.pr-card .pr-cta-disabled,
+.pr-card .pr-cta:disabled { color: #6E6E68; }
+.pr-cta-disabled:hover,
+.pr-cta:disabled:hover {
+  background: var(--color-rc-soft, #F7F7F4);
+  border-color: var(--color-rc-line, #DEDEDA);
+  transform: none;
+}
+.pr-card .pr-cta-disabled:hover,
+.pr-card .pr-cta:disabled:hover { color: #6E6E68; }
+.pr-cta-disabled .arrow,
+.pr-cta:disabled .arrow { display: none; }

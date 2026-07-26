@@ -20,6 +20,12 @@ import {
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import {
+  SkeletonKPIStrip,
+  SkeletonCardGrid,
+  SkeletonRow,
+  SkeletonLine,
+} from '@/components/AppShell/Skeleton'
+import {
   Button,
   ScoreBadge,
   StatusBadge,
@@ -29,6 +35,7 @@ import {
   Modal,
   EmptyState,
   Spinner,
+  Toast,
   Display,
   H2,
   Body,
@@ -195,14 +202,37 @@ function SectionHeading({ children }) {
  * every section while data is loading. One consistent visual.
  * ────────────────────────────────────────────────────────── */
 
-function LoadingBlock() {
+/**
+ * ListSkeleton — a stack of row-shaped skeletons matching the
+ * bordered divide-y lists used by Priority Queue, Needs Attention,
+ * Upcoming Interviews, and Recent Activity. Prevents the layout
+ * shift you'd see swapping a centered spinner for a real list.
+ */
+function ListSkeleton({ rows = 3 }) {
   return (
-    <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] py-16 grid place-items-center [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]">
-      <div className="text-[color:var(--color-rc-muted)]">
-        <Spinner size={18} />
-      </div>
+    <div aria-hidden="true" className="grid border-y border-[color:var(--color-rc-line)] divide-y divide-[color:var(--color-rc-line)]">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 py-4 px-3 rc-skeleton">
+          <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-soft)] shrink-0" />
+          <div className="min-w-0 flex-1">
+            <SkeletonLine className={i % 2 ? 'w-56' : 'w-44'} height="h-3.5" />
+            <div className="mt-2">
+              <SkeletonLine className={i % 2 ? 'w-40' : 'w-32'} height="h-2.5" />
+            </div>
+          </div>
+          <SkeletonLine className="w-16 hidden md:block" height="h-3" />
+          <SkeletonLine className="w-12 hidden sm:block" height="h-3" />
+        </div>
+      ))}
     </div>
   )
+}
+
+// Kept as a compatibility fallback for any lingering call sites that
+// haven't been mapped to a shape-specific skeleton yet. Defaults to
+// the list skeleton so at minimum we never render a bare spinner card.
+function LoadingBlock() {
+  return <ListSkeleton rows={3} />
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -524,25 +554,19 @@ function PriorityQueueRow({ name, roleTitle, score, completedAt, stageId }) {
         className={
           'group grid grid-cols-[10px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto_20px] items-center gap-x-4 md:gap-x-6 ' +
           'py-4 px-3 -mx-3 rounded-[10px] cursor-pointer ' +
-          'hover:bg-[color:var(--color-rc-soft)]/70 hover:-translate-y-[1px] ' +
-          'transition-[background-color,transform] duration-150 ' +
+          'hover:bg-[color:var(--color-rc-soft)]/70 ' +
+          'transition-colors duration-150 ' +
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
         }
       >
-        {/* Status indicator subtly grows + brightens on row hover to
-            reinforce that the row is a live surface. */}
+        {/* Status indicator — stable size; the row background tint
+            and the chevron reveal carry the hover affordance so the
+            row reads calm and editorial, not busy. */}
         <span
           role="img"
           aria-label={statusLabel}
-          className={
-            'inline-block h-1.5 w-1.5 rounded-full shrink-0 ' +
-            'transition-[transform,box-shadow] duration-150 ' +
-            'group-hover:scale-[1.25]'
-          }
-          style={{
-            backgroundColor: dotColor,
-            boxShadow: '0 0 0 0 transparent',
-          }}
+          className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+          style={{ backgroundColor: dotColor }}
         />
         <div className="min-w-0 text-[15px] leading-tight font-semibold tracking-[-0.012em] text-[color:var(--color-rc-ink)] truncate">
           {name || 'Anonymous candidate'}
@@ -1819,12 +1843,11 @@ export default function DashboardPage() {
     <AppShell>
       <div className="max-w-[1180px] mx-auto">
         {upgraded && (
-          <div className="mb-8 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] px-5 py-3 flex items-center gap-3 [box-shadow:0_1px_2px_rgba(17,17,17,0.02)]">
-            <CheckCircle2 size={16} className="text-[color:var(--color-rc-green)] shrink-0" aria-hidden="true" />
-            <span className="text-[13.5px] text-[color:var(--color-rc-ink)]">
-              You&rsquo;re upgraded. Welcome to the full Recrewt experience.
-            </span>
-          </div>
+          <Toast
+            kind="success"
+            message="You're upgraded. Welcome to the full Recrewt experience."
+            className="mb-8"
+          />
         )}
 
         {/* Usage warning — only when the workspace has burned ≥ 90%
@@ -1902,7 +1925,7 @@ export default function DashboardPage() {
         {/* ─── 2. KPI STRIP ──────────────────────────────── */}
         <section className="mb-10 md:mb-12">
           {loading ? (
-            <LoadingBlock />
+            <SkeletonKPIStrip cells={4} />
           ) : (
             <KPIStrip
               cells={[
@@ -1934,7 +1957,7 @@ export default function DashboardPage() {
             )}
           </div>
           {loading ? (
-            <LoadingBlock />
+            <ListSkeleton rows={3} />
           ) : totalWaiting === 0 ? (
             <QuietEmpty
               title="No candidates require review."
@@ -1976,7 +1999,7 @@ export default function DashboardPage() {
           </div>
 
           {loading ? (
-            <LoadingBlock />
+            <SkeletonCardGrid count={3} />
           ) : totalRoles === 0 ? (
             <QuietEmpty
               title="No roles yet."
@@ -2009,7 +2032,7 @@ export default function DashboardPage() {
           </div>
 
           {loading ? (
-            <LoadingBlock />
+            <ListSkeleton rows={3} />
           ) : needsAttentionList.length === 0 ? (
             <QuietEmpty
               title="Nothing is stuck right now."
@@ -2042,7 +2065,7 @@ export default function DashboardPage() {
           </div>
 
           {loading ? (
-            <LoadingBlock />
+            <ListSkeleton rows={2} />
           ) : upcomingList.length === 0 ? (
             <QuietEmpty
               title="No interviews today."
@@ -2068,7 +2091,7 @@ export default function DashboardPage() {
             <SectionLabel>Recent activity</SectionLabel>
           </div>
           {loading ? (
-            <LoadingBlock />
+            <ListSkeleton rows={4} />
           ) : activityList.length === 0 ? (
             <QuietEmpty
               title="Nothing has happened yet."
