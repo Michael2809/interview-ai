@@ -5,6 +5,106 @@ import './landing.css';
 import PricingCard from '../components/PricingCard';
 import '../components/PricingCard.css';
 
+const SITE_URL = 'https://recrewtai.com';
+
+/**
+ * JSON-LD for the landing page.
+ *
+ * Every claim here is also visible on the page itself — that is a hard
+ * requirement of Google's structured-data guidelines. If the pricing on
+ * the page changes, change it here too, or the markup becomes a violation
+ * rather than an asset.
+ */
+const LANDING_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'Recrewt AI',
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/assets/recrewt-logo-tight.png`,
+        width: 711,
+        height: 172,
+      },
+      description:
+        'Recrewt AI runs adaptive, video-based AI interviews for hiring teams — screening every candidate and returning explainable, evidence-backed scoring.',
+      contactPoint: {
+        '@type': 'ContactPoint',
+        contactType: 'sales',
+        email: 'hello@recrewtai.com',
+        url: 'https://calendly.com/mike-recrewtai',
+      },
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      url: SITE_URL,
+      name: 'Recrewt AI',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      inLanguage: 'en',
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${SITE_URL}/#software`,
+      name: 'Recrewt AI',
+      url: SITE_URL,
+      applicationCategory: 'BusinessApplication',
+      applicationSubCategory: 'Recruiting and Applicant Screening Software',
+      operatingSystem: 'Web browser',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      description:
+        'AI interview software that automatically screens every candidate. Recrewt AI generates role-specific questions, conducts adaptive video interviews with contextual follow-ups, and returns transparent scoring so hiring teams review evidence instead of resumes.',
+      featureList: [
+        'Automated AI video interviews',
+        'Adaptive, context-aware follow-up questions',
+        'Resume-based question generation',
+        'Automatic transcription and scoring',
+        'Explainable per-answer AI analysis',
+        'Candidate shortlisting recommendations',
+      ],
+      offers: [
+        {
+          '@type': 'Offer',
+          name: 'Growth',
+          price: '420',
+          priceCurrency: 'USD',
+          description:
+            '200 candidates per month, 10 active hiring roles, 1 recruiter seat.',
+          availability: 'https://schema.org/InStock',
+          url: `${SITE_URL}/#pricing`,
+          priceSpecification: {
+            '@type': 'UnitPriceSpecification',
+            price: '420',
+            priceCurrency: 'USD',
+            billingIncrement: 1,
+            unitCode: 'MON',
+          },
+        },
+        {
+          '@type': 'Offer',
+          name: 'Scale',
+          price: '620',
+          priceCurrency: 'USD',
+          description:
+            '500 candidates per month, unlimited hiring roles, 5 recruiter seats.',
+          availability: 'https://schema.org/InStock',
+          url: `${SITE_URL}/#pricing`,
+          priceSpecification: {
+            '@type': 'UnitPriceSpecification',
+            price: '620',
+            priceCurrency: 'USD',
+            billingIncrement: 1,
+            unitCode: 'MON',
+          },
+        },
+      ],
+    },
+  ],
+};
+
 export default function LandingPage() {
   useEffect(() => {
     // Inline scripts from the original standalone landing HTML.
@@ -305,6 +405,15 @@ export default function LandingPage() {
   return (
     <div className="rc-landing">
 {/* ============================================================
+     STRUCTURED DATA — tells Google (and AI answer engines) exactly
+     what Recrewt is, what it costs, and who publishes it.
+     ============================================================ */}
+<script
+  type="application/ld+json"
+  dangerouslySetInnerHTML={{ __html: JSON.stringify(LANDING_JSON_LD) }}
+/>
+
+{/* ============================================================
      SECTION 1 — HERO (rebuilt)
      ============================================================ */}
 <div className="hero" id="hero">
@@ -314,20 +423,41 @@ export default function LandingPage() {
     <div className="stage" id="stage" aria-hidden="true">
       <figure className="figure" id="figure">
         <div className="frames">
+          {/* Each frame ships AVIF -> WebP -> JPEG. The browser picks the
+              first format it supports, so modern browsers download roughly
+              a third of the old JPEG weight. `.frames picture` is
+              display:contents in landing.css, so the <img> keeps its exact
+              previous layout and every existing CSS/JS hook still applies. */}
           {/* FRAME 0 · clean empty desk (approved, permanent base once revealed) */}
-          <img id="f0" src="/assets/hero-approved/frame0-2816.jpg"
-            width="2816" height="1536"
-            alt="A clean recruiter's desk beside a window with a monitor running Recrewt AI; as the page scrolls, candidate paperwork accumulates until Recrewt organizes it into a clear pipeline."
-            fetchPriority="high" decoding="async" />
+          <picture>
+            <source srcSet="/assets/hero-approved/frame0-2816.avif" type="image/avif" />
+            <source srcSet="/assets/hero-approved/frame0-2816.webp" type="image/webp" />
+            <img id="f0" src="/assets/hero-approved/frame0-2816.jpg"
+              width="2816" height="1536"
+              alt="A clean recruiter's desk beside a window with a monitor running Recrewt AI; as the page scrolls, candidate paperwork accumulates until Recrewt organizes it into a clear pipeline."
+              fetchPriority="high" decoding="async" />
+          </picture>
           {/* FRAME 1 · first candidate material */}
-          <img className="over" id="f1" src="/assets/hero-approved/desk-frame-01.jpg"
-            width="2816" height="1536" alt="" decoding="async" />
+          <picture>
+            <source srcSet="/assets/hero-approved/desk-frame-01.avif" type="image/avif" />
+            <source srcSet="/assets/hero-approved/desk-frame-01.webp" type="image/webp" />
+            <img className="over" id="f1" src="/assets/hero-approved/desk-frame-01.jpg"
+              width="2816" height="1536" alt="" decoding="async" />
+          </picture>
           {/* FRAME 2 · screening / evaluation work accumulates */}
-          <img className="over" id="f2" src="/assets/hero-approved/desk-frame-03.jpg"
-            width="2816" height="1536" alt="" decoding="async" />
+          <picture>
+            <source srcSet="/assets/hero-approved/desk-frame-03.avif" type="image/avif" />
+            <source srcSet="/assets/hero-approved/desk-frame-03.webp" type="image/webp" />
+            <img className="over" id="f2" src="/assets/hero-approved/desk-frame-03.jpg"
+              width="2816" height="1536" alt="" decoding="async" />
+          </picture>
           {/* FRAME 3 · peak workload / organized dashboard */}
-          <img className="over" id="f3" src="/assets/hero-approved/desk-frame-04.jpg"
-            width="2816" height="1536" alt="" decoding="async" />
+          <picture>
+            <source srcSet="/assets/hero-approved/desk-frame-04.avif" type="image/avif" />
+            <source srcSet="/assets/hero-approved/desk-frame-04.webp" type="image/webp" />
+            <img className="over" id="f3" src="/assets/hero-approved/desk-frame-04.jpg"
+              width="2816" height="1536" alt="" decoding="async" />
+          </picture>
         </div>
 
         {/* monitor overlay: organized pipeline resolves on Frame 3 */}
@@ -586,10 +716,14 @@ export default function LandingPage() {
 
             <div className="panel-interview iv-surface" id="panelInterview">
               <div className="iv-video-lg">
-                <img loading="lazy" className="iv-photo"
-                     src="/assets/candidates/candidate-01.jpg"
-                     alt="Candidate on a live Recrewt AI video interview"
-                     decoding="async" />
+                <picture>
+                  <source srcSet="/assets/candidates/candidate-01.avif" type="image/avif" />
+                  <source srcSet="/assets/candidates/candidate-01.webp" type="image/webp" />
+                  <img loading="lazy" className="iv-photo"
+                       src="/assets/candidates/candidate-01.jpg"
+                       alt="Candidate on a live Recrewt AI video interview"
+                       decoding="async" />
+                </picture>
                 <span className="iv-live-tag" aria-label="Live"><i></i>LIVE</span>
                 <span className="iv-badge"><i></i>Candidate</span>
               </div>
@@ -737,7 +871,11 @@ export default function LandingPage() {
 
         <div className="s3-dec">
           <div className="s3-video">
-            <img loading="lazy" src="/assets/candidates/candidate-01.jpg" alt="Candidate on a recorded Recrewt interview" decoding="async" />
+            <picture>
+              <source srcSet="/assets/candidates/candidate-01.avif" type="image/avif" />
+              <source srcSet="/assets/candidates/candidate-01.webp" type="image/webp" />
+              <img loading="lazy" src="/assets/candidates/candidate-01.jpg" alt="Candidate on a recorded Recrewt interview" decoding="async" />
+            </picture>
             <span className="s3-vts">02:43</span>
             <span className="s3-vic" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -974,7 +1112,7 @@ export default function LandingPage() {
         cta={{
           label: 'Talk to Sales',
           variant: 'secondary',
-          href: 'mailto:hello@recrewt.ai?subject=Recrewt%20Enterprise%20enquiry',
+          href: 'mailto:hello@recrewtai.com?subject=Recrewt%20Enterprise%20enquiry',
         }}
       />
     </div>
@@ -1022,10 +1160,10 @@ export default function LandingPage() {
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </nav>
-      <a className="ft-email" href="mailto:hello@recrewt.ai">hello@recrewt.ai</a>
+      <a className="ft-email" href="mailto:hello@recrewtai.com">hello@recrewtai.com</a>
     </div>
     <div className="ft-bottom">
-      <span>© 2024 Recrewt AI. All rights reserved.</span>
+      <span>© {new Date().getFullYear()} Recrewt AI. All rights reserved.</span>
       <span>Built for modern hiring teams.</span>
     </div>
   </div>

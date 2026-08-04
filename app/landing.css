@@ -1400,3 +1400,12 @@
    already handle genuine breakage; the aggressive v19 block was
    redesigning mobile rather than adapting it, which the approved
    direction is not to do. */
+
+/* ============================================================
+   <picture> wrappers (AVIF/WebP/JPEG) are layout-neutral.
+   display:contents removes the wrapper from the box tree entirely,
+   so every existing rule that targets the inner <img> (.frames img,
+   img.over, #f0, .iv-photo, .s3-video img) keeps working exactly as
+   it did before the images were converted.
+   ============================================================ */
+.rc-landing picture { display: contents; }

@@ -47,7 +47,7 @@ export async function POST(request) {
 
   if (!toPlanKey || toPlanKey === PLAN_KEYS.ENTERPRISE) {
     return NextResponse.json(
-      { error: 'Enterprise changes go through sales — email hello@recrewt.ai.' },
+      { error: 'Enterprise changes go through sales — email hello@recrewtai.com.' },
       { status: 400 },
     )
   }

@@ -39,7 +39,11 @@ export const metadata = {
     url: SITE_URL,
     images: [
       {
-        url: "/assets/hero-approved/frame0-2816.jpg",
+        // Purpose-built 1200x630 card — the previous value pointed at the
+        // full 2816x1536 hero frame, which social platforms cropped badly.
+        url: "/assets/og-recrewt.jpg",
+        width: 1200,
+        height: 630,
         alt: "A recruiter's desk running Recrewt AI, with candidate paperwork resolving into an organized pipeline.",
       },
     ],
@@ -48,7 +52,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "Recrewt AI — Meet your AI Hiring Consultant",
     description: "Every candidate screened. Before your team spends a minute.",
-    images: ["/assets/hero-approved/frame0-2816.jpg"],
+    images: ["/assets/og-recrewt.jpg"],
   },
 };
 

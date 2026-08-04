@@ -396,7 +396,7 @@ export default function SubscriptionPage() {
 
   async function handleChoosePlan(plan) {
     if (plan.key === PLAN_KEYS.ENTERPRISE) {
-      window.location.href = 'mailto:hello@recrewt.ai?subject=Recrewt%20Enterprise%20enquiry'
+      window.location.href = 'mailto:hello@recrewtai.com?subject=Recrewt%20Enterprise%20enquiry'
       return
     }
     if (changingPlan) return
@@ -658,7 +658,7 @@ export default function SubscriptionPage() {
                     Questions about your subscription, an early billing preview, or Enterprise details? Reach out and we&rsquo;ll get back within one business day.
                   </p>
                 </div>
-                <Button as="a" href="mailto:hello@recrewt.ai?subject=Subscription%20help" variant="secondary" size="sm">
+                <Button as="a" href="mailto:hello@recrewtai.com?subject=Subscription%20help" variant="secondary" size="sm">
                   Email support
                 </Button>
               </div>
