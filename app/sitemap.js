@@ -21,11 +21,10 @@ export default function sitemap() {
       changeFrequency: 'yearly',
       priority: 0.3,
     },
-    {
-      url: `${SITE_URL}/terms`,
-      lastModified,
-      changeFrequency: 'yearly',
-      priority: 0.3,
-    },
+    // NOTE: /terms is deliberately omitted. That page sets
+    // `robots: { index: false }` because it is still a placeholder
+    // ("A formal Terms of Service is being drafted"). Listing a noindex
+    // page in the sitemap sends Google contradictory signals.
+    // Add it back once real terms are published and the page is set to index.
   ];
 }
