@@ -989,6 +989,9 @@ export default function InterviewPage() {
   const transcriptRef         = useRef([])
   const sessionRowRef         = useRef(null)
   const cachedVoiceRef        = useRef(null)
+  // Holds the <audio> element playing VoxCPM speech, so it can be stopped
+  // when a question is interrupted or the candidate hits "repeat".
+  const ttsAudioRef           = useRef(null)
   const finishedAtRef         = useRef(null)
   const recordingStartRef     = useRef(null)
 
@@ -1104,12 +1107,50 @@ export default function InterviewPage() {
     else window.speechSynthesis.onvoiceschanged = pick
   }
 
-  function speakText(text, onDone) {
+  // Stop any in-flight speech if the candidate closes the tab or navigates
+  // away mid-question, so audio can't outlive the interview screen.
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+      const audio = ttsAudioRef.current
+      if (audio) {
+        audio.pause()
+        if (audio.dataset.objectUrl === 'true') URL.revokeObjectURL(audio.src)
+        ttsAudioRef.current = null
+      }
+    }
+  }, [])
+
+  /* ── Speech output ──────────────────────────────────────────
+     Primary path is VoxCPM2 via /api/tts: one consistent, natural voice
+     for every candidate regardless of their device. The browser's
+     speechSynthesis is kept as a fallback ONLY — if the TTS service is
+     unreachable the interview continues in the OS voice rather than
+     failing outright. */
+
+  // Matches the previous utterance.rate exactly, so pacing is unchanged.
+  const TTS_RATE = 0.95
+
+  function stopSpeaking() {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+    const audio = ttsAudioRef.current
+    if (audio) {
+      audio.pause()
+      if (audio.dataset.objectUrl === 'true') URL.revokeObjectURL(audio.src)
+      ttsAudioRef.current = null
+    }
+  }
+
+  function speakTextBrowser(text, onDone) {
     if (typeof window === 'undefined' || !window.speechSynthesis) { onDone && onDone(); return }
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(text)
     if (cachedVoiceRef.current) utterance.voice = cachedVoiceRef.current
-    utterance.rate = 0.95
+    utterance.rate = TTS_RATE
     utterance.pitch = 1.0
     utterance.volume = 1
     setIsSpeaking(true)
@@ -1121,6 +1162,60 @@ export default function InterviewPage() {
     utterance.onerror = fire
     setTimeout(fire, 30000)
     window.speechSynthesis.speak(utterance)
+  }
+
+  async function speakText(text, onDone) {
+    stopSpeaking()
+
+    let done = false
+    const fire = () => {
+      if (done) return; done = true; setIsSpeaking(false); onDone && onDone()
+    }
+    // Same safety net as before: never leave the interview stuck waiting on
+    // an "ended" event that never arrives.
+    const safety = setTimeout(fire, 30000)
+
+    const fallback = () => {
+      clearTimeout(safety)
+      if (done) return
+      speakTextBrowser(text, onDone)
+    }
+
+    setIsSpeaking(true)
+
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      if (!response.ok) throw new Error(`tts ${response.status}`)
+
+      // The route returns a signed URL normally, or raw wav bytes if the
+      // cache upload failed.
+      let src
+      let isObjectUrl = false
+      if ((response.headers.get('Content-Type') || '').includes('application/json')) {
+        const data = await response.json()
+        if (!data?.url) throw new Error('tts: no url')
+        src = data.url
+      } else {
+        src = URL.createObjectURL(await response.blob())
+        isObjectUrl = true
+      }
+
+      const audio = new Audio(src)
+      audio.dataset.objectUrl = isObjectUrl ? 'true' : 'false'
+      audio.playbackRate = TTS_RATE
+      audio.onended = () => { clearTimeout(safety); fire() }
+      audio.onerror = fallback
+      ttsAudioRef.current = audio
+
+      // Rejects if the browser blocks autoplay; fall back to the OS voice.
+      await audio.play()
+    } catch {
+      fallback()
+    }
   }
 
   /* ── Permissions + stream lifecycle ──────── */

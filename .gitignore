@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# TTS voice auditions — generated .wav samples, ~30 MB and rebuildable with
+# `python tts/design_voice.py audition <set>`. The chosen interviewer voice
+# lives on a Modal Volume, not here, so nothing is lost by ignoring these.
+/tts/voice_samples/
+
+# python
+__pycache__/
+*.py[cod]
