@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { warmTtsCache } from '@/lib/tts'
 import Link from 'next/link'
 import {
   ArrowLeft, Plus, ChevronRight, ChevronDown, MoreHorizontal, Search,
@@ -2516,6 +2517,9 @@ export default function RoleDetailPage() {
       // Optimistically insert into local state so the user sees it
       // immediately, then refresh to sync any server-set defaults.
       if (data) setQuestions((prev) => [...prev, data])
+      // Custom questions are inserted already approved, so warm their audio
+      // straight away for the same reason as handleToggleQuestion.
+      warmTtsCache([text.trim()])
       await refreshQuestions()
       setCustomQuestionStage(null)
       flashMessage('Custom question added.')
@@ -2528,8 +2532,13 @@ export default function RoleDetailPage() {
   }
 
   async function handleToggleQuestion(q) {
-    await supabase.from('questions').update({ approved: !q.approved }).eq('id', q.id)
-    setQuestions((prev) => prev.map((row) => row.id === q.id ? { ...row, approved: !row.approved } : row))
+    const nowApproved = !q.approved
+    await supabase.from('questions').update({ approved: nowApproved }).eq('id', q.id)
+    setQuestions((prev) => prev.map((row) => row.id === q.id ? { ...row, approved: nowApproved } : row))
+    // Approving a question means it WILL be asked, so synthesize its audio now
+    // rather than making the first candidate wait ~73s on a cold GPU.
+    // Deliberately not awaited — see lib/tts.js.
+    if (nowApproved) warmTtsCache([q.text])
   }
   function handleDeleteQuestion(q) {
     // Route through a confirmation modal — no native window.confirm.
