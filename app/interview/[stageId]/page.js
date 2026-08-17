@@ -1409,6 +1409,27 @@ export default function InterviewPage() {
     setAwaitingStart(false)
     setCountdown(0)
     addTranscriptRow('interviewer', text)
+
+    // If this question can spawn a follow-up, boot the speech GPU now.
+    //
+    // The timing is the whole point. Scripted questions are served from cache
+    // and never reach Modal, so nothing keeps the container alive and it is
+    // reliably cold whenever a follow-up needs generating live — a cold start
+    // exceeds the client timeout and drops that one question to the browser
+    // voice, which is jarring mid-interview.
+    //
+    // Firing it here means the boot overlaps the 40-60 seconds the candidate
+    // spends answering. A ping to an already-warm container costs about a
+    // second and resets its idle timer, so consecutive adaptive questions keep
+    // it alive for the price of one boot.
+    if (q.adaptive) {
+      fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ warm: true }),
+      }).catch(() => {})
+    }
+
     speakText(text, () => {
       // Do NOT auto-start listening. Speech recognition and the
       // browser's microphone stay closed until the candidate

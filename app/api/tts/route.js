@@ -51,11 +51,49 @@ async function signedUrl(supabase, key) {
 
 export async function POST(request) {
   let text
+  let warm = false
   try {
     const body = await request.json()
     text = typeof body?.text === 'string' ? body.text.trim() : ''
+    warm = body?.warm === true
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  /* ── Warm-up ping ────────────────────────────────────────────────
+     Boots the GPU container so a later LIVE generation is fast.
+
+     This matters because of an interaction that is easy to miss: the main
+     interview questions are pre-generated and served from the cache, so they
+     never reach Modal. Nothing keeps the container alive. With a 60s idle
+     window it has always scaled to zero by the time a dynamic follow-up needs
+     synthesizing — a ~73s cold start, which exceeds the client timeout and
+     drops the candidate to the browser voice for that one question.
+
+     Called while the candidate is on the device-check screen, so the boot
+     happens during time they were spending anyway. Result is discarded and
+     never cached; the point is the side effect. */
+  if (warm) {
+    const url = process.env.RECREWT_TTS_URL
+    const token = process.env.RECREWT_TTS_TOKEN
+    if (!url || !token) return new Response(null, { status: 204 })
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        // Shortest useful utterance: enough to force a real forward pass and
+        // load the model, cheap enough to be free in practice.
+        body: JSON.stringify({ text: 'Ready.' }),
+        signal: AbortSignal.timeout(150_000),
+      })
+    } catch {
+      // A failed warm-up costs nothing — the interview still works, the first
+      // follow-up is just slower.
+    }
+    return new Response(null, { status: 204 })
   }
 
   if (!text) {
