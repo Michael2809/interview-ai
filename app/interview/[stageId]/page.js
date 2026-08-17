@@ -1140,6 +1140,9 @@ export default function InterviewPage() {
   const TTS_RATE = 0.95
   // Ceiling on waiting for the server to return audio.
   const TTS_FETCH_TIMEOUT_MS = 12000
+  // Ceiling on deciding whether to ask a follow-up. The candidate is sitting on
+  // a transition screen while this runs, so it has to be short.
+  const FOLLOWUP_TIMEOUT_MS = 7000
   // Ceiling on waiting for that audio to become playable. Deliberately short:
   // a candidate staring at a silent screen is worse than the OS voice.
   const TTS_LOAD_TIMEOUT_MS = 6000
@@ -1477,20 +1480,31 @@ export default function InterviewPage() {
     // Adaptive follow-up: gated on question.adaptive, not on type
     // equality. New question types automatically inherit correct
     // behaviour by declaring adaptive:true|false.
+    //
+    // The DECISION to follow up belongs to /api/follow-up, which sees the
+    // actual answer. It used to be a word-count test here, which was backwards:
+    // it prodded candidates who had nothing left to say, and never probed the
+    // long confident answers where the real gaps are.
     const canFollowUp = !!currentQ?.adaptive && !askedFollowUp && !isFollowUp
-    if (canFollowUp && answer.split(/\s+/).length < 25) {
+    if (canFollowUp) {
       setAskedFollowUp(true)
       setStep('transition')
-      setTimeout(() => {
+
+      const followUpText = await requestFollowUp(currentQ.text, answer)
+
+      if (followUpText) {
         setStep('live')
-        const followUp = makeFollowupQuestion('Could you tell me more about that? Feel free to share an example.')
+        const followUp = makeFollowupQuestion(followUpText)
         setCurrentQuestion(followUp.text)
         setTranscript(''); setTypedAnswer(''); setTypingMode(false)
         setIsFollowUp(true)
         addTranscriptRow('interviewer', followUp.text)
         speakText(followUp.text, () => { setAwaitingStart(true) })
-      }, 700)
-      return
+        return
+      }
+      // No follow-up warranted, or generation failed — fall through and advance.
+      // Deliberately NOT falling back to a canned "tell me more": a generic
+      // prod with no gap behind it is what this change exists to remove.
     }
 
     // Otherwise advance to next question
@@ -1502,6 +1516,37 @@ export default function InterviewPage() {
       setStep('live')
       askQuestion(next, false)
     }, 700)
+  }
+
+  /**
+   * Ask the server whether this answer deserves a follow-up.
+   * Returns the question text, or null to move on.
+   *
+   * Bounded by a timeout because this runs mid-interview with a candidate
+   * watching a transition screen. If Claude is slow we advance rather than
+   * leave them staring at nothing.
+   */
+  async function requestFollowUp(question, answer) {
+    try {
+      const res = await fetch('/api/follow-up', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageName: stage?.name || 'Interview',
+          level: stage?.level || 'standard',
+          question,
+          answer,
+        }),
+        signal: AbortSignal.timeout(FOLLOWUP_TIMEOUT_MS),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      const text = typeof data?.followUp === 'string' ? data.followUp.trim() : ''
+      return text || null
+    } catch (err) {
+      console.warn('[follow-up] skipped:', err?.message || err)
+      return null
+    }
   }
 
   async function addTranscriptRow(speaker, content) {

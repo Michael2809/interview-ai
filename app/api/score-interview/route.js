@@ -113,6 +113,23 @@ function buildPrompt({ formatted, stageName, questions }) {
   const askedList = (questions || []).map((q, i) => (i + 1) + '. ' + q).join('\n') || '(No question list provided.)'
   return `You are evaluating a candidate interview for the "${stageName || 'interview'}" stage.
 
+IMPORTANT — how to read this transcript:
+The transcript below is RAW, UNEDITED speech-to-text. It was produced by an
+automatic recogniser with no human correction. It therefore contains:
+  - no punctuation and no sentence boundaries
+  - misrecognised words ("handing" for "handling", "since correctly" for
+    "incorrectly", "Engine engineer" for "a backend engineer")
+  - filler words, false starts and self-corrections that every speaker produces
+
+These are artefacts of the recogniser and of ordinary speech. They are NOT
+evidence about the candidate. Do not penalise them.
+
+Judge ONLY: the substance of the reasoning, the specificity and concreteness of
+the examples, whether the answer actually addresses the question asked, and
+whether claims are supported. Where a word is clearly a mistranscription, infer
+what the candidate meant and evaluate that. A candidate who explains something
+correctly in messy, unpunctuated speech has answered well.
+
 Questions the interviewer was told to ask:
 ${askedList}
 
@@ -143,9 +160,26 @@ Return ONLY a raw JSON object - no markdown, no backticks, no prose outside the 
   "coverage_percent":    <0-100 - how many of the asked questions received a substantive answer>
 }
 
+Scoring scale — use the WHOLE range, including the top:
+  9.0-10.0  Excellent. Specific, concrete, well-reasoned. Names real decisions,
+            trade-offs or numbers. Directly answers what was asked. A 10 is
+            attainable and SHOULD be given when an answer genuinely earns it.
+  7.5-8.9   Strong. Solid substance and a real example, with some depth left
+            unexplored.
+  6.0-7.4   Adequate. Answers the question but stays general, or gives an
+            example without detail.
+  4.0-5.9   Weak. Vague, partly off-question, or claims without support.
+  0.0-3.9   Poor. Does not answer, or the substance is wrong.
+
+Calibrate honestly in both directions. Do not cluster scores in the middle out
+of caution: a strong answer marked 7 is as much an error as a weak answer marked
+9. Reserve low scores for genuinely weak substance, not for messy delivery.
+
 Rules:
 - Include 1-5 strengths and 0-3 concerns. Only include concerns if they genuinely apply.
 - Every strength and concern MUST have an evidence sentence rooted in what the candidate said.
+- A concern must be about substance. Never raise a concern about grammar,
+  fluency, filler words, punctuation or transcription quality.
 - Include one question_reviews entry per asked question if you can identify their answer, otherwise omit that entry.
 - Use these bands for the top-level score: 8.5+ = Strong Hire, 6.5-8.4 = Hire, 4.5-6.4 = Hold, <4.5 = Reject.`
 }
