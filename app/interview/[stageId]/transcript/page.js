@@ -1777,6 +1777,27 @@ export default function TranscriptPage() {
      an orphaned opening question each, which is why the same question appeared
      several times in a row with no answer between. */
   const sessions = useMemo(() => {
+    // Preferred path: group by session_id, which the interview client now
+    // stamps on every row of an attempt.
+    if (allLinesForCandidate.some((l) => l.session_id)) {
+      const byId = new Map()
+      const ungrouped = []
+      for (const line of allLinesForCandidate) {
+        if (!line.session_id) { ungrouped.push(line); continue }
+        if (!byId.has(line.session_id)) byId.set(line.session_id, [])
+        byId.get(line.session_id).push(line)
+      }
+      const groups = [...byId.values()]
+      if (ungrouped.length) groups.push(ungrouped)
+      // Oldest attempt first, matching the marker-based path below.
+      groups.sort(
+        (a, b) => new Date(a[0]?.created_at || 0) - new Date(b[0]?.created_at || 0),
+      )
+      return groups
+    }
+
+    // Fallback for rows written before session_id existed and missed the
+    // backfill: split at each session_start marker.
     const groups = []
     let current = null
     for (const line of allLinesForCandidate) {

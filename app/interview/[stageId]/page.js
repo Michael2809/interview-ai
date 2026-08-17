@@ -989,6 +989,12 @@ export default function InterviewPage() {
   const transcriptRef         = useRef([])
   const sessionRowRef         = useRef(null)
   const cachedVoiceRef        = useRef(null)
+  // One id for this whole interview attempt, generated once when the component
+  // mounts and written onto every transcript row. This is what makes separate
+  // attempts distinguishable — see addTranscriptRow.
+  const sessionIdRef          = useRef(
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null,
+  )
   // Holds the <audio> element playing VoxCPM speech, so it can be stopped
   // when a question is interrupted or the candidate hits "repeat".
   const ttsAudioRef           = useRef(null)
@@ -1377,6 +1383,7 @@ export default function InterviewPage() {
     const { data: sessionRow } = await supabase.from('interviews').insert({
       stage_id: stageId, speaker: 'session_start', content: 'in_progress',
       candidate_name: candidateName, status: 'in_progress',
+      session_id: sessionIdRef.current,
     }).select().single()
     if (sessionRow) sessionRowRef.current = sessionRow.id
 
@@ -1501,7 +1508,16 @@ export default function InterviewPage() {
     transcriptRef.current = [...transcriptRef.current, { speaker, content }]
     try {
       await supabase.from('interviews').insert({
-        stage_id: stageId, speaker, content, candidate_name: candidateName,
+        stage_id: stageId,
+        speaker,
+        content,
+        candidate_name: candidateName,
+        // Stamp every row of this attempt with one id. Do NOT rely on `token`
+        // for this — that column defaults to gen_random_uuid(), so it is unique
+        // per ROW and identifies nothing. Without session_id the transcript
+        // view cannot tell one attempt from another and ends up concatenating
+        // every interview a candidate ever started.
+        session_id: sessionIdRef.current,
       })
     } catch (err) { console.error('transcript insert failed:', err) }
   }
@@ -1561,6 +1577,7 @@ export default function InterviewPage() {
         const { error: insErr } = await supabase.from('interviews').insert({
           stage_id: stageId, speaker: 'video', content: videoFilename,
           candidate_name: candidateName, video_url: videoUrl,
+          session_id: sessionIdRef.current,
         })
         if (insErr) { console.error('video row insert failed:', insErr); setVideoSaveFailed(true) }
       } else {
@@ -1582,10 +1599,11 @@ export default function InterviewPage() {
           await supabase.from('interviews').insert({
             stage_id: stageId, speaker: 'audio', content: 'Audio recording',
             candidate_name: candidateName, video_url: audioUrlData.signedUrl,
+            session_id: sessionIdRef.current,
           })
           fetch('/api/analyze-audio', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audioUrl: audioUrlData.signedUrl, stageId, candidateName }),
+            body: JSON.stringify({ audioUrl: audioUrlData.signedUrl, stageId, candidateName, sessionId: sessionIdRef.current }),
           })
         }
       }

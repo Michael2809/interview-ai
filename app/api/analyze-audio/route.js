@@ -4,7 +4,7 @@ import { supabase } from '../../../lib/supabase'
 const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY })
 
 export async function POST(request) {
-  const { audioUrl, stageId, candidateName } = await request.json()
+  const { audioUrl, stageId, candidateName, sessionId } = await request.json()
 
   try {
     const transcript = await client.transcripts.transcribe({
@@ -63,6 +63,10 @@ export async function POST(request) {
       speaker: 'analysis',
       content: JSON.stringify(analysis),
       candidate_name: candidateName,
+      // Comes from the interview client so this analysis binds to the attempt
+      // that produced it, rather than floating free across all of a
+      // candidate's attempts.
+      session_id: sessionId ?? null,
     })
 
     return Response.json({ success: true, analysis })
