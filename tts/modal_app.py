@@ -119,6 +119,43 @@ class VoxCPMService:
         buffer.seek(0)
         return buffer.read()
 
+    def _mp3_bytes(self, wav):
+        """Encode to MP3 before sending it over the network.
+
+        WHY THIS MATTERS. VoxCPM2 outputs 48 kHz 16-bit mono WAV — roughly
+        96 KB per SECOND of speech, so a typical interview question is ~290 KB
+        uncompressed. Candidates on phone tethering or poor mobile data stall
+        downloading that, and a stalled <audio> makes play() hang forever with
+        no error. The first version of this service shipped raw WAV and that is
+        exactly what happened in testing.
+
+        Mono speech at 64 kbps is perceptually transparent and about six times
+        smaller. ffmpeg is already in the image.
+        """
+        import subprocess
+
+        wav_bytes = self._wav_bytes(wav)
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-i", "pipe:0",
+                    "-vn", "-ac", "1", "-b:a", "64k",
+                    "-f", "mp3", "pipe:1",
+                ],
+                input=wav_bytes,
+                capture_output=True,
+                timeout=60,
+                check=True,
+            )
+            if proc.stdout:
+                return proc.stdout, "audio/mpeg"
+        except Exception as exc:  # noqa: BLE001 - never fail a request over this
+            print(f"mp3 encode failed, serving wav instead: {exc}")
+
+        # Falling back to WAV is worse for the candidate but still works.
+        return wav_bytes, "audio/wav"
+
     def _authorize(self, request):
         header = request.headers.get("authorization", "")
         scheme, _, credentials = header.partition(" ")
@@ -172,7 +209,9 @@ class VoxCPMService:
             cfg_value=float((item or {}).get("cfg_value", 2.0)),
             inference_timesteps=int((item or {}).get("inference_timesteps", 10)),
         )
-        return Response(content=self._wav_bytes(wav), media_type="audio/wav")
+        # MP3, not WAV — see _mp3_bytes for why this matters on mobile data.
+        audio, media_type = self._mp3_bytes(wav)
+        return Response(content=audio, media_type=media_type)
 
     @modal.fastapi_endpoint(method="POST", docs=False)
     def design(self, item: dict, request: Request):

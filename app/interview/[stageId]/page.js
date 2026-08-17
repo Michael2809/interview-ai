@@ -767,14 +767,14 @@ function LiveScreen({
                   className="w-full block bg-transparent text-[15.5px] text-[color:var(--color-rc-ink)] leading-relaxed border-0 resize-none focus:outline-none placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70"
                 />
               </div>
-            ) : transcript ? (
-              <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">{transcript}</p>
             ) : isSpeaking ? (
               <p className="text-[13.5px] text-[color:var(--color-rc-warm)]">
                 <span aria-hidden="true" className="mr-1.5">🔊</span> Speaking… the microphone is off.
               </p>
             ) : countdown > 0 ? (
               <CountdownBadge value={countdown} />
+            ) : transcript ? (
+              <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">{transcript}</p>
             ) : awaitingStart ? (
               <div>
                 <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
@@ -1132,6 +1132,11 @@ export default function InterviewPage() {
 
   // Matches the previous utterance.rate exactly, so pacing is unchanged.
   const TTS_RATE = 0.95
+  // Ceiling on waiting for the server to return audio.
+  const TTS_FETCH_TIMEOUT_MS = 12000
+  // Ceiling on waiting for that audio to become playable. Deliberately short:
+  // a candidate staring at a silent screen is worse than the OS voice.
+  const TTS_LOAD_TIMEOUT_MS = 6000
 
   function stopSpeaking() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -1175,9 +1180,13 @@ export default function InterviewPage() {
     // an "ended" event that never arrives.
     const safety = setTimeout(fire, 30000)
 
-    const fallback = () => {
+    const fallback = (why) => {
       clearTimeout(safety)
       if (done) return
+      // Log the reason. Without this, a silent degradation to the OS voice is
+      // indistinguishable from the feature never having shipped — which is
+      // exactly how the first version hid a stalled-audio bug.
+      if (why) console.warn('[tts] falling back to browser speech:', why)
       speakTextBrowser(text, onDone)
     }
 
@@ -1188,10 +1197,13 @@ export default function InterviewPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
+        // A cold GPU can take a while, but the candidate is waiting. Past this
+        // we are better off speaking in the OS voice than sitting in silence.
+        signal: AbortSignal.timeout(TTS_FETCH_TIMEOUT_MS),
       })
       if (!response.ok) throw new Error(`tts ${response.status}`)
 
-      // The route returns a signed URL normally, or raw wav bytes if the
+      // The route returns a signed URL normally, or raw audio bytes if the
       // cache upload failed.
       let src
       let isObjectUrl = false
@@ -1204,17 +1216,38 @@ export default function InterviewPage() {
         isObjectUrl = true
       }
 
-      const audio = new Audio(src)
+      const audio = new Audio()
       audio.dataset.objectUrl = isObjectUrl ? 'true' : 'false'
+      audio.preload = 'auto'
       audio.playbackRate = TTS_RATE
-      audio.onended = () => { clearTimeout(safety); fire() }
-      audio.onerror = fallback
+      audio.src = src
       ttsAudioRef.current = audio
+
+      // Wait for the audio to be genuinely playable BEFORE calling play().
+      //
+      // This is the bug that shipped first time round: on a slow or flaky
+      // connection the media stalls, and audio.play() then returns a promise
+      // that never resolves AND never rejects. The interview sat in silence
+      // until the 30s safety timer moved it on. Waiting for 'canplay' with an
+      // explicit timeout means a stalled download degrades to the browser
+      // voice in a couple of seconds instead of hanging.
+      await new Promise((resolve, reject) => {
+        const giveUp = setTimeout(
+          () => reject(new Error('audio load timeout')),
+          TTS_LOAD_TIMEOUT_MS,
+        )
+        audio.addEventListener('canplay', () => { clearTimeout(giveUp); resolve() }, { once: true })
+        audio.addEventListener('error', () => { clearTimeout(giveUp); reject(new Error('audio load error')) }, { once: true })
+        audio.load()
+      })
+
+      audio.onended = () => { clearTimeout(safety); fire() }
+      audio.onerror = () => fallback('playback error')
 
       // Rejects if the browser blocks autoplay; fall back to the OS voice.
       await audio.play()
-    } catch {
-      fallback()
+    } catch (err) {
+      fallback(err?.message || 'unknown')
     }
   }
 
@@ -1257,6 +1290,13 @@ export default function InterviewPage() {
     rec.maxAlternatives = 1
     let full = ''
     rec.onresult = (event) => {
+      // Staleness guard: rec.stop() above is asynchronous — the browser
+      // can still flush one last final result from a superseded
+      // recognizer after a new question's instance has already taken
+      // over recognitionRef.current. Without this check, that late event
+      // overwrites the freshly-reset transcript (see askQuestion's
+      // setTranscript('')) with the *previous* question's answer text.
+      if (recognitionRef.current !== rec) return
       let interim = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i]
@@ -1269,6 +1309,9 @@ export default function InterviewPage() {
     }
     rec.onerror = () => {}
     rec.onend = () => {
+      // Same staleness guard — an orphaned recognizer's onend must not
+      // resurrect itself via auto-restart once it's been superseded.
+      if (recognitionRef.current !== rec) return
       if (persistLive && listening) {
         // auto-restart while listening (browser cuts off after ~60s)
         try { rec.start() } catch {}
@@ -1282,8 +1325,20 @@ export default function InterviewPage() {
 
   function stopListening() {
     setListening(false)
+
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop() } catch {}
+      const rec = recognitionRef.current
+
+      // This recognizer is being deliberately stopped.
+      // Neutralize its callbacks before stop() so its stale onend
+      // closure cannot restart it or write another transcript.
+      rec.onresult = null
+      rec.onend = null
+      rec.onerror = null
+
+      try {
+        rec.stop()
+      } catch {}
     }
   }
 
@@ -1356,6 +1411,8 @@ export default function InterviewPage() {
   function repeatCurrentQuestion() {
     if (!currentQuestion) return
     stopListening()
+    setTranscript('')
+    setTypedAnswer('')
     setAwaitingStart(false)
     setCountdown(0)
     speakText(currentQuestion, () => { setAwaitingStart(true) })

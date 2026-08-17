@@ -27,7 +27,10 @@ import { createServiceClient } from '../../../lib/supabase/service'
  */
 
 const BUCKET = 'interview-audio'
-const VOICE_VERSION = 'v1'
+// v2: audio is now MP3 rather than uncompressed WAV. v1 entries were ~290 KB
+// each, which stalled on mobile connections and made audio.play() hang with no
+// error. Bumping the version supersedes that cache rather than mixing formats.
+const VOICE_VERSION = 'v2'
 const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hour — longer than any interview
 
 function cacheKey(text) {
@@ -35,7 +38,7 @@ function cacheKey(text) {
     .createHash('sha256')
     .update(`${VOICE_VERSION}::${text}`)
     .digest('hex')
-  return `tts/${VOICE_VERSION}/${hash}.wav`
+  return `tts/${VOICE_VERSION}/${hash}.mp3`
 }
 
 async function signedUrl(supabase, key) {
@@ -90,6 +93,7 @@ export async function POST(request) {
 
   // --- cache miss: synthesize ---------------------------------------
   let audio
+  let upstreamType = 'audio/mpeg'
   try {
     const response = await fetch(modalUrl, {
       method: 'POST',
@@ -111,6 +115,7 @@ export async function POST(request) {
         { status: 502 },
       )
     }
+    upstreamType = response.headers.get('content-type') || 'audio/mpeg'
     audio = Buffer.from(await response.arrayBuffer())
   } catch (err) {
     console.error('TTS request error', err?.name ?? err)
@@ -119,7 +124,7 @@ export async function POST(request) {
 
   // --- store, then hand back a signed URL ---------------------------
   const upload = await supabase.storage.from(BUCKET).upload(key, audio, {
-    contentType: 'audio/wav',
+    contentType: upstreamType,
     upsert: true,
   })
 
@@ -128,14 +133,14 @@ export async function POST(request) {
     // failing the interview — the next request will simply regenerate.
     console.error('TTS cache upload failed', upload.error.message)
     return new Response(audio, {
-      headers: { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' },
+      headers: { 'Content-Type': upstreamType, 'Cache-Control': 'no-store' },
     })
   }
 
   const url = await signedUrl(supabase, key)
   if (!url) {
     return new Response(audio, {
-      headers: { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' },
+      headers: { 'Content-Type': upstreamType, 'Cache-Control': 'no-store' },
     })
   }
 
