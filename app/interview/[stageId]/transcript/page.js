@@ -1286,7 +1286,7 @@ function CardFrame({ children, className = '' }) {
   )
 }
 
-function TimelineCard({ startedAt, finishedAt, durationMs, avgResponseSec, followUps, interruptions }) {
+function TimelineCard({ startedAt, finishedAt, durationMs, avgResponseSec, followUps, interruptions, attemptCount, abandonedCount }) {
   const rows = [
     { label: 'Started', value: formatClockTime(startedAt) || '—' },
     { label: 'Finished', value: formatClockTime(finishedAt) || '—' },
@@ -1295,6 +1295,16 @@ function TimelineCard({ startedAt, finishedAt, durationMs, avgResponseSec, follo
     { label: 'Follow-ups', value: followUps != null ? String(followUps) : '—' },
     { label: 'Interruptions', value: interruptions != null ? String(interruptions) : '—' },
   ]
+  // Only worth mentioning when there WERE earlier attempts. Showing "1 of 1"
+  // on every transcript is noise.
+  if (attemptCount > 1) {
+    rows.push({
+      label: 'Attempts',
+      value: abandonedCount > 0
+        ? `${attemptCount} (${abandonedCount} not started)`
+        : String(attemptCount),
+    })
+  }
   return (
     <CardFrame>
       <SectionLabel>Timeline</SectionLabel>
@@ -1751,10 +1761,53 @@ export default function TranscriptPage() {
   // casing between the transcript upload path and the video upload path
   // (e.g. "Priya" vs "priya").  Fall back to case-insensitive equality so
   // the video and transcript rows still bind to the same candidate.
-  const linesForSelected = useMemo(() => {
+  const allLinesForCandidate = useMemo(() => {
     const target = (selected || '').toLowerCase()
     return lines.filter((l) => (l.candidate_name || '').toLowerCase() === target)
   }, [lines, selected])
+
+  /* ── Split a candidate's lines into separate interview attempts ──
+     Every row in `interviews` gets its own `token`, because the column
+     defaults to gen_random_uuid() and the insert never supplies one. So the
+     token identifies a ROW, not a SESSION, and cannot be used to group.
+
+     The reliable delimiter is the `session_start` marker written when the
+     interview page opens. Without this split, every attempt a candidate ever
+     made was concatenated into one transcript — abandoned starts contributed
+     an orphaned opening question each, which is why the same question appeared
+     several times in a row with no answer between. */
+  const sessions = useMemo(() => {
+    const groups = []
+    let current = null
+    for (const line of allLinesForCandidate) {
+      if (line.speaker === 'session_start' || current === null) {
+        current = []
+        groups.push(current)
+      }
+      current.push(line)
+    }
+    return groups
+  }, [allLinesForCandidate])
+
+  /* The attempt to display: the most recent one the candidate actually spoke
+     in. Opening the link and walking away creates a session containing only a
+     marker and the first question; showing that instead of real answers would
+     be worse than the bug it replaces. */
+  const linesForSelected = useMemo(() => {
+    if (sessions.length === 0) return []
+    for (let i = sessions.length - 1; i >= 0; i--) {
+      if (sessions[i].some((l) => l.speaker === 'candidate')) return sessions[i]
+    }
+    return sessions[sessions.length - 1]
+  }, [sessions])
+
+  // How many earlier attempts exist, so the UI can say so rather than silently
+  // hiding them.
+  const attemptCount = sessions.length
+  const abandonedCount = useMemo(
+    () => sessions.filter((s) => !s.some((l) => l.speaker === 'candidate')).length,
+    [sessions],
+  )
 
   const transcriptLines = useMemo(
     () => linesForSelected.filter((l) =>
@@ -2324,6 +2377,8 @@ export default function TranscriptPage() {
                   avgResponseSec={avgResponseSec}
                   followUps={followUps}
                   interruptions={interruptions}
+                  attemptCount={attemptCount}
+                  abandonedCount={abandonedCount}
                 />
                 <SpeechCard analysis={analysis} />
                 <RecordingCard videoUrl={video} durationMs={durationMs} />
