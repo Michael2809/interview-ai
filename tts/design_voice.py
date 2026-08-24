@@ -88,7 +88,7 @@ TEASER_FALLBACK = (
 
 def resolve_sample_line(set_name):
     """The line a voice set reads while being auditioned."""
-    if set_name in ("teaser", "saas", "teaser_calm"):
+    if set_name in ("teaser", "saas", "teaser_calm", "vo"):
         if TEASER_SCRIPT_PATH.exists():
             text = TEASER_SCRIPT_PATH.read_text(encoding="utf-8").strip()
             if text:
@@ -422,6 +422,76 @@ VOICE_SETS = {
             "A man in his early thirties, cool and controlled, understated "
             "confidence, clean precise delivery with no emotional colour, "
             "letting the facts carry the weight"
+        ),
+    },
+    # FEMALE-ONLY SaaS explainer voiceover. This is the live set for the launch
+    # film — earlier sets are kept only for reference.
+    #
+    # Three rules learned across the previous rounds, applied to every entry:
+    #
+    #  1. Ask for imperfection explicitly. Naturalness is breaths, hesitation
+    #     and uneven rhythm. A clean read sounds synthetic no matter how good
+    #     the timbre.
+    #  2. Say "downward inflection at the end of sentences". This is the single
+    #     most effective anti-advertising instruction — rising ends are what
+    #     make a read sound like it is selling.
+    #  3. Name what to avoid. Models drift into ad-voice the moment energy is
+    #     requested, so every description forbids it directly.
+    #
+    # The options differ along real axes — pitch, texture, pace, mic proximity,
+    # polish — rather than being restatements of one idea.
+    "vo": {
+        "vo1_crisp_explainer": (
+            "A woman in her early thirties explaining something she built, "
+            "speaking not reading, crisp consonants and a brisk pace, "
+            "matter-of-fact with downward inflection at the end of sentences, "
+            "small natural hesitations and audible breaths, throws away the "
+            "less important words, no advertising inflection, no smile in the "
+            "voice"
+        ),
+        "vo2_husky_lowkey": (
+            "A woman in her mid thirties with a slightly husky, textured "
+            "voice, low-key and dry, explaining rather than presenting, "
+            "relaxed and unforced with uneven natural rhythm, understated "
+            "confidence, never selling, never rising at the end of sentences"
+        ),
+        "vo3_close_mic": (
+            "A woman in her early thirties close to the microphone, speaking "
+            "quietly as if to one person, breathy and intimate, thinking as "
+            "she speaks with small pauses, emphasis only on the word that "
+            "carries the meaning, downward inflection at the end of sentences, "
+            "not performed, no emotional colour"
+        ),
+        "vo4_low_grounded": (
+            "A woman in her late thirties with a low, grounded voice, calm "
+            "and certain, precisely articulated but completely unforced, "
+            "downward inflection throughout, assumes the listener is smart, "
+            "no advertising inflection"
+        ),
+        "vo5_quick_sharp": (
+            "A woman in her early thirties speaking quickly and sharply but "
+            "with perfect clarity, forward momentum, energised by the ideas "
+            "themselves rather than by enthusiasm, clipped and factual, "
+            "never breathless, never pitching, never rising at the end of sentences"
+        ),
+        "vo6_dry_throwaway": (
+            "A woman in her thirties with a dry, wry delivery, understated "
+            "and slightly amused, throws lines away rather than landing them, "
+            "relaxed and conversational, downward inflection at the end of "
+            "sentences, no smile in the voice, never selling"
+        ),
+        "vo7_thinking_aloud": (
+            "A woman in her early thirties thinking aloud as she talks, "
+            "genuinely unscripted, hesitating slightly before some words, "
+            "audible breaths and irregular pacing, warm intelligence without "
+            "any performance, not reading from a script, never selling, downward "
+            "inflection at the end of sentences"
+        ),
+        "vo8_precise_clear": (
+            "A woman in her early thirties, precisely articulated and very "
+            "clear, controlled and elegant, brisk but unhurried, factual and "
+            "informative, downward inflection at the end of sentences, no "
+            "advertising inflection"
         ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
