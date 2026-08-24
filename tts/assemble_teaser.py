@@ -168,7 +168,13 @@ def main():
         + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[vomix]"
     )
     parts.append(f"[vomix]loudnorm=I={VO_TARGET_LUFS}:TP=-1.5:LRA=11[vo]")
-    parts.append("[vo]asplit=2[vo_out][vo_key]")
+    parts.append("[vo]asplit=2[vo_out][vo_key_raw]")
+    # The sidechain key MUST run the full length of the film.
+    # sidechaincompress stops when EITHER input ends, so an unpadded key (which
+    # finishes with the last spoken word) truncates the music with it — the
+    # film ended in digital silence after the final line. Padding the key to
+    # the full duration keeps the bed alive to the last frame.
+    parts.append(f"[vo_key_raw]apad,atrim=0:{total},asetpts=N/SR/TB[vo_key]")
 
     # Music ducked by the voice.
     parts.append("[0:a]aresample=48000,aformat=channel_layouts=stereo[music]")
