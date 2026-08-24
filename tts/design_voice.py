@@ -540,8 +540,8 @@ VOICE_SETS = {
         "ex5_friend_closemic": (
             "A woman in her early thirties speaking close to the microphone as "
             "if to one friend across a table, quiet and natural with audible "
-            "breaths, completely unscripted feeling, never narrating and never "
-            "selling, subtle warmth only where it is earned"
+            "breaths, completely unscripted feeling, not a narrator and not a "
+            "salesperson, subtle warmth only where it is earned"
         ),
         "ex6_friend_bright": (
             "A woman in her late twenties who clearly likes what she is "
