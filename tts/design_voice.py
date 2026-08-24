@@ -88,7 +88,7 @@ TEASER_FALLBACK = (
 
 def resolve_sample_line(set_name):
     """The line a voice set reads while being auditioned."""
-    if set_name in ("teaser", "saas", "teaser_calm", "vo"):
+    if set_name in ("teaser", "saas", "teaser_calm", "vo", "explainer"):
         if TEASER_SCRIPT_PATH.exists():
             text = TEASER_SCRIPT_PATH.read_text(encoding="utf-8").strip()
             if text:
@@ -492,6 +492,61 @@ VOICE_SETS = {
             "clear, controlled and elegant, brisk but unhurried, factual and "
             "informative, downward inflection at the end of sentences, no "
             "advertising inflection"
+        ),
+    },
+    # THE TARGET, from VO industry guidance on explainer narration:
+    #
+    #   "sounds like a friend who happens to know exactly what they are talking
+    #    about — not a salesperson, not a corporate narrator, not a teacher"
+    #
+    # Those three negatives diagnose the three sets that missed before this one:
+    #   - "warm and friendly"            -> salesperson
+    #   - "calm, editorial, premium"     -> corporate narrator
+    #   - "informative, explaining"      -> teacher
+    #
+    # So every description below states the target AND names all three failure
+    # modes explicitly. The second finding that shapes these: good explainer VO
+    # is not uniformly flat. It sits low and lifts slightly only where the
+    # content earns it. A completely level read is the other way to sound
+    # synthetic.
+    #
+    # One concept, six real variations — not six restatements.
+    "explainer": {
+        "ex1_friend_who_knows": (
+            "A woman in her early thirties who sounds like a friend that "
+            "happens to know exactly what she is talking about, easy and "
+            "unforced, not a salesperson, not a corporate narrator, not a "
+            "teacher, mostly level with a small lift only on the words that "
+            "matter"
+        ),
+        "ex2_friend_dry": (
+            "A woman in her mid thirties talking to a friend about something "
+            "she finds quietly clever, dry and a little amused, understated, "
+            "never a salesperson or a narrator, throws away the ordinary words "
+            "and lifts slightly on the good ones"
+        ),
+        "ex3_friend_quick": (
+            "A woman in her early thirties telling a friend about something "
+            "good at a natural quick clip, engaged and unpolished, real speech "
+            "rhythm with breaths, not a presenter and not a narrator, energy "
+            "from pace rather than enthusiasm"
+        ),
+        "ex4_friend_lowpitch": (
+            "A woman in her mid thirties with a lower, grounded voice speaking "
+            "as a knowledgeable friend, relaxed and certain, no performance and "
+            "no sales tone, level delivery that warms only on the payoff lines"
+        ),
+        "ex5_friend_closemic": (
+            "A woman in her early thirties speaking close to the microphone as "
+            "if to one friend across a table, quiet and natural with audible "
+            "breaths, completely unscripted feeling, never narrating and never "
+            "selling, subtle warmth only where it is earned"
+        ),
+        "ex6_friend_bright": (
+            "A woman in her late twenties who clearly likes what she is "
+            "describing, bright and quick but genuine rather than performed, "
+            "speaks like a friend not a spokesperson, no advertising "
+            "inflection, small natural hesitations"
         ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
