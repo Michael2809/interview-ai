@@ -28,6 +28,7 @@ Requires:
     export RECREWT_TTS_URL=<the .modal.run URL for the `design` endpoint>
 """
 
+import base64
 import os
 import sys
 from pathlib import Path
@@ -684,17 +685,33 @@ def render(voice_key, out_name=None):
             f"Unknown voice '{voice_key}'.\n"
             "Run: python tts/design_voice.py sets"
         )
-    description = next(s[voice_key] for s in VOICE_SETS.values() if voice_key in s)
+    # CLONE the audition sample rather than re-describing the voice.
+    #
+    # This is the whole point of render vs audition. /design invents a fresh
+    # voice from the description on every call, so rendering ten lines through
+    # it produced ten different speakers reading one script. Pinning the
+    # approved .wav as a reference makes every line the same person.
+    reference = OUT_DIR / f"{voice_key}.wav"
+    if not reference.exists():
+        sys.exit(
+            f"No audition sample at {reference}.\n"
+            f"Run: python tts/design_voice.py audition <set>  (to create it)"
+        )
+    ref_b64 = base64.b64encode(reference.read_bytes()).decode()
+    ref_text_path = OUT_DIR / f"{voice_key}.txt"
+    ref_text = ref_text_path.read_text(encoding="utf-8").strip() if ref_text_path.exists() else ""
 
     if not TEASER_SCRIPT_PATH.exists():
         sys.exit(f"No script at {TEASER_SCRIPT_PATH}")
     lines = [l.strip() for l in TEASER_SCRIPT_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
 
     url, token = _config()
+    # render clones, so it must hit /clone rather than /design.
+    clone_url = url.replace("-design.modal.run", "-clone.modal.run")
     out_dir = OUT_DIR.parent / (out_name or f"teaser_{voice_key}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Voice : {voice_key}")
+    print(f"Voice : {voice_key}  (cloned from {reference.name})")
     print(f"Lines : {len(lines)}")
     print(f"Out   : {out_dir}\n")
 
@@ -704,9 +721,13 @@ def render(voice_key, out_name=None):
         print(f"  {i + 1:02d} ... ", end="", flush=True)
         try:
             response = requests.post(
-                url,
+                clone_url,
                 headers={"Authorization": f"Bearer {token}"},
-                json={"description": description, "text": line},
+                json={
+                    "text": line,
+                    "reference_wav_b64": ref_b64,
+                    "reference_text": ref_text,
+                },
                 timeout=300,
             )
             response.raise_for_status()

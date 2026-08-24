@@ -233,6 +233,59 @@ class VoxCPMService:
         )
         return Response(content=self._wav_bytes(wav), media_type="audio/wav")
 
+    @modal.fastapi_endpoint(method="POST", docs=False)
+    def clone(self, item: dict, request: Request):
+        """Synthesize text in the voice of a SUPPLIED reference clip.
+
+        WHY THIS EXISTS. /design invents a new voice from a description on
+        every call — the model card is explicit that "Voice Design results may
+        vary between runs". That is fine for auditioning, and completely wrong
+        for rendering a script: ten calls produce ten different speakers
+        reading consecutive lines.
+
+        Rendering a multi-line voiceover must clone ONE fixed clip. This
+        endpoint takes that clip as base64 so the caller can pin any audition
+        sample as the voice, without disturbing the saved interviewer voice on
+        the volume.
+        """
+        import base64
+        import tempfile
+
+        self._authorize(request)
+
+        text = (item or {}).get("text", "").strip()
+        ref_b64 = (item or {}).get("reference_wav_b64", "")
+        if not text or not ref_b64:
+            raise HTTPException(
+                status_code=400,
+                detail="`text` and `reference_wav_b64` are both required",
+            )
+
+        try:
+            ref_bytes = base64.b64decode(ref_b64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="reference_wav_b64 is not valid base64")
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(ref_bytes)
+            ref_path = f.name
+
+        kwargs = {
+            "text": text,
+            "reference_wav_path": ref_path,
+            "cfg_value": float((item or {}).get("cfg_value", 2.0)),
+            "inference_timesteps": int((item or {}).get("inference_timesteps", 10)),
+        }
+        # Reference audio plus its transcript gives the highest-fidelity clone.
+        prompt_text = (item or {}).get("reference_text", "").strip()
+        if prompt_text:
+            kwargs["prompt_wav_path"] = ref_path
+            kwargs["prompt_text"] = prompt_text
+
+        wav = self.model.generate(**kwargs)
+        os.unlink(ref_path)
+        return Response(content=self._wav_bytes(wav), media_type="audio/wav")
+
     @modal.method()
     def save_reference(self, wav_bytes: bytes, transcript: str):
         """Promote an auditioned clip to THE interviewer voice."""
