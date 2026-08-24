@@ -522,14 +522,15 @@ VOICE_SETS = {
         "ex2_friend_dry": (
             "A woman in her mid thirties talking to a friend about something "
             "she finds quietly clever, dry and a little amused, understated, "
-            "never a salesperson or a narrator, throws away the ordinary words "
-            "and lifts slightly on the good ones"
+            "not a salesperson and not a narrator, throws away the ordinary "
+            "words and lifts slightly on the good ones"
         ),
         "ex3_friend_quick": (
             "A woman in her early thirties telling a friend about something "
             "good at a natural quick clip, engaged and unpolished, real speech "
             "rhythm with breaths, not a presenter and not a narrator, energy "
-            "from pace rather than enthusiasm"
+            "from pace rather than enthusiasm, flat on the setup and lifting "
+            "only on the payoff"
         ),
         "ex4_friend_lowpitch": (
             "A woman in her mid thirties with a lower, grounded voice speaking "
@@ -545,8 +546,9 @@ VOICE_SETS = {
         "ex6_friend_bright": (
             "A woman in her late twenties who clearly likes what she is "
             "describing, bright and quick but genuine rather than performed, "
-            "speaks like a friend not a spokesperson, no advertising "
-            "inflection, small natural hesitations"
+            "speaks like a friend not a spokesperson, not a narrator, no "
+            "advertising inflection, small natural hesitations, warmth only "
+            "where the line earns it"
         ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
