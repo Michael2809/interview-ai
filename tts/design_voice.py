@@ -474,9 +474,15 @@ def custom(name, description, line):
     print(f"\nWritten to {OUT_DIR / f'{name}.wav'}")
 
 
-# Timestamps each script line should START at, from the storyboard.
-# Used to report whether a rendered take actually fits its slot.
-TEASER_CUES = [0.5, 3.6, 9.0, 15.6, 22.6, 29.4, 37.0, 43.2, 50.2, 57.4]
+# Timestamps each script line should START at, checked against the actual cut
+# (recrewt_launch_music_v3.mp4, 61.500s). Used to report whether a rendered take
+# fits its slot.
+#
+# Line 2 moved 3.6 -> 4.5. The on-screen counter animates upward and only
+# reaches 312 at ~6.0s (it still reads 241 at 5.0s). Starting the line at 3.6
+# meant "three hundred and twelve" was spoken around 5.1s, a full second before
+# the number appeared. At 4.5s the spoken number lands as the counter locks.
+TEASER_CUES = [0.5, 4.5, 9.0, 15.6, 22.6, 29.4, 37.0, 43.2, 50.2, 57.4]
 TEASER_TOTAL = 61.5
 
 
