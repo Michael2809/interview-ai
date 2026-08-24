@@ -89,7 +89,7 @@ TEASER_FALLBACK = (
 
 def resolve_sample_line(set_name):
     """The line a voice set reads while being auditioned."""
-    if set_name in ("teaser", "saas", "teaser_calm", "vo", "explainer"):
+    if set_name in ("teaser", "saas", "teaser_calm", "vo", "explainer", "bright"):
         if TEASER_SCRIPT_PATH.exists():
             text = TEASER_SCRIPT_PATH.read_text(encoding="utf-8").strip()
             if text:
@@ -550,6 +550,51 @@ VOICE_SETS = {
             "speaks like a friend not a spokesperson, not a narrator, no "
             "advertising inflection, small natural hesitations, warmth only "
             "where the line earns it"
+        ),
+    },
+    # Brighter and more feminine than the 'explainer' set.
+    #
+    # ex2_friend_dry measured 193.9 Hz — the low end of the female range — and
+    # its description literally asked for "understated, throws lines away".
+    # Over a full film that read as bland. These aim higher in pitch and ask
+    # for MELODIC VARIATION.
+    #
+    # The distinction that keeps this out of advertising territory: pitch
+    # movement WITHIN a sentence is expressiveness, pitch RISING AT THE END of
+    # a sentence is an ad-read. Every entry asks for the first and forbids the
+    # second, so the voice can be lively without sounding like it is selling.
+    "bright": {
+        "br1_light_lively": (
+            "A woman in her late twenties with a light, higher-pitched, "
+            "distinctly feminine voice, lively and expressive with plenty of "
+            "melodic movement inside each sentence, still landing sentence "
+            "endings downward, never an advertising read"
+        ),
+        "br2_bright_friend": (
+            "A bright, feminine woman in her late twenties telling a friend "
+            "about something she genuinely likes, higher pitched and animated, "
+            "expressive and varied, warm and quick, no sales inflection and no "
+            "rising sentence endings"
+        ),
+        "br3_soft_high": (
+            "A woman in her mid twenties with a soft, high, gentle feminine "
+            "voice, light and airy, expressive and musical, delicate rather "
+            "than forceful, natural and unperformed"
+        ),
+        "br4_sparky": (
+            "A woman in her late twenties, sparky and quick-witted, higher "
+            "pitched with lots of natural pitch variation, playful and "
+            "engaged, energetic without ever sounding like an advert"
+        ),
+        "br5_bright_crisp": (
+            "A woman in her late twenties with a clear, bright, feminine voice, "
+            "crisply articulated and expressive, higher pitched than average, "
+            "confident and animated, sentence endings still falling"
+        ),
+        "br6_youthful_warm": (
+            "A youthful woman in her mid twenties, higher pitched and feminine, "
+            "warm and openly enthusiastic about what she is describing, "
+            "expressive and melodic, genuine rather than performed"
         ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
