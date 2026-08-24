@@ -69,7 +69,34 @@ SET_SAMPLE_LINES = {
     "characters": SAMPLE_LINE_NATURAL,
     "assertive": SAMPLE_LINE_ASSERTIVE,
     "blend": SAMPLE_LINE_NATURAL,
+    # 'teaser' is resolved at runtime from tts/teaser_script.txt — see
+    # resolve_sample_line(). Auditioning on placeholder copy is misleading:
+    # the model mirrors the shape of the text it is given, so a voice judged
+    # on a generic line can sound wrong reading the real script.
 }
+
+# Put the actual teaser voiceover script here, one line per shot/beat.
+TEASER_SCRIPT_PATH = Path(__file__).parent / "teaser_script.txt"
+
+# Used only if teaser_script.txt is missing, so the set still runs.
+TEASER_FALLBACK = (
+    "Hiring is messy. It doesn't have to be. "
+    "Recrewt interviews every candidate, and gives your team the evidence to "
+    "decide."
+)
+
+
+def resolve_sample_line(set_name):
+    """The line a voice set reads while being auditioned."""
+    if set_name == "teaser":
+        if TEASER_SCRIPT_PATH.exists():
+            text = TEASER_SCRIPT_PATH.read_text(encoding="utf-8").strip()
+            if text:
+                # Audition on the opening beats only. Enough to judge the
+                # voice, short enough to keep each sample quick and cheap.
+                return " ".join(text.splitlines()[:4]).strip()
+        return TEASER_FALLBACK
+    return SET_SAMPLE_LINES.get(set_name, SAMPLE_LINE)
 
 # Voice sets. Run a whole set at once:
 #     python tts/design_voice.py audition            -> the 'starter' set
@@ -289,6 +316,76 @@ VOICE_SETS = {
             "and clearly leading the conversation"
         ),
     },
+    # Voiceover for the product teaser film. A DIFFERENT job from the
+    # interviewer voice: that one talks TO one nervous person, this one narrates
+    # a brand to an audience. Slower, more composed, more space between phrases.
+    #
+    # Direction follows the brand book: restraint reads as confidence, order is
+    # the product. Understated, never hyped — the film should feel like it is
+    # letting the visuals lead rather than selling over the top of them.
+    # PRIMARY: matches the script's own direction note — "energetic, warm,
+    # confident, not hyped/shouty, natural pace, not rushed". That brief was
+    # written against actual shots, so it outranks a generic tone preference.
+    #
+    # The hard part is "energetic but not hyped". Every description below says
+    # what to avoid as well as what to do, because models drift toward
+    # advertising-voice the moment you ask for energy.
+    "teaser": {
+        # --- female ---
+        "vo_f_warm_confident": (
+            "A woman in her early thirties narrating a product film, warm and "
+            "confident, engaged and genuinely interested, natural pace, "
+            "never salesy or over-excited"
+        ),
+        "vo_f_bright_direct": (
+            "A woman in her early thirties narrating with bright clarity and "
+            "easy confidence, articulate and direct, upbeat but completely "
+            "controlled, never breathless"
+        ),
+        "vo_f_conversational": (
+            "A woman in her thirties telling you about something she thinks is "
+            "genuinely good, relaxed and natural, warm and unforced, like "
+            "talking rather than presenting"
+        ),
+        "vo_f_low_assured": (
+            "A woman in her late thirties with a low, grounded voice, warm and "
+            "certain, understated confidence, unhurried but not slow"
+        ),
+        # --- male ---
+        "vo_m_warm_confident": (
+            "A man in his early thirties narrating a product film, warm and "
+            "confident, engaged and genuinely interested, natural pace, "
+            "never salesy or over-excited"
+        ),
+        "vo_m_conversational": (
+            "A man in his thirties telling you about something he thinks is "
+            "genuinely good, relaxed and natural, warm and unforced, like "
+            "talking rather than presenting"
+        ),
+        "vo_m_deep_warm": (
+            "A man in his late thirties with a deep, warm voice, assured and "
+            "friendly, steady natural pace, grounded without being sleepy"
+        ),
+        "vo_m_bright_direct": (
+            "A man in his early thirties, clear and direct, quick-witted and "
+            "engaged, energetic but precise, never shouty"
+        ),
+    },
+    # SECONDARY: the calm/editorial direction, kept for contrast so the choice
+    # between "energetic warm" and "restrained premium" can be heard rather
+    # than argued about.
+    "teaser_calm": {
+        "vo_f_editorial": (
+            "A woman in her thirties narrating a premium brand film, calm and "
+            "editorial, unhurried and composed, quietly confident, letting "
+            "each phrase land"
+        ),
+        "vo_m_editorial": (
+            "A man in his thirties narrating a premium brand film, calm and "
+            "editorial, unhurried and composed, quietly confident, letting "
+            "each phrase land"
+        ),
+    },
 }
 
 DEFAULT_SET = "starter"
@@ -313,7 +410,7 @@ def audition(set_name=DEFAULT_SET):
             f"Available sets: {', '.join(VOICE_SETS)}"
         )
     candidates = VOICE_SETS[set_name]
-    sample_line = SET_SAMPLE_LINES.get(set_name, SAMPLE_LINE)
+    sample_line = resolve_sample_line(set_name)
 
     url, token = _config()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -377,6 +474,98 @@ def custom(name, description, line):
     print(f"\nWritten to {OUT_DIR / f'{name}.wav'}")
 
 
+# Timestamps each script line should START at, from the storyboard.
+# Used to report whether a rendered take actually fits its slot.
+TEASER_CUES = [0.5, 3.6, 9.0, 15.6, 22.6, 29.4, 37.0, 43.2, 50.2, 57.4]
+TEASER_TOTAL = 61.5
+
+
+def render(voice_key, out_name=None):
+    """Render the teaser script as ONE FILE PER LINE, in a chosen voice.
+
+    Per-line rather than one long take, because the film has fixed cues. A
+    single clip forces you to accept the model's pacing for the whole script;
+    separate files let each line sit at its own timestamp, and let you
+    regenerate one awkward line without redoing the other nine.
+
+    Reports each take's duration against the window before the next cue, so a
+    line that will not fit is obvious here rather than in the edit.
+    """
+    import wave
+
+    if voice_key not in {k for s in VOICE_SETS.values() for k in s}:
+        sys.exit(
+            f"Unknown voice '{voice_key}'.\n"
+            "Run: python tts/design_voice.py sets"
+        )
+    description = next(s[voice_key] for s in VOICE_SETS.values() if voice_key in s)
+
+    if not TEASER_SCRIPT_PATH.exists():
+        sys.exit(f"No script at {TEASER_SCRIPT_PATH}")
+    lines = [l.strip() for l in TEASER_SCRIPT_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    url, token = _config()
+    out_dir = OUT_DIR.parent / (out_name or f"teaser_{voice_key}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Voice : {voice_key}")
+    print(f"Lines : {len(lines)}")
+    print(f"Out   : {out_dir}\n")
+
+    problems = []
+    for i, line in enumerate(lines):
+        target = out_dir / f"{i + 1:02d}.wav"
+        print(f"  {i + 1:02d} ... ", end="", flush=True)
+        try:
+            response = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                json={"description": description, "text": line},
+                timeout=300,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            print(f"FAILED ({exc})")
+            problems.append((i + 1, "generation failed"))
+            continue
+        target.write_bytes(response.content)
+
+        # Measure it and compare against the slot in the cut.
+        try:
+            with wave.open(str(target), "rb") as w:
+                secs = w.getnframes() / float(w.getframerate())
+        except Exception:
+            secs = None
+
+        if secs is None:
+            print("written (duration unknown)")
+            continue
+
+        if i < len(TEASER_CUES):
+            window = (
+                TEASER_CUES[i + 1] - TEASER_CUES[i]
+                if i + 1 < len(TEASER_CUES)
+                else TEASER_TOTAL - TEASER_CUES[i]
+            )
+            slack = window - secs
+            flag = "OK " if slack >= 0.25 else ("TIGHT" if slack >= 0 else "OVER ")
+            print(f"{secs:5.2f}s / {window:4.1f}s window  [{flag}]")
+            if slack < 0.25:
+                problems.append((i + 1, f"{secs:.2f}s in a {window:.1f}s window"))
+        else:
+            print(f"{secs:5.2f}s")
+
+    print(f"\nWritten to {out_dir}")
+    if problems:
+        print("\nLines that may not fit the cut:")
+        for n, why in problems:
+            print(f"  line {n}: {why}")
+        print("\nOptions: trim the wording, move the cue, or re-render "
+              "(delivery varies between runs).")
+    else:
+        print("Every line fits its slot.")
+
+
 def choose(name):
     import modal
 
@@ -427,6 +616,11 @@ if __name__ == "__main__":
             sys.argv[3],
             sys.argv[4] if len(sys.argv) > 4 else SAMPLE_LINE_NATURAL,
         )
+    elif command == "render":
+        # python tts/design_voice.py render vo_f_warm_confident
+        if len(sys.argv) < 3:
+            sys.exit("Usage: python tts/design_voice.py render <voice> [out-folder]")
+        render(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
     elif command == "sets":
         for name, voices in VOICE_SETS.items():
             print(f"{name} ({len(voices)} voices)")
