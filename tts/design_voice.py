@@ -596,6 +596,29 @@ VOICE_SETS = {
             "warm and openly enthusiastic about what she is describing, "
             "expressive and melodic, genuine rather than performed"
         ),
+        # Explicitly cheerful / excited.
+        #
+        # These push past the guardrails on the six above, which deliberately
+        # held energy back to avoid an advertising read. Cheerful and salesy
+        # are genuinely close neighbours, so each of these keeps ONE anchor —
+        # "genuine", "not performed", or "not an advert" — to stop the model
+        # sliding all the way into a commercial. br9 is the most restrained of
+        # the three, br8 the most energetic.
+        "br7_cheerful": (
+            "A cheerful woman in her late twenties with a bright, happy, "
+            "feminine voice, smiling as she speaks, upbeat and warm, "
+            "genuinely pleased rather than performing pleasure"
+        ),
+        "br8_excited": (
+            "An excited woman in her mid twenties who cannot wait to tell you "
+            "about this, energetic and animated, higher pitched and fast, "
+            "delighted and enthusiastic, real excitement rather than an advert"
+        ),
+        "br9_cheerful_natural": (
+            "A cheerful, bright woman in her late twenties, happy and "
+            "expressive with a smile in her voice, lively and quick, but "
+            "still speaking naturally like a person rather than a spokesperson"
+        ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
     # between "energetic warm" and "restrained premium" can be heard rather
