@@ -48,3 +48,7 @@ next-env.d.ts
 # python
 __pycache__/
 *.py[cod]
+
+# Rendered launch film and VO takes — large binaries, regenerable
+/recrewt_launch_FINAL.mp4
+/tts/teaser_*/

@@ -52,6 +52,26 @@ def run(cmd):
     return proc
 
 
+MIN_GAP = 0.30  # breathing room between lines when a cue has to slide
+
+
+def trailing_silence(path, thresh_db=-45, min_dur=0.08):
+    """Seconds of silence after the last word. TTS pads every clip."""
+    import re
+
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+         "-af", f"silencedetect=n={thresh_db}dB:d={min_dur}", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", proc.stderr)]
+    if not starts:
+        return 0.0
+    total = duration_of(path)
+    # Only counts if the final silence actually runs to the end of the file.
+    return total - starts[-1] if starts[-1] > total - 1.5 else 0.0
+
+
 def duration_of(path):
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -82,23 +102,44 @@ def main():
     print(f"Video : {video.name}  ({total:.2f}s)")
     print(f"Voice : {len(clips)} lines from {vo_dir.name}\n")
 
-    # -- report fit, and warn rather than silently overlapping ---------
-    overruns = []
-    for i, clip in enumerate(clips):
-        if i >= len(CUES):
-            break
-        secs = duration_of(clip)
-        window = CUES[i + 1] - CUES[i] if i + 1 < len(CUES) else total - CUES[i]
-        slack = window - secs
-        state = "ok" if slack >= 0.25 else ("tight" if slack >= 0 else "OVER")
-        print(f"  {clip.name}  {secs:5.2f}s / {window:4.1f}s  [{state}]")
-        if slack < 0:
-            overruns.append((clip.name, -slack))
-    if overruns:
-        print("\n  Lines that run past their next cue:")
-        for name, over in overruns:
-            print(f"    {name} by {over:.2f}s")
-        print("  They will overlap the following line. Re-render or adjust cues.")
+    # -- plan the timeline ---------------------------------------------
+    #
+    # Two things happen here, and the order matters.
+    #
+    # 1. TRAILING SILENCE IS TRIMMED. Every clip came back with 0.14-0.28s of
+    #    padding after the last word. Left in, it counts against the line's
+    #    window and forces cues to move further than they need to.
+    #
+    # 2. CUES SLIDE ONLY WHEN THEY MUST. Each line starts at its storyboard cue
+    #    unless the previous line is still speaking, in which case it waits for
+    #    a short gap. Shots here hold still for seconds at a time, so a line
+    #    arriving a second or two late still lands on the shot it was written
+    #    for — far less visible than speeding the voice up.
+    durs = []
+    for clip in clips:
+        raw = duration_of(clip)
+        durs.append(max(0.2, raw - trailing_silence(clip)))
+
+    cues, prev_end = [], 0.0
+    for i, (cue, d) in enumerate(zip(CUES, durs)):
+        start = cue if i == 0 else max(cue, prev_end + MIN_GAP)
+        cues.append(start)
+        prev_end = start + d
+    # The last line must finish inside the film.
+    if cues[-1] + durs[-1] > total:
+        cues[-1] = total - durs[-1] - 0.05
+
+    print(f"  {'line':<5}{'speech':<9}{'cue':<9}{'shift':<9}{'ends'}")
+    for i, (clip, d) in enumerate(zip(clips, durs)):
+        shift = cues[i] - CUES[i]
+        mark = "" if abs(shift) < 0.01 else f"  <- moved"
+        print(f"  {i+1:<5}{d:<9.2f}{cues[i]:<9.2f}{shift:<+9.2f}{cues[i]+d:.2f}{mark}")
+
+    clashes = [i for i in range(len(cues) - 1) if cues[i] + durs[i] > cues[i + 1] + 0.01]
+    if clashes:
+        print(f"\n  OVERLAP on lines: {[i+1 for i in clashes]}")
+    else:
+        print(f"\n  No overlaps. Last line ends {cues[-1]+durs[-1]:.2f}s of {total:.1f}s.")
 
     # -- build the filter graph ---------------------------------------
     inputs = ["-i", str(video)]
@@ -109,9 +150,12 @@ def main():
     labels = []
     for i, _ in enumerate(clips):
         stream = i + 1                       # input 0 is the video
-        delay_ms = int(round(CUES[i] * 1000)) if i < len(CUES) else 0
+        delay_ms = int(round(cues[i] * 1000))
         parts.append(
-            f"[{stream}:a]aresample=48000,aformat=channel_layouts=stereo,"
+            # atrim removes the trailing padding; adelay places the line on the
+            # timeline at its computed cue.
+            f"[{stream}:a]atrim=0:{durs[i]:.4f},asetpts=N/SR/TB,"
+            f"aresample=48000,aformat=channel_layouts=stereo,"
             f"adelay={delay_ms}|{delay_ms}[v{i}]"
         )
         labels.append(f"[v{i}]")
