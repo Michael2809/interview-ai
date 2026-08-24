@@ -88,7 +88,7 @@ TEASER_FALLBACK = (
 
 def resolve_sample_line(set_name):
     """The line a voice set reads while being auditioned."""
-    if set_name == "teaser":
+    if set_name in ("teaser", "saas", "teaser_calm"):
         if TEASER_SCRIPT_PATH.exists():
             text = TEASER_SCRIPT_PATH.read_text(encoding="utf-8").strip()
             if text:
@@ -369,6 +369,59 @@ VOICE_SETS = {
         "vo_m_bright_direct": (
             "A man in his early thirties, clear and direct, quick-witted and "
             "engaged, energetic but precise, never shouty"
+        ),
+    },
+    # SaaS product-launch register — the Linear / Stripe / Vercel film voice.
+    #
+    # The key insight, learned the hard way: energy here comes from TEMPO and
+    # ARTICULATION, not from enthusiasm. The word "warm" is deliberately absent
+    # from every description below — warm reads as friendly, friendly reads as
+    # an ad-read. This voice is cool-toned and matter-of-fact; it explains
+    # something genuinely clever at a brisk clip and lets the product be the
+    # exciting part. Every entry names what to avoid, because models slide
+    # straight into advertising inflection the moment you ask for energy.
+    "saas": {
+        # --- female ---
+        "saas_f_crisp": (
+            "A woman in her early thirties presenting a technology product, "
+            "crisp and precisely articulated, brisk and matter-of-fact, "
+            "informative rather than persuasive, no advertising inflection"
+        ),
+        "saas_f_momentum": (
+            "A woman in her early thirties speaking with forward momentum, "
+            "quick and sharp but perfectly clear, energised by the ideas "
+            "themselves, never breathless and never selling"
+        ),
+        "saas_f_explainer": (
+            "A woman in her thirties explaining something clever to a smart "
+            "colleague, engaged and direct, confident and factual, the tone of "
+            "someone who assumes you will get it, never pitching"
+        ),
+        "saas_f_cool": (
+            "A woman in her early thirties, cool and controlled, understated "
+            "confidence, clean precise delivery with no emotional colour, "
+            "letting the facts carry the weight"
+        ),
+        # --- male ---
+        "saas_m_crisp": (
+            "A man in his early thirties presenting a technology product, "
+            "crisp and precisely articulated, brisk and matter-of-fact, "
+            "informative rather than persuasive, no advertising inflection"
+        ),
+        "saas_m_momentum": (
+            "A man in his early thirties speaking with forward momentum, "
+            "quick and sharp but perfectly clear, energised by the ideas "
+            "themselves, never breathless and never selling"
+        ),
+        "saas_m_explainer": (
+            "A man in his thirties explaining something clever to a smart "
+            "colleague, engaged and direct, confident and factual, the tone of "
+            "someone who assumes you will get it, never pitching"
+        ),
+        "saas_m_cool": (
+            "A man in his early thirties, cool and controlled, understated "
+            "confidence, clean precise delivery with no emotional colour, "
+            "letting the facts carry the weight"
         ),
     },
     # SECONDARY: the calm/editorial direction, kept for contrast so the choice
