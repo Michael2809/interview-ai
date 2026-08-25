@@ -787,21 +787,32 @@ def render(voice_key, out_name=None):
     for i, line in enumerate(lines):
         target = out_dir / f"{i + 1:02d}.wav"
         print(f"  {i + 1:02d} ... ", end="", flush=True)
-        try:
-            response = requests.post(
-                clone_url,
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "text": line,
-                    "reference_wav_b64": ref_b64,
-                    "reference_text": ref_text,
-                },
-                timeout=300,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            print(f"FAILED ({exc})")
-            problems.append((i + 1, "generation failed"))
+        # Retry once. The first call of a run hits a cold container, and
+        # generation occasionally fails on a single line for reasons that clear
+        # on a second attempt — not worth losing a whole render over.
+        response = None
+        for attempt in range(2):
+            try:
+                response = requests.post(
+                    clone_url,
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "text": line,
+                        "reference_wav_b64": ref_b64,
+                        "reference_text": ref_text,
+                    },
+                    timeout=300,
+                )
+                response.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                response = None
+                if attempt == 0:
+                    print("retrying… ", end="", flush=True)
+                    continue
+                print(f"FAILED ({exc})")
+                problems.append((i + 1, "generation failed"))
+        if response is None:
             continue
         target.write_bytes(response.content)
 

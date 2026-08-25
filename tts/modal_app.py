@@ -270,20 +270,53 @@ class VoxCPMService:
             f.write(ref_bytes)
             ref_path = f.name
 
-        kwargs = {
+        base = {
             "text": text,
-            "reference_wav_path": ref_path,
             "cfg_value": float((item or {}).get("cfg_value", 2.0)),
             "inference_timesteps": int((item or {}).get("inference_timesteps", 10)),
         }
-        # Reference audio plus its transcript gives the highest-fidelity clone.
         prompt_text = (item or {}).get("reference_text", "").strip()
-        if prompt_text:
-            kwargs["prompt_wav_path"] = ref_path
-            kwargs["prompt_text"] = prompt_text
 
-        wav = self.model.generate(**kwargs)
-        os.unlink(ref_path)
+        # Try progressively simpler cloning modes.
+        #
+        # "Ultimate cloning" (reference + its transcript) gives the best match,
+        # but VoxCPM compares target-text length against the reference and
+        # rejects pairs it considers badly matched. A very short line — "One
+        # open role." against a ~7s reference — trips that check and raises,
+        # which surfaced as a 500 on exactly one line of the script every time.
+        #
+        # Falling back to reference-only cloning keeps the same voice; it just
+        # forgoes the transcript alignment. Better a marginally less precise
+        # clone than a missing line.
+        attempts = []
+        if prompt_text:
+            attempts.append(
+                dict(base, reference_wav_path=ref_path,
+                     prompt_wav_path=ref_path, prompt_text=prompt_text)
+            )
+        attempts.append(dict(base, reference_wav_path=ref_path))
+
+        wav, last_error = None, None
+        for i, kwargs in enumerate(attempts):
+            try:
+                wav = self.model.generate(**kwargs)
+                if i > 0:
+                    print(f"clone: fell back to mode {i} for text={text[:40]!r}")
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                print(f"clone: mode {i} failed for text={text[:40]!r}: {exc}")
+
+        try:
+            os.unlink(ref_path)
+        except OSError:
+            pass
+
+        if wav is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"All cloning modes failed: {last_error}",
+            )
         return Response(content=self._wav_bytes(wav), media_type="audio/wav")
 
     @modal.method()
