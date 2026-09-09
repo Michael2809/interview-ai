@@ -1,6 +1,8 @@
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/service'
-import { reminderDecision, reminderTone, daysLeft, MAX_PER_RUN } from '@/lib/reminders'
+import {
+  reminderDecision, reminderTone, daysLeft, dedupeInvites, MAX_PER_RUN,
+} from '@/lib/reminders'
 
 /**
  * Nudge candidates who were invited and have not interviewed.
@@ -105,7 +107,10 @@ async function run(request) {
     return Response.json({ error: 'Could not read invites.' }, { status: 500 })
   }
 
-  const stageIds = [...new Set((invites || []).map((i) => i.stage_id).filter(Boolean))]
+  // One row per person per stage before anything is decided or sent.
+  const pending = dedupeInvites(invites)
+
+  const stageIds = [...new Set(pending.map((i) => i.stage_id).filter(Boolean))]
   if (stageIds.length === 0) {
     return Response.json({ scanned: 0, sent: 0, skipped: {} })
   }
@@ -126,7 +131,7 @@ async function run(request) {
   const skipped = {}
   let sent = 0
 
-  for (const invite of invites || []) {
+  for (const invite of pending) {
     if (sent >= MAX_PER_RUN) { skipped['batch-full'] = (skipped['batch-full'] || 0) + 1; continue }
 
     const stage = stageById.get(String(invite.stage_id))
@@ -182,5 +187,5 @@ async function run(request) {
     sent += 1
   }
 
-  return Response.json({ scanned: (invites || []).length, sent, skipped })
+  return Response.json({ scanned: (invites || []).length, candidates: pending.length, sent, skipped })
 }

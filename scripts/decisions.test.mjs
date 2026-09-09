@@ -785,3 +785,50 @@ test('the deadline quoted to the candidate counts down and then disappears', () 
   assert.equal(daysLeft(invite({ invited_at: daysAgo(2) }), ACTIVE, NOW), 3)
   assert.equal(daysLeft(invite({ invited_at: daysAgo(6) }), ACTIVE, NOW), null)
 })
+
+import { dedupeInvites } from '../lib/reminders.js'
+
+test('the same person invited twice to one stage is reminded once', () => {
+  // This is not hypothetical: the first live run sent one address two
+  // identical reminders, a second apart.
+  const out = dedupeInvites([
+    { stage_id: 61, candidate_email: 'a@example.com', invited_at: daysAgo(3), reminder_count: 0 },
+    { stage_id: 61, candidate_email: 'a@example.com', invited_at: daysAgo(2), reminder_count: 0 },
+  ])
+  assert.equal(out.length, 1)
+  assert.equal(out[0].invited_at, daysAgo(2))   // the newest link wins
+})
+
+test('a duplicate can never reset somebody reminder count to zero', () => {
+  const out = dedupeInvites([
+    { stage_id: 61, candidate_email: 'a@example.com', invited_at: daysAgo(3), reminder_count: 2 },
+    { stage_id: 61, candidate_email: 'a@example.com', invited_at: daysAgo(1), reminder_count: 0 },
+  ])
+  assert.equal(out.length, 1)
+  assert.equal(out[0].reminder_count, 2)
+})
+
+test('the same person on two different stages is two separate invites', () => {
+  const out = dedupeInvites([
+    { stage_id: 61, candidate_email: 'a@example.com', invited_at: daysAgo(3), reminder_count: 0 },
+    { stage_id: 62, candidate_email: 'a@example.com', invited_at: daysAgo(3), reminder_count: 0 },
+  ])
+  assert.equal(out.length, 2)
+})
+
+test('address casing and stray spaces do not create a second person', () => {
+  const out = dedupeInvites([
+    { stage_id: 61, candidate_email: 'A@Example.com ', invited_at: daysAgo(3), reminder_count: 0 },
+    { stage_id: 61, candidate_email: 'a@example.com',  invited_at: daysAgo(2), reminder_count: 0 },
+  ])
+  assert.equal(out.length, 1)
+})
+
+test('rows with no email are dropped rather than grouped together', () => {
+  const out = dedupeInvites([
+    { stage_id: 61, candidate_email: null, invited_at: daysAgo(3) },
+    { stage_id: 61, candidate_email: '',   invited_at: daysAgo(3) },
+  ])
+  assert.deepEqual(out, [])
+  assert.deepEqual(dedupeInvites(), [])
+})
