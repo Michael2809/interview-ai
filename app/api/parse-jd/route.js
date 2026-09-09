@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { requireActiveRecruiter } from '@/lib/api-auth'
 import { documentToMessageContent, parseJsonReply } from '@/lib/documents'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -81,6 +82,12 @@ function cleanCriteria(list, max) {
 }
 
 export async function POST(request) {
+  /* Costs money and belongs to one recruiter. This route used to accept
+     anyone with the URL, and never consulted the subscription — see
+     lib/api-auth.js. */
+  const gate = await requireActiveRecruiter()
+  if (gate.response) return gate.response
+
   let file
   let pastedText = ''
   try {

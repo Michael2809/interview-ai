@@ -48,10 +48,20 @@ export async function GET(request) {
   // fires a follow-up. `covers` deliberately does NOT: telling the
   // candidate which requirement a question is testing is handing them
   // the marking scheme.
-  const { data: questions } = await svc
+  /* The error is checked, and a failure is a 500 rather than an empty
+   * list. Destructuring only `data` meant a broken query answered 200
+   * with `questions: []`, which the interview page could not tell apart
+   * from "the recruiter approved nothing" — so the candidate was handed
+   * a three-question warm-up and told it was the interview. */
+  const { data: questions, error: qErr } = await svc
     .from('questions').select('id, text, source')
     .eq('stage_id', stageId).eq('approved', true)
     .order('id', { ascending: true })
+
+  if (qErr) {
+    console.error('interview-context: questions lookup failed:', qErr)
+    return Response.json({ error: 'Could not load the interview.' }, { status: 500 })
+  }
 
   return Response.json({
     stage: { id: stage.id, name: stage.name },

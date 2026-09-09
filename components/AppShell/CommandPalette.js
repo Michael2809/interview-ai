@@ -20,10 +20,16 @@ const PAGES = [
   { key: 'p-subscription', label: 'Subscription', href: '/subscription', icon: 'card' },
 ]
 
+/* Every action here goes somewhere.
+ *
+ * "Invite candidates" and "Generate interview questions" used to sit in
+ * this list with no href, only a hint string. activate() ignores an
+ * item without one, so pressing Enter on either did nothing and did not
+ * even close the palette. Both live inside a role, and the palette
+ * already lists every role by name — which is the honest route to them. */
 const ACTIONS = [
   { key: 'a-create-role',   label: 'Create role',        href: '/roles' },
-  { key: 'a-invite',        label: 'Invite candidates',  hrefHint: 'a role first' },
-  { key: 'a-generate-q',    label: 'Generate interview questions', hrefHint: 'inside a stage' },
+  { key: 'a-open-candidates', label: 'View all candidates', href: '/candidates' },
   { key: 'a-open-settings', label: 'Open Settings',      href: '/settings' },
   { key: 'a-open-subscription', label: 'Open Subscription',  href: '/subscription' },
 ]
@@ -91,7 +97,10 @@ export default function CommandPalette({ open, onClose }) {
       onClose()
       router.push(`/roles/${item.roleId}?tab=interviews`)
     } else if (item.type === 'page' || item.type === 'action') {
-      if (item.href) { onClose(); router.push(item.href) }
+      // Always close, even if an entry somehow has no destination. An
+      // overlay that swallows Enter and stays open reads as a hang.
+      onClose()
+      if (item.href) router.push(item.href)
     }
   }, [onClose, pushRecent, router])
 

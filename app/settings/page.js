@@ -278,11 +278,19 @@ function DangerZone({ userEmail }) {
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            {/* A real <button>, not an anchor.
+                Button only applies the disabled attribute when it renders
+                a <button>, so as="a" made this look gated while staying
+                fully clickable — the "type your email to confirm" step
+                was decoration. */}
             <Button
               variant="danger"
               disabled={!canConfirm}
-              as="a"
-              href={`mailto:support@recrewtai.com?subject=Account%20deletion%20request&body=Please%20delete%20my%20Recrewt%20account:%20${encodeURIComponent(userEmail || '')}`}
+              onClick={() => {
+                if (!canConfirm) return
+                window.location.href =
+                  `mailto:support@recrewtai.com?subject=Account%20deletion%20request&body=Please%20delete%20my%20Recrewt%20account:%20${encodeURIComponent(userEmail || '')}`
+              }}
             >
               Email support to delete
             </Button>

@@ -71,7 +71,7 @@ function emailBody({ roleName, companyName, link, tone, left }) {
         </p>
         <hr style="border:none;border-top:1px solid #e8ebed;margin:28px 0;" />
         <p style="font-size:13px;color:#aaa;margin:0;">
-          Automated message sent via Recrewt AI on behalf of ${escape(companyName)}. Please do not reply.
+          Sent via Recrewt AI on behalf of ${escape(companyName)}. Reply to this email to reach the hiring team.
         </p>
       </div>
     </div>
@@ -121,12 +121,15 @@ async function run(request) {
   const { data: roles } = await svc
     .from('roles').select('id, title, user_id, status, interview_response_sla_days').in('id', roleIds)
   const { data: settings } = await svc
-    .from('settings').select('user_id, company_name')
+    .from('settings').select('user_id, company_name, email')
     .in('user_id', [...new Set((roles || []).map((r) => r.user_id).filter(Boolean))])
 
   const stageById = new Map((stages || []).map((s) => [String(s.id), s]))
   const roleById = new Map((roles || []).map((r) => [String(r.id), r]))
   const companyByUser = new Map((settings || []).map((s) => [s.user_id, s.company_name]))
+  // Same reasoning as the invite: a reminder a candidate cannot answer
+  // is a dead end, and this one is chasing them.
+  const replyToByUser = new Map((settings || []).map((s) => [s.user_id, s.email]))
 
   const skipped = {}
   let sent = 0
@@ -148,8 +151,10 @@ async function run(request) {
     const roleName = role?.title || 'the role'
 
     try {
+      const replyTo = replyToByUser.get(role?.user_id) || null
       const { error: mailErr } = await resend.emails.send({
         from: FROM,
+        ...(replyTo ? { replyTo } : {}),
         to: invite.candidate_email,
         subject: reminderTone(invite) === 'last-call'
           ? `Last reminder: your interview for ${roleName}`

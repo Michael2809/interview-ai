@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 import { hasDecision } from '@/lib/decisions'
+import {
+  wantsCompletionEmail, recruiterEmail, verdictLabel, completionNotification,
+} from '@/lib/notify'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
@@ -428,5 +432,114 @@ export async function POST(request) {
     console.warn('score-interview: missing stageId or candidateName; skipping persist', { stageId, candidateName })
   }
 
+  /* Tell the recruiter, on both surfaces that promised it. Never
+     allowed to affect the response: the score is the product, a missed
+     notification is an annoyance. */
+  if (stageId && candidateName) {
+    try {
+      await announceCompletion({ stageId, candidateName, payload })
+    } catch (err) {
+      console.error('score-interview: completion notice failed:', err)
+    }
+  }
+
   return Response.json(payload)
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Completion notice
+ *
+ * Fires once per candidate per stage. Re-scoring somebody must not
+ * email the recruiter again — the existing notification row is the
+ * guard, which is also why the row is written before the email.
+ * ────────────────────────────────────────────────────────── */
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || 'https://recrewtai.com'
+
+async function announceCompletion({ stageId, candidateName, payload }) {
+  const { data: stage } = await supabase
+    .from('stages').select('id, name, role_id').eq('id', stageId).maybeSingle()
+  if (!stage) return
+
+  const { data: role } = await supabase
+    .from('roles').select('id, title, user_id, is_demo').eq('id', stage.role_id).maybeSingle()
+  if (!role?.user_id) return
+  if (role.is_demo) return    // seeded demo data is not real news
+
+  // Already announced? Re-scores must be silent.
+  const { data: existing } = await supabase
+    .from('notifications').select('id')
+    .eq('user_id', role.user_id)
+    .eq('kind', 'scoring_completed')
+    .eq('stage_id', stageId)
+    .eq('candidate_name', candidateName)
+    .limit(1)
+  if (existing && existing.length > 0) return
+
+  const { error: noteErr } = await supabase.from('notifications').insert(
+    completionNotification({
+      userId: role.user_id,
+      stageId,
+      roleId: role.id,
+      candidateName,
+      roleTitle: role.title,
+      score: payload.score,
+      recommendation: payload.recommendation,
+    }),
+  )
+  if (noteErr) {
+    console.error('score-interview: notification insert failed:', noteErr)
+    return   // without the row there is no guard, so do not email either
+  }
+
+  const { data: settings } = await supabase
+    .from('settings').select('email, full_name, company_name, notify_on_completion')
+    .eq('user_id', role.user_id).maybeSingle()
+
+  if (!wantsCompletionEmail(settings)) return
+
+  const to = recruiterEmail(settings, null)
+  if (!to) {
+    console.warn('score-interview: no address for recruiter', role.user_id)
+    return
+  }
+
+  const verdict = verdictLabel(payload.recommendation, payload.score)
+  const link = `${SITE}/interview/${stageId}/transcript?candidate=${encodeURIComponent(candidateName)}`
+  const clean = (v) => String(v || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+
+  const { error: mailErr } = await resend.emails.send({
+    from: 'interviews@recrewtai.com',
+    to,
+    subject: `${verdict} — ${clean(candidateName)} finished ${clean(role.title || 'the interview')}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #111;">
+        <div style="background:#111;padding:24px 32px;">
+          <h1 style="color:#fff;font-size:20px;margin:0;">Recrewt AI</h1>
+        </div>
+        <div style="padding:36px 32px;border:1px solid #e8ebed;border-top:none;">
+          <p style="font-size:15px;color:#444;margin-top:0;">
+            <strong>${clean(candidateName)}</strong> has finished the interview for
+            <strong>${clean(role.title || 'your role')}</strong>.
+          </p>
+          <table style="margin:24px 0;font-size:15px;color:#111;">
+            <tr><td style="padding:4px 24px 4px 0;color:#666;">Recommendation</td><td><strong>${verdict}</strong></td></tr>
+            <tr><td style="padding:4px 24px 4px 0;color:#666;">Score</td><td><strong>${Number(payload.score).toFixed(1)} / 10</strong></td></tr>
+          </table>
+          ${payload.summary ? `<p style="font-size:14.5px;color:#444;line-height:1.6;">${clean(payload.summary)}</p>` : ''}
+          <div style="text-align:center;margin:30px 0;">
+            <a href="${link}" style="background:#6C5CE7;color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:bold;display:inline-block;">
+              Read the full review
+            </a>
+          </div>
+          <p style="font-size:13px;color:#888;line-height:1.6;">
+            The recommendation is a machine assessment, not a hiring decision.
+            You can turn these emails off in Settings.
+          </p>
+        </div>
+      </div>
+    `,
+  })
+  if (mailErr) console.error('score-interview: completion email failed:', mailErr)
 }

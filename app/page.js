@@ -72,7 +72,7 @@ const LANDING_JSON_LD = {
           price: '420',
           priceCurrency: 'USD',
           description:
-            '200 candidates per month, 10 active hiring roles, 1 recruiter seat.',
+            '200 candidates per month, 10 active hiring roles, automated video screening.',
           availability: 'https://schema.org/InStock',
           url: `${SITE_URL}/#pricing`,
           priceSpecification: {
@@ -89,7 +89,7 @@ const LANDING_JSON_LD = {
           price: '620',
           priceCurrency: 'USD',
           description:
-            '500 candidates per month, unlimited hiring roles, 5 recruiter seats.',
+            '500 candidates per month, unlimited hiring roles, full sentiment analysis.',
           availability: 'https://schema.org/InStock',
           url: `${SITE_URL}/#pricing`,
           priceSpecification: {
@@ -1054,19 +1054,23 @@ export default function LandingPage() {
         limits={[
           { type: 'candidates', value: '200', label: 'Candidates / month' },
           { type: 'roles',      value: '10',  label: 'Active hiring roles' },
-          { type: 'seats',      value: '1',   label: 'Recruiter seat' },
         ]}
         features={[
           'Fully automated screening',
           'AI writes interview questions',
           'Video interviews on autopilot',
-          'Auto-scoring & transcript',
-          'Basic speech analysis',
+          'Auto-scoring, transcript & speech analysis',
+          'Share results with your team by link',
           'Email support',
         ]}
         cta={{ label: 'Start with Growth', variant: 'secondary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2h5VbmxX3JNDLIKz1P?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
 
+      {/* Growth and Scale run the same product. The old list sold
+          sentiment analysis, the score breakdown, CSV invites and the
+          progress dashboard as Scale-only — nothing in the codebase gates
+          any of them, so every Growth customer already had the lot.
+          Volume and support are the honest differences. */}
       <PricingCard
         state="featured"
         name="Scale"
@@ -1076,15 +1080,12 @@ export default function LandingPage() {
         limits={[
           { type: 'candidates', value: '500',       label: 'Candidates / month' },
           { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
-          { type: 'seats',      value: '5',         label: 'Recruiter seats' },
         ]}
         featuresHeading="Everything in Growth, plus:"
         features={[
-          'Full sentiment analysis',
-          'Advanced AI score breakdown',
-          'CSV bulk invites',
-          'Interview progress dashboard',
-          'Same-day priority support',
+          'Unlimited active hiring roles',
+          'More than double the monthly candidates',
+          'Priority support',
         ]}
         cta={{ label: 'Start with Scale', variant: 'primary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2hHWPwycoOZW6NdF3T?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
@@ -1097,16 +1098,12 @@ export default function LandingPage() {
         limits={[
           { type: 'candidates', value: 'Unlimited', label: 'Candidates / month' },
           { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
-          { type: 'seats',      value: 'Unlimited', label: 'Recruiter seats' },
         ]}
         featuresHeading="Everything in Scale, plus:"
         features={[
-          'API access',
-          'ATS integrations',
-          'Custom integrations',
-          'Advanced reporting',
+          'Unlimited candidates',
+          'Custom interview design with our team',
           'Dedicated account manager',
-          'Single sign-on (SSO)',
           'Custom onboarding & training',
         ]}
         cta={{

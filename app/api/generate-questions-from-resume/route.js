@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { requireActiveRecruiter } from '@/lib/api-auth'
 import mammoth from 'mammoth'
 
 const anthropic = new Anthropic({
@@ -6,6 +7,12 @@ const anthropic = new Anthropic({
 })
 
 export async function POST(request) {
+  /* Costs money and belongs to one recruiter. This route used to accept
+     anyone with the URL, and never consulted the subscription — see
+     lib/api-auth.js. */
+  const gate = await requireActiveRecruiter()
+  if (gate.response) return gate.response
+
   try {
     const formData = await request.formData()
     const file = formData.get('resume')

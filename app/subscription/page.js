@@ -212,8 +212,6 @@ function PlanRow({ plan, isCurrent, disabled, onChoose }) {
   const cadence = plan.billing_period === 'monthly'
     ? '/ month'
     : plan.billing_period === 'annual' ? '/ year' : ''
-  // Seats label pluralises so a 1-seat plan doesn't read as "1 seats".
-  const seatLabel = plan.seat_limit === 1 ? 'Seat' : 'Seats'
 
   return (
     <div className={
@@ -260,14 +258,10 @@ function PlanRow({ plan, isCurrent, disabled, onChoose }) {
             {displayLimit(plan.candidate_limit)}
           </div>
         </div>
-        <div className="min-w-0">
-          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] leading-snug break-words">
-            Recruiter {seatLabel}
-          </div>
-          <div className="mt-1 text-[15px] font-medium text-[color:var(--color-rc-ink)] tabular-nums">
-            {displayLimit(plan.seat_limit)}
-          </div>
-        </div>
+        {/* Recruiter seats removed from the plan tiles for the same reason
+            as the usage bar: one login per workspace is the only thing
+            the product supports, so a seat count is a promise it cannot
+            keep. */}
       </div>
 
       <ul className="mt-4 grid gap-1.5">
@@ -446,7 +440,7 @@ export default function SubscriptionPage() {
                 Manage your workspace.
               </h1>
               <p className="mt-3 text-[15px] md:text-[16px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[52ch]">
-                View your plan, monitor usage, and prepare for the launch of billing.
+                View your plan, monitor your usage, and change plans.
               </p>
             </div>
           </div>
@@ -555,12 +549,11 @@ export default function SubscriptionPage() {
                   limit={summary.roles.limit}
                   hint="Roles currently open on your workspace"
                 />
-                <UsageBar
-                  label="Team members"
-                  used={summary.seats.used}
-                  limit={summary.seats.limit}
-                  hint="Recruiters who can sign in"
-                />
+                {/* The "Team members 1 / 5" bar is gone with the seats it
+                    counted. getSeatsCount() returns 1 unconditionally and
+                    there is no way to add a second recruiter, so the bar
+                    could never move — it just advertised a feature that
+                    does not exist. It comes back when teams do. */}
                 <UsageBar
                   label="Remaining candidates"
                   used={summary.candidates.totalIncluded === null ? 0 : Math.max(0, summary.candidates.totalIncluded - summary.candidates.used)}
@@ -578,7 +571,7 @@ export default function SubscriptionPage() {
               <ComingSoonTile
                 icon={<Package size={16} aria-hidden="true" />}
                 title="Temporary candidate packs"
-                description="Add extra candidates without upgrading your plan. Packs are one-time, never recurring, and expire at your next renewal. Available after payment integration goes live."
+                description="Add extra candidates without upgrading your plan. Packs are one-time, never recurring, and expire at your next renewal. Not available to buy yet — upgrade your plan or email us if you need more this cycle."
                 footnote={
                   entitlements?.permissions?.canPurchaseCandidatePack?.reason === 'renewal_window'
                     ? 'Packs are also unavailable within 7 days of your renewal date.'
@@ -589,15 +582,20 @@ export default function SubscriptionPage() {
               />
             </Section>
 
-            {/* Section 4 — Payment Integration */}
+            {/* Section 4 — Payment method
+                This used to say payments "will be enabled after Dodo
+                Payments integration" — sitting directly below a plans
+                grid whose buttons run a real Dodo checkout and charge a
+                card. Telling a paying customer their payment isn't live
+                is the fastest way to make them doubt the charge. */}
             <Section
-              title="Payment integration"
-              description="How your workspace will be billed once payments go live."
+              title="Payment method"
+              description="Cards and invoices are handled by our payment provider, Dodo Payments."
             >
               <ComingSoonTile
                 icon={<CreditCard size={16} aria-hidden="true" />}
-                title="Payment integration"
-                description="Payment processing and subscription management will be enabled after Dodo Payments integration. When it's live, you'll manage payment methods, invoices, and plan changes from this page."
+                title="Managed by Dodo Payments"
+                description="Your card details are held by Dodo, never by Recrewt. To update a card, change billing details or retrieve an invoice, use the receipt email from your last payment, or email hello@recrewtai.com and we'll sort it out."
               />
             </Section>
 

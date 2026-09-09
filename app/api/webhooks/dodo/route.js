@@ -57,31 +57,59 @@ export async function POST(request) {
   const webhookId = webhookHeaders['webhook-id']
   const supabase = createServiceClient()
 
-  // Idempotency — Standard Webhooks retries on any non-2xx response, so
-  // a redelivered event must be a no-op rather than double-applying a
-  // plan change or double-extending a billing period. webhook_id is
-  // the primary key; a conflict means we've already handled this exact
-  // event and can short-circuit before touching subscriptions at all.
+  /* Idempotency — Standard Webhooks retries on any non-2xx response, so
+   * a redelivered event must not double-apply a plan change or
+   * double-extend a billing period.
+   *
+   * The row now means "seen". `processed_at` means "and handled". Only
+   * the second one short-circuits a retry.
+   *
+   * It used to write the row first and treat any conflict as handled.
+   * So when a handler threw, the 500 asked Dodo to retry, the retry hit
+   * the conflict, and the event was answered "already done" without ever
+   * running — the comment here claimed the opposite. A cancel-then-lapse
+   * produces `cancelled -> expired`, which the state machine rejects, so
+   * that customer stayed cancelled forever. */
   const { error: dupeError } = await supabase
     .from('dodo_webhook_events')
     .insert({ webhook_id: webhookId, event_type: event.type, payload: event })
+
   if (dupeError) {
     if (dupeError.code === '23505') {
-      return NextResponse.json({ received: true, duplicate: true })
+      const { data: seen } = await supabase
+        .from('dodo_webhook_events')
+        .select('processed_at')
+        .eq('webhook_id', webhookId)
+        .maybeSingle()
+      // Finished before — genuinely a no-op.
+      if (seen?.processed_at) {
+        return NextResponse.json({ received: true, duplicate: true })
+      }
+      // Seen but never finished. Fall through and handle it: every
+      // handler below is idempotent (self-transitions, upserts).
+      console.warn('Dodo webhook: retrying previously unhandled event', webhookId)
+    } else {
+      console.error('Dodo webhook: failed to log event (continuing anyway)', dupeError)
     }
-    console.error('Dodo webhook: failed to log event (continuing anyway)', dupeError)
   }
 
   try {
     await handleEvent(supabase, event)
   } catch (err) {
     console.error(`Dodo webhook: failed to handle ${event.type}`, err)
-    // Non-2xx makes Dodo retry — appropriate for a transient DB error,
-    // but note the idempotency insert above means a *processing* error
-    // here (as opposed to a duplicate) will retry the full handler,
-    // which is safe since every handler below is itself idempotent
-    // (state-machine self-transitions, upserts).
+    // processed_at stays null, so Dodo's retry runs the handler again
+    // rather than being told it was already done.
     return NextResponse.json({ error: 'processing failed' }, { status: 500 })
+  }
+
+  const { error: markErr } = await supabase
+    .from('dodo_webhook_events')
+    .update({ processed_at: new Date().toISOString() })
+    .eq('webhook_id', webhookId)
+  if (markErr) {
+    // Handled but not marked. A retry would re-run an idempotent
+    // handler, which is the safe direction to fail in.
+    console.error('Dodo webhook: could not mark processed', webhookId, markErr)
   }
 
   return NextResponse.json({ received: true })
@@ -122,7 +150,8 @@ async function resolveUserIdByEmail(supabase, email) {
   const { data, error } = await supabase
     .from('settings')
     .select('user_id')
-    .ilike('email', email)
+    // eq, not ilike — see resolveUserIdByEmail in subscription-service.js.
+    .eq('email', String(email || '').trim().toLowerCase())
     .maybeSingle()
   if (error) {
     console.error('Dodo webhook: email lookup failed', error)

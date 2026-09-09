@@ -2660,7 +2660,126 @@ function DeleteRoleModal({ open, role, onClose, onConfirm, deleting }) {
  * RoleHeader
  * ────────────────────────────────────────────────────────── */
 
-function RoleActionMenuHeader({ role, onEdit, onDuplicate, onSetStatus, onDelete, hasStatusColumn }) {
+/* ─────────────────────────────────────────────────────────────
+ * EditRoleModal
+ *
+ * "Edit role" sat in the menu setting a state variable nothing read, so
+ * it did nothing at all — and there was no other way to change a role's
+ * title anywhere in the product. A recruiter who mistyped a job title
+ * was stuck with it in front of every candidate.
+ *
+ * Deliberately narrow: the things a recruiter wants to correct after the
+ * fact. Requirements and questions have their own screens, and changing
+ * them after candidates have interviewed would silently move the goal
+ * posts on people already scored.
+ * ────────────────────────────────────────────────────────── */
+
+const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship']
+const EXPERIENCE_LEVELS = ['Entry', 'Mid', 'Senior', 'Lead']
+
+function EditRoleModal({ open, role, onClose, onSaved }) {
+  const [title, setTitle] = useState('')
+  const [department, setDepartment] = useState('')
+  const [employmentType, setEmploymentType] = useState('')
+  const [experienceLevel, setExperienceLevel] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const supabase = createClient()
+
+  // Refill from the role every time the modal opens, so a cancelled edit
+  // is really cancelled rather than lingering in the fields.
+  useEffect(() => {
+    if (!open) return
+    setTitle(role?.title || '')
+    setDepartment(role?.department || '')
+    setEmploymentType(role?.employment_type || '')
+    setExperienceLevel(role?.experience_level || '')
+    setError('')
+  }, [open, role])
+
+  async function save() {
+    const clean = title.trim()
+    if (!clean) { setError('A role needs a title.'); return }
+    setSaving(true)
+    setError('')
+
+    const patch = {
+      title: clean,
+      department: department.trim() || null,
+      employment_type: employmentType || null,
+      experience_level: experienceLevel || null,
+    }
+
+    const { data, error: err } = await supabase
+      .from('roles').update(patch).eq('id', role.id).select().maybeSingle()
+
+    setSaving(false)
+    if (err || !data) {
+      console.error('Role update failed:', err)
+      setError('That did not save. Please try again.')
+      return
+    }
+    onSaved(data)
+    onClose()
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => !saving && onClose()}
+      title="Edit role"
+      description="Candidates see the title. Everything else is for your own filtering."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={save} loading={saving}>Save changes</Button>
+        </>
+      }
+    >
+      <div className="grid gap-4">
+        <TextField
+          label="Job title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={120}
+          placeholder="e.g. Public Relations Executive"
+        />
+        <TextField
+          label="Department"
+          value={department}
+          onChange={(e) => setDepartment(e.target.value)}
+          maxLength={80}
+          placeholder="Optional"
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Employment type"
+            value={employmentType}
+            onChange={(e) => setEmploymentType(e.target.value)}
+            options={[
+              { value: '', label: 'Not set' },
+              ...EMPLOYMENT_TYPES.map((v) => ({ value: v, label: v })),
+            ]}
+          />
+          <Select
+            label="Experience level"
+            value={experienceLevel}
+            onChange={(e) => setExperienceLevel(e.target.value)}
+            options={[
+              { value: '', label: 'Not set' },
+              ...EXPERIENCE_LEVELS.map((v) => ({ value: v, label: v })),
+            ]}
+          />
+        </div>
+        {error && (
+          <p className="text-[13px] text-[color:var(--color-rc-red)]">{error}</p>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function RoleActionMenuHeader({ role, onEdit, onSetStatus, onDelete, hasStatusColumn }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef(null)
   useEffect(() => {
@@ -2703,13 +2822,9 @@ function RoleActionMenuHeader({ role, onEdit, onDuplicate, onSetStatus, onDelete
           >
             <Pencil size={13} aria-hidden="true" /> Edit role
           </button>
-          <button
-            type="button" role="menuitem"
-            onClick={() => { setOpen(false); onDuplicate() }}
-            className="w-full text-left px-3.5 py-2 text-[13.5px] text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)] flex items-center gap-2"
-          >
-            <Copy size={13} aria-hidden="true" /> Duplicate
-          </button>
+          {/* "Duplicate" lived here and only navigated to the roles list.
+              There is no role-duplication feature to reach; the button was
+              a signpost to nothing. Gone until one exists. */}
           {canPause && (
             <button
               type="button" role="menuitem"
@@ -2760,7 +2875,7 @@ function RoleActionMenuHeader({ role, onEdit, onDuplicate, onSetStatus, onDelete
   )
 }
 
-function RoleHeader({ role, stages, stats, onOpenInvite, onEdit, onDuplicate, onSetStatus, onDelete, hasStatusColumn }) {
+function RoleHeader({ role, stages, stats, onOpenInvite, onEdit, onSetStatus, onDelete, hasStatusColumn }) {
   const status = role?.status || 'active'
   const disabledInvite = status !== 'active' || stages.length === 0
 
@@ -2804,7 +2919,6 @@ function RoleHeader({ role, stages, stats, onOpenInvite, onEdit, onDuplicate, on
           <RoleActionMenuHeader
             role={role}
             onEdit={onEdit}
-            onDuplicate={onDuplicate}
             onSetStatus={onSetStatus}
             onDelete={onDelete}
             hasStatusColumn={hasStatusColumn}
@@ -3262,47 +3376,96 @@ export default function RoleDetailPage() {
   async function upsertVerdicts(cands, status) {
     // For each candidate, for each stage they've completed with an existing
     // score row, update status; otherwise insert a new scores row.
+    //
+    // Returns a real tally. Every caller used to announce success for the
+    // whole selection regardless of what happened — including candidates
+    // it skipped outright, and writes that silently touched no rows.
+    let saved = 0, failed = 0, skipped = 0
     setBusyBulk(true)
     for (const c of cands) {
       for (const sid of c.stageIds) {
-        if (!c.completedCount) continue
+        // Somebody who has not finished has no verdict to record. Counted
+        // so the caller can say so rather than including them in a total
+        // that implies they were dealt with.
+        if (!c.completedCount) { skipped += 1; continue }
+
         const existing = scores.find((s) => String(s.stage_id) === String(sid) && (s.candidate_name || '').toLowerCase() === (c.name || '').toLowerCase())
         if (existing) {
-          await supabase.from('scores').update({ status }).eq('id', existing.id ?? null)
+          /* No `.eq('id', existing.id ?? null)` any more. A null id there
+             matched nothing and still returned no error, so the verdict
+             silently went nowhere while the toast said it saved. The two
+             filters below identify the row on their own. */
+          const { data, error } = await supabase.from('scores')
+            .update({ status })
             .eq('stage_id', String(sid))
             .eq('candidate_name', c.name || '')
+            .select('id')
+          if (error || !data || data.length === 0) {
+            console.error('verdict update failed for', c.name, error)
+            failed += 1
+          } else {
+            saved += 1
+          }
         } else if (c.name) {
-          await supabase.from('scores').insert({
+          const { error } = await supabase.from('scores').insert({
             stage_id: String(sid),
             candidate_name: c.name,
             score: c.latestScore ?? null,
             status,
             summary: null,
           })
+          if (error) {
+            console.error('verdict insert failed for', c.name, error)
+            failed += 1
+          } else {
+            saved += 1
+          }
         }
       }
     }
     setBusyBulk(false)
     await refreshCandidates()
+    return { saved, failed, skipped }
   }
 
   async function handleSetCandidateStatus(cand, status) {
-    await upsertVerdicts([cand], status)
-    flashMessage(`Marked ${getCandidateDisplayName(cand)} as ${status.replace('-', ' ')}.`)
+    const r = await upsertVerdicts([cand], status)
+    if (r.saved > 0) {
+      flashMessage(`Marked ${getCandidateDisplayName(cand)} as ${status.replace('-', ' ')}.`)
+    } else if (r.skipped > 0) {
+      flashError(`${getCandidateDisplayName(cand)} has not finished the interview yet.`)
+    } else {
+      flashError('That verdict did not save. Please try again.')
+    }
+  }
+
+  /** One wording for both bulk verdicts, so they cannot drift apart. */
+  function reportVerdicts(r, verb) {
+    if (r.saved === 0) {
+      flashError(
+        r.skipped > 0
+          ? 'Nobody selected has finished their interview yet.'
+          : 'Nothing saved. Please try again.',
+      )
+      return
+    }
+    const parts = [`${verb} ${r.saved} candidate${r.saved === 1 ? '' : 's'}`]
+    if (r.skipped > 0) parts.push(`${r.skipped} skipped (not finished)`)
+    if (r.failed > 0) parts.push(`${r.failed} failed`)
+    const msg = parts.join(' · ') + '.'
+    if (r.failed > 0) flashError(msg); else flashMessage(msg)
   }
 
   async function handleBulkShortlist() {
     const list = candidates.filter((c) => selected.has(c.email))
     if (list.length === 0) return
-    await upsertVerdicts(list, 'shortlisted')
-    flashMessage(`Shortlisted ${list.length} candidate${list.length === 1 ? '' : 's'}.`)
+    reportVerdicts(await upsertVerdicts(list, 'shortlisted'), 'Shortlisted')
     clearSelection()
   }
   async function handleBulkReject() {
     const list = candidates.filter((c) => selected.has(c.email))
     if (list.length === 0) return
-    await upsertVerdicts(list, 'rejected')
-    flashMessage(`Rejected ${list.length} candidate${list.length === 1 ? '' : 's'}.`)
+    reportVerdicts(await upsertVerdicts(list, 'rejected'), 'Rejected')
     clearSelection()
   }
   function handleBulkExport() {
@@ -3357,9 +3520,26 @@ export default function RoleDetailPage() {
   async function handleDeleteStage() {
     if (!confirmDeleteStage) return
     const stageId = confirmDeleteStage.id
-    await supabase.from('questions').delete().eq('stage_id', stageId)
-    await supabase.from('interviews').delete().eq('stage_id', stageId)
-    await supabase.from('scores').delete().eq('stage_id', String(stageId))
+
+    /* The three cascade deletes were unchecked while only the final
+       stage delete was. If a cascade failed and the stage delete
+       succeeded, the stage vanished and its candidates' transcripts and
+       scores were left orphaned with nothing able to reach them — then
+       "Stage deleted." Now the stage row goes last, and only if
+       everything under it is genuinely gone. */
+    for (const [label, q] of [
+      ['questions',  supabase.from('questions').delete().eq('stage_id', stageId)],
+      ['interviews', supabase.from('interviews').delete().eq('stage_id', stageId)],
+      ['scores',     supabase.from('scores').delete().eq('stage_id', String(stageId))],
+    ]) {
+      const { error: cascadeErr } = await q
+      if (cascadeErr) {
+        console.error(`Stage delete failed clearing ${label}:`, cascadeErr)
+        flashError('Unable to delete this stage. Nothing was removed — please try again.')
+        return
+      }
+    }
+
     const { error } = await supabase.from('stages').delete().eq('id', stageId)
     if (error) {
       console.error('Stage delete failed:', error)
@@ -3374,11 +3554,12 @@ export default function RoleDetailPage() {
   async function actuallyDraftAI(stage) {
     setDraftingId(stage.id)
     flashMessage(`Drafting questions for ${stage.name}…`)
-    // Every drafted question goes, picked or not. Keeping the old picks
-    // would leave the recruiter choosing between two sets written
-    // against different criteria, which is worse than starting clean.
-    // Their own written questions are never touched.
-    await supabase.from('questions').delete().eq('stage_id', stage.id).neq('source', 'custom')
+    /* Generate FIRST, delete second.
+     *
+     * The delete used to run before the request, so a failed or timed-out
+     * generation left the stage with no AI questions at all — the
+     * recruiter's existing interview destroyed in exchange for nothing.
+     * Nothing is removed now until replacements are in hand. */
     const res = await fetch('/api/generate-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3396,7 +3577,20 @@ export default function RoleDetailPage() {
         greatVsOkay: role?.great_vs_okay || null,
       }),
     })
-    const result = await res.json()
+    /* res.ok checked before parsing. A gateway timeout or a Next error
+       page is not JSON, and res.json() threw inside this un-guarded async
+       function — so setDraftingId(null) never ran and the button stayed
+       on "Drafting…" forever. */
+    if (!res.ok) {
+      setDraftingId(null)
+      console.error('AI question generation failed:', res.status)
+      return flashError(
+        res.status === 403
+          ? 'Your plan does not currently allow drafting questions.'
+          : 'Unable to draft AI questions. Please try again.',
+      )
+    }
+    const result = await res.json().catch(() => ({}))
     setDraftingId(null)
     if (result.error) {
       console.error('AI question generation error:', result.error)
@@ -3422,6 +3616,18 @@ export default function RoleDetailPage() {
       console.error('AI question generation returned no usable groups:', result)
       return flashError('Unable to draft AI questions. Please try again.')
     }
+
+    /* Only now are the old ones removed. Every drafted question goes,
+       picked or not: keeping the old picks would leave the recruiter
+       choosing between two sets written against different criteria.
+       Their own written questions are never touched. */
+    const { error: clearErr } = await supabase
+      .from('questions').delete().eq('stage_id', stage.id).neq('source', 'custom')
+    if (clearErr) {
+      console.error('Clearing old questions failed:', clearErr)
+      return flashError('Unable to replace the old questions. Please try again.')
+    }
+
     const { error } = await supabase.from('questions').insert(rows)
     if (error) {
       console.error('Question save failed:', error)
@@ -3520,7 +3726,19 @@ export default function RoleDetailPage() {
       return row
     }))
     if (siblingIds.length) {
-      await supabase.from('questions').update({ approved: false }).in('id', siblingIds)
+      /* Checked. The comment above this function names the exact damage
+         of losing this write — the loser stays approved, the candidate
+         is asked both near-identical questions, and the radio still
+         shows one selected so the recruiter cannot tell. It was the one
+         write here that went unchecked. */
+      const { error: loserErr } = await supabase
+        .from('questions').update({ approved: false }).in('id', siblingIds)
+      if (loserErr) {
+        console.error('Question un-pick failed:', loserErr)
+        flashError('Unable to save that choice. Please try again.')
+        await refreshQuestions()
+        return
+      }
     }
     const { error } = await supabase.from('questions').update({ approved: true }).eq('id', q.id)
     if (error) {
@@ -3546,7 +3764,18 @@ export default function RoleDetailPage() {
 
   async function handleToggleQuestion(q) {
     const nowApproved = !q.approved
-    await supabase.from('questions').update({ approved: nowApproved }).eq('id', q.id)
+    /* Checked, like every sibling handler around it — this one was
+       missed. Candidates are served only approved questions, so an
+       unnoticed failure here means the recruiter is looking at one
+       interview while candidates sit a different one. */
+    const { error } = await supabase
+      .from('questions').update({ approved: nowApproved }).eq('id', q.id)
+    if (error) {
+      console.error('Question toggle failed:', error)
+      flashError('Unable to save that change. Please try again.')
+      await refreshQuestions()
+      return
+    }
     setQuestions((prev) => prev.map((row) => row.id === q.id ? { ...row, approved: nowApproved } : row))
     // Approving a question means it WILL be asked, so synthesize its audio now
     // rather than making the first candidate wait ~73s on a cold GPU.
@@ -3593,27 +3822,41 @@ export default function RoleDetailPage() {
   async function handleDeleteRoleConfirmed() {
     setDeletingRole(true)
     try {
-      const { data: stageRows } = await supabase.from('stages').select('id').eq('role_id', roleId)
+      /* Every step checked.
+       *
+       * These five deletes ran unchecked and the page navigated away
+       * regardless. supabase-js RESOLVES with an error rather than
+       * throwing, so the catch below was unreachable for exactly the
+       * failures that matter — a partial delete left transcripts and
+       * scores orphaned with nothing pointing at them, and the recruiter
+       * was told it worked. */
+      const step = async (label, q) => {
+        const { error } = await q
+        if (error) throw new Error(`${label}: ${error.message}`)
+      }
+
+      const { data: stageRows, error: stagesErr } = await supabase
+        .from('stages').select('id').eq('role_id', roleId)
+      if (stagesErr) throw new Error(`stage lookup: ${stagesErr.message}`)
+
       const stageIds = (stageRows || []).map((s) => s.id)
       if (stageIds.length > 0) {
-        await supabase.from('questions').delete().in('stage_id', stageIds)
-        await supabase.from('interviews').delete().in('stage_id', stageIds)
-        await supabase.from('scores').delete().in('stage_id', stageIds.map(String))
+        await step('questions', supabase.from('questions').delete().in('stage_id', stageIds))
+        await step('interviews', supabase.from('interviews').delete().in('stage_id', stageIds))
+        await step('scores', supabase.from('scores').delete().in('stage_id', stageIds.map(String)))
       }
-      await supabase.from('stages').delete().eq('role_id', roleId)
-      await supabase.from('roles').delete().eq('id', roleId)
+      await step('stages', supabase.from('stages').delete().eq('role_id', roleId))
+      await step('role', supabase.from('roles').delete().eq('id', roleId))
+
       setConfirmDeleteRole(false)
       router.push('/roles')
     } catch (e) {
       console.error('Role delete failed:', e)
-      flashError('Unable to delete this role. Please try again.')
+      flashError('Unable to delete this role. Nothing was removed that we could not remove cleanly — please try again.')
       setConfirmDeleteRole(false)
     } finally {
       setDeletingRole(false)
     }
-  }
-  function handleDuplicate() {
-    router.push(`/roles?duplicate=${roleId}`)
   }
 
   function handleTabChange(next) { setTab(next); if (next !== 'candidates') clearSelection() }
@@ -3669,7 +3912,6 @@ export default function RoleDetailPage() {
               stats={stats}
               onOpenInvite={() => setInviteOpen(true)}
               onEdit={() => setEditRoleOpen(true)}
-              onDuplicate={handleDuplicate}
               onSetStatus={handleRoleSetStatus}
               onDelete={() => setConfirmDeleteRole(true)}
               hasStatusColumn={hasStatusColumn}
@@ -3736,6 +3978,16 @@ export default function RoleDetailPage() {
             )}
           </>
         )}
+
+        <EditRoleModal
+          open={editRoleOpen}
+          role={role}
+          onClose={() => setEditRoleOpen(false)}
+          onSaved={(updated) => {
+            setRole((r) => ({ ...(r || {}), ...updated }))
+            flashMessage('Role updated.')
+          }}
+        />
 
         <CompareModal
           open={!!comparePair}

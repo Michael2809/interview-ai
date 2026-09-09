@@ -832,3 +832,60 @@ test('rows with no email are dropped rather than grouped together', () => {
   assert.deepEqual(out, [])
   assert.deepEqual(dedupeInvites(), [])
 })
+
+/* ── Completion notices ──────────────────────────────────────────────
+ * The Settings switch and the in-app bell both promised this and
+ * neither delivered. These guard the wiring that now backs them.
+ */
+import {
+  wantsCompletionEmail, recruiterEmail, verdictLabel, completionNotification,
+} from '../lib/notify.js'
+
+test('somebody who never opened Settings still gets told', () => {
+  // The column defaults to true; silence would be us opting them out.
+  assert.equal(wantsCompletionEmail(null), true)
+  assert.equal(wantsCompletionEmail({}), true)
+  assert.equal(wantsCompletionEmail({ notify_on_completion: true }), true)
+})
+
+test('turning the switch off actually stops the email', () => {
+  assert.equal(wantsCompletionEmail({ notify_on_completion: false }), false)
+})
+
+test('the address on the settings row wins, with auth as the fallback', () => {
+  assert.equal(recruiterEmail({ email: 'a@x.example' }, 'b@x.example'), 'a@x.example')
+  assert.equal(recruiterEmail({ email: '   ' }, 'b@x.example'), 'b@x.example')
+  assert.equal(recruiterEmail(null, null), null)
+})
+
+test('the subject says the verdict, not just a number', () => {
+  assert.equal(verdictLabel('hire', 7.4), 'Hire')
+  assert.equal(verdictLabel('strong-hire', 9), 'Strong hire')
+  // Older rows have a score but no recommendation.
+  assert.equal(verdictLabel(null, 9.0), 'Strong hire')
+  assert.equal(verdictLabel(null, 7.0), 'Hire')
+  assert.equal(verdictLabel(null, 5.0), 'Hold')
+  assert.equal(verdictLabel(null, 2.0), 'Reject')
+  assert.equal(verdictLabel(null, null), 'Scored')
+})
+
+test('the bell links into the candidate, not just the stage', () => {
+  const n = completionNotification({
+    userId: 'u1', stageId: 61, roleId: 9,
+    candidateName: 'Grace Mbeki', roleTitle: 'PR Executive',
+    score: 7.4, recommendation: 'hire',
+  })
+  assert.equal(n.kind, 'scoring_completed')
+  assert.equal(n.href, '/interview/61/transcript?candidate=Grace%20Mbeki')
+  assert.match(n.title, /Grace Mbeki/)
+  assert.match(n.body, /Hire/)
+})
+
+test('a name with punctuation does not break the link', () => {
+  const n = completionNotification({
+    userId: 'u1', stageId: 61, candidateName: "Ana O'Brien & Co", roleTitle: 'X',
+    score: 5, recommendation: 'hold',
+  })
+  assert.equal(n.href.includes(' '), false)
+  assert.equal(decodeURIComponent(n.href.split('candidate=')[1]), "Ana O'Brien & Co")
+})

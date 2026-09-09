@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Check, Building2 } from 'lucide-react';
+import { ChevronDown, Building2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 /**
@@ -67,7 +67,7 @@ export default function WorkspaceSwitcher() {
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Switch workspace"
+        aria-label="Workspace menu"
         onClick={() => setOpen((v) => !v)}
         className={
           'group flex items-center gap-2 h-9 pl-1.5 pr-2 rounded-[10px] ' +
@@ -92,34 +92,25 @@ export default function WorkspaceSwitcher() {
           aria-label="Workspaces"
           className="absolute left-0 top-[calc(100%+6px)] z-40 w-[280px] rounded-[12px] bg-white border border-[color:var(--color-rc-line)] py-1.5 [box-shadow:0_20px_40px_-16px_rgba(17,17,17,0.18)]"
         >
-          <div className="px-3 pt-2 pb-1 text-[10.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-warm)]">
-            Workspace
+          {/* This menu was labelled "Switch workspace" and held exactly one
+              always-checked item whose only action was to close itself.
+              There is no second workspace to switch to — the data layer
+              has no such concept. The workspace name already sits on the
+              trigger, so the fake radio is gone and what remains is the
+              one thing here that actually goes somewhere. */}
+          <div className="px-3 pt-2 pb-1.5">
+            <div className="text-[10.5px] uppercase tracking-[0.16em] font-semibold text-[color:var(--color-rc-warm)]">
+              Workspace
+            </div>
+            <div className="mt-1 text-[13.5px] font-medium text-[color:var(--color-rc-ink)] truncate">
+              {workspace.name}
+            </div>
+            {workspace.subtitle && (
+              <div className="text-[11.5px] text-[color:var(--color-rc-muted)] truncate">
+                {workspace.subtitle}
+              </div>
+            )}
           </div>
-          <button
-            type="button"
-            role="menuitemradio"
-            aria-checked={true}
-            onClick={() => setOpen(false)}
-            className="w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-[color:var(--color-rc-soft)] focus:outline-none focus-visible:bg-[color:var(--color-rc-soft)]"
-          >
-            <span
-              aria-hidden="true"
-              className="h-7 w-7 grid place-items-center rounded-[8px] bg-[color:var(--color-rc-ink)] text-white text-[12px] font-semibold"
-            >
-              {initial}
-            </span>
-            <span className="flex-1 min-w-0">
-              <span className="block text-[13.5px] font-medium text-[color:var(--color-rc-ink)] truncate">
-                {workspace.name}
-              </span>
-              {workspace.subtitle && (
-                <span className="block text-[11.5px] text-[color:var(--color-rc-muted)] truncate">
-                  {workspace.subtitle}
-                </span>
-              )}
-            </span>
-            <Check size={13} aria-hidden="true" className="text-[color:var(--color-rc-green)]" />
-          </button>
 
           <div className="my-1 h-px bg-[color:var(--color-rc-line)]" />
 

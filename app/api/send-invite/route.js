@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createSessionClient } from '@/lib/supabase/server'
 import {
   canInviteCandidate,
   recordCandidateInvite,
@@ -16,26 +17,67 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export async function POST(request) {
   const { stageId, candidateEmail, origin, recruiterName, companyName, personalMessage } = await request.json()
 
-  // ── Quota check (via subscription system — single source of truth) ─────
-  const { data: stageCheck } = await supabase
+  /* ── Who is asking ───────────────────────────────────────────────
+   *
+   * This route had no authentication at all. It took a stageId from the
+   * request body and sent email with the service-role key, which meant
+   * anyone holding a stageId could use it — and every candidate holds
+   * one, because it sits in their own interview URL. That let a stranger
+   * send arbitrary text from interviews@recrewtai.com to any address and
+   * burn the recruiter's paid invite quota at the same time.
+   *
+   * Both real callers (the invite drawer and onboarding) are signed-in
+   * browser contexts, so a session check costs them nothing.
+   */
+  const authed = await createSessionClient()
+  const { data: { user }, error: authErr } = await authed.auth.getUser()
+  if (authErr || !user) {
+    return Response.json({ error: 'Not signed in.' }, { status: 401 })
+  }
+
+  if (!stageId || !candidateEmail) {
+    return Response.json({ error: 'stageId and candidateEmail are required.' }, { status: 400 })
+  }
+
+  // ── Do they own this stage ───────────────────────────────────────
+  const { data: stageCheck, error: stageErr } = await supabase
     .from('stages')
     .select('role_id')
     .eq('id', stageId)
-    .single()
+    .maybeSingle()
 
-  const { data: roleCheck } = await supabase
+  if (stageErr || !stageCheck) {
+    return Response.json({ error: 'Stage not found.' }, { status: 404 })
+  }
+
+  const { data: roleCheck, error: roleErr } = await supabase
     .from('roles')
     .select('user_id')
-    .eq('id', stageCheck?.role_id)
-    .single()
+    .eq('id', stageCheck.role_id)
+    .maybeSingle()
 
-  const recruiterId = roleCheck?.user_id
+  if (roleErr || !roleCheck) {
+    return Response.json({ error: 'Role not found.' }, { status: 404 })
+  }
+  if (roleCheck.user_id !== user.id) {
+    return Response.json({ error: 'Not your role.' }, { status: 403 })
+  }
 
-  if (recruiterId) {
+  const recruiterId = roleCheck.user_id
+
+  /* The quota gate used to sit behind `if (recruiterId)`, and neither
+   * lookup above checked its error — so a failed lookup skipped the
+   * gate entirely and sent a free, uncounted invite. Ownership is now
+   * proven before this line, so the gate always runs. */
+  {
     const gate = await canInviteCandidate(supabase, recruiterId, 1)
     if (!gate.allowed) {
       const msg = gate.reason === 'plan_limit'
-        ? `Interview limit reached. You've used ${gate.current}/${gate.limit} interviews on your current plan. Please upgrade to continue.`
+        ? (gate.limit === 0
+            // The Free plan is not a limit anyone "reached" — it never
+            // included interviews. "You've used 0/0" reads as a bug.
+            ? 'Interviewing candidates needs a paid plan. Choose one to send this invite.'
+            : `Interview limit reached. You've used ${gate.current}/${gate.limit} interviews on your current plan. Please upgrade to continue.`)
         : gate.reason === 'trial_expired'
           ? 'Your subscription is no longer active. Please review your plan to continue.'
           : 'Candidate invites are not available on your current plan.'
@@ -104,8 +146,22 @@ export async function POST(request) {
   const displayCompany = companyName || 'Recrewt AI'
   const subjectLine = `Interview Invitation — ${roleName} at ${displayCompany} — Action Required`
 
+  /* Replies go to the recruiter, not into a Recrewt mailbox nobody
+     reads.
+     
+     Every email in the product is sent from interviews@recrewtai.com
+     whatever company is hiring, and none of them set a reply-to. A
+     candidate who could not get their camera working, or who needed a
+     different day, had literally nowhere to write — the footer told them
+     not to reply, and replying anyway reached us rather than the person
+     who invited them. */
+  const { data: recruiterSettings } = await supabase
+    .from('settings').select('email').eq('user_id', recruiterId).maybeSingle()
+  const replyTo = recruiterSettings?.email || user.email || null
+
   const { error: emailError } = await resend.emails.send({
     from: 'interviews@recrewtai.com',
+    ...(replyTo ? { replyTo } : {}),
     to: candidateEmail,
     subject: subjectLine,
     html: `
@@ -164,7 +220,7 @@ export async function POST(request) {
           <hr style="border: none; border-top: 1px solid #e8ebed; margin: 32px 0;" />
 
           <p style="font-size: 13px; color: #aaa; margin: 0;">
-            This is an automated message sent via Recrewt AI on behalf of ${displayCompany}. Please do not reply to this email.
+            Sent via Recrewt AI on behalf of ${displayCompany}. Reply to this email if you have a question about the role or need a different time &mdash; it goes straight to the hiring team.
           </p>
         </div>
 

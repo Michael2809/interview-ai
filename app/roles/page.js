@@ -1032,33 +1032,45 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
     // will exist with DEFAULT 'active', and every new row gets it
     // for free.  Sending the value explicitly would break inserts
     // when the column hasn't been added yet.
-    const { data: created, error: insertError } = await supabase.from('roles').insert({
-      title: title.trim(),
-      description: description.trim() || null,
-      department: category
-        ? (subcategory ? `${category} — ${subcategory}` : category)
-        : null,
-      employment_type: employmentType,
-      experience_level: experienceLevel,
-      // JD-first intake. Empty for a hand-typed role, which is fine:
-      // question generation falls back to the old behaviour when there
-      // are no confirmed criteria.
-      jd_text: jdText || null,
-      must_haves: mustHaves,
-      nice_to_haves: niceToHaves,
-      salary_range: salaryRange.trim() || null,
-      salary_visibility: salaryVisibility,
-      intake_confirmed_at: mustHaves.length ? new Date().toISOString() : null,
-      flexible_criteria: flexible,
-      great_vs_okay: greatVsOkay.trim() || null,
-      calibrated_at: (flexible.length || greatVsOkay.trim()) ? new Date().toISOString() : null,
-    }).select('id').single()
+    /* Through the API, not straight into the table.
+     *
+     * A direct browser insert meant the plan's role limit was enforced by
+     * a disabled button and nothing else — devtools, or curl with the
+     * user's own token, created as many roles as you liked on any plan.
+     * The server runs canCreateRole() before it writes anything. */
+    const createRes = await fetch('/api/create-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: title.trim(),
+        description: description.trim() || null,
+        department: category
+          ? (subcategory ? `${category} — ${subcategory}` : category)
+          : null,
+        employment_type: employmentType,
+        experience_level: experienceLevel,
+        // JD-first intake. Empty for a hand-typed role, which is fine:
+        // question generation falls back to the old behaviour when there
+        // are no confirmed criteria.
+        jd_text: jdText || null,
+        must_haves: mustHaves,
+        nice_to_haves: niceToHaves,
+        salary_range: salaryRange.trim() || null,
+        salary_visibility: salaryVisibility,
+        intake_confirmed_at: mustHaves.length ? new Date().toISOString() : null,
+        flexible_criteria: flexible,
+        great_vs_okay: greatVsOkay.trim() || null,
+        calibrated_at: (flexible.length || greatVsOkay.trim()) ? new Date().toISOString() : null,
+      }),
+    })
 
-    if (insertError || !created) {
+    const createBody = await createRes.json().catch(() => ({}))
+    if (!createRes.ok || !createBody?.id) {
       setSaving(false)
-      setError('Failed to create: ' + (insertError?.message || 'unknown error'))
+      setError(createBody?.error || 'Failed to create this role. Please try again.')
       return
     }
+    const created = { id: createBody.id }
 
     // A role with no stage is a dead end — the recruiter lands on the
     // detail page and is told to add one before anything works. There is
@@ -1643,9 +1655,10 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
             </p>
           )}
 
+          {/* The Free plan, not a trial — nothing is counting down. */}
           {plan === 'trial' && Number.isFinite(limit) && (
             <p className="mt-5 text-[12.5px] text-[color:var(--color-rc-muted)]">
-              {Math.max(0, limit - currentCount)} of {limit} role slots remaining on your trial.{' '}
+              {Math.max(0, limit - currentCount)} of {limit} role slots on the Free plan. Interviewing candidates needs a paid plan.{' '}
               <Link href="/upgrade" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">
                 Upgrade &rarr;
               </Link>
@@ -2035,8 +2048,13 @@ export default function RolesPage() {
   const rawLimit = trialData?.roleLimit
   const unlimited = isUnlimited(rawLimit)
   const limit = unlimited ? Infinity : rawLimit
-  const slotsLeft = unlimited ? Infinity : Math.max(0, limit - totalRolesCount)
-  const atLimit  = !unlimited && totalRolesCount >= limit
+  /* Counted against ACTIVE roles, matching getActiveRolesCount() on the
+     server. This used to count every role including paused and archived
+     ones, so a customer with 5 active and 5 archived was shown "5 of 10"
+     on the subscription page and blocked from creating another here —
+     two screens in the same product disagreeing about their own plan. */
+  const slotsLeft = unlimited ? Infinity : Math.max(0, limit - activeRolesCount)
+  const atLimit  = !unlimited && activeRolesCount >= limit
   const showTrialHint = plan === PLAN_KEYS.TRIAL && !unlimited
 
   const anyFilters =
@@ -2211,7 +2229,7 @@ export default function RolesPage() {
           onCreated={handleCreated}
           plan={plan}
           roleLimit={rawLimit}
-          currentCount={totalRolesCount}
+          currentCount={activeRolesCount}
           prefill={drawerPrefill}
         />
 

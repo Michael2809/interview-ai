@@ -17,6 +17,7 @@ import {
   Send,
   Loader,
   Star,
+  Users,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import {
@@ -48,7 +49,6 @@ import {
   PLAN_KEYS,
   SUBSCRIPTION_ERROR_CODES,
 } from '@/lib/subscription'
-import { Calendar, BarChart3 } from 'lucide-react'
 
 /* ─────────────────────────────────────────────────────────────
  * Helpers
@@ -983,21 +983,29 @@ function WorkspaceHealthCard({ trialData, trial }) {
       )}
 
       <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2 text-[13px] text-[color:var(--color-rc-muted)]">
-        {renewal && (
+        {/* No renewal date on the Free plan. It has no clock — the row
+            carries a far-future period end purely so the status helpers
+            have something to read, and printing it showed a date a
+            century away. */}
+        {renewal && !isTrial && (
           <div>
             <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
-              {isTrial ? 'Trial ends' : 'Renews'}
+              Renews
             </div>
             <div className="mt-1 text-[color:var(--color-rc-ink)]">{renewal}</div>
           </div>
         )}
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
-            Seats
+        {/* Seats removed with the feature — one login per workspace is
+            all the product supports, so "1 in use" was a number that
+            could never change. */}
+        {isTrial ? (
+          <div>
+            <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
+              Interviewing
+            </div>
+            <div className="mt-1 text-[color:var(--color-rc-ink)]">Needs a paid plan</div>
           </div>
-          <div className="mt-1 text-[color:var(--color-rc-ink)]">1 in use</div>
-        </div>
-        {isTrial && (
+        ) : (
           <div>
             <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
               Interviews left
@@ -1148,8 +1156,10 @@ function PriorityRoleCard({ role, onDelete }) {
               >
                 Open role
               </Link>
+              {/* The candidates page filters on role TITLE, not id — an id
+                  here matched nothing and always produced an empty list. */}
               <Link
-                href={`/candidates?role=${role.id}`}
+                href={`/candidates?role=${encodeURIComponent(role.title || '')}`}
                 role="menuitem"
                 className="block px-3.5 py-2 text-[13.5px] text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)]"
               >
@@ -1916,10 +1926,13 @@ export default function DashboardPage() {
           aria-label="Quick actions"
           className="mb-8 flex flex-wrap items-center gap-2"
         >
-          <QuickAction icon={<Plus size={14} />}      label="New role"           href="/roles" />
-          <QuickAction icon={<Send size={14} />}      label="Invite candidates"  href="/roles" />
-          <QuickAction icon={<Calendar size={14} />}  label="Schedule interview" href="/roles" />
-          <QuickAction icon={<BarChart3 size={14} />} label="View reports"       href="/candidates" />
+          {/* Four buttons that all went somewhere unrelated: "Schedule
+              interview" pointed at the role list for a feature that does
+              not exist, and "View reports" at Candidates for a reports
+              page that does not exist either. Two honest destinations
+              beat four misleading ones. */}
+          <QuickAction icon={<Plus size={14} />}      label="New role"        href="/roles" />
+          <QuickAction icon={<Users size={14} />}     label="All candidates"  href="/candidates" />
         </div>
 
         {/* ─── 2. KPI STRIP ──────────────────────────────── */}

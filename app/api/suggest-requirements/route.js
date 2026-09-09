@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { requireActiveRecruiter } from '@/lib/api-auth'
 import { parseJsonReply } from '@/lib/documents'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -49,6 +50,12 @@ const PROMPT_RULES = `Rules, in order of importance:
 7. No two lines that a single answer would satisfy.`
 
 export async function POST(request) {
+  /* Costs money and belongs to one recruiter. This route used to accept
+     anyone with the URL, and never consulted the subscription — see
+     lib/api-auth.js. */
+  const gate = await requireActiveRecruiter()
+  if (gate.response) return gate.response
+
     const body = await request.json().catch(() => ({}))
     const roleTitle = String(body?.roleTitle || '').trim()
     const experienceLevel = String(body?.experienceLevel || '').trim()

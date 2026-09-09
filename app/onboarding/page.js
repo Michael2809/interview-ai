@@ -29,13 +29,24 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      // Create role
-      const { data: role, error: roleError } = await supabase
-        .from('roles')
-        .insert({ title: jobTitle, user_id: user.id })
-        .select()
-        .single()
-      if (roleError) throw roleError
+      /* Through the API, which checks the plan first.
+       *
+       * This path inserted a role directly with no reference to the plan
+       * limit at all — not even the disabled-button guard the main roles
+       * screen had. It was the easiest way in the whole product to go
+       * over your allowance. */
+      const roleRes = await fetch('/api/create-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: jobTitle }),
+      })
+      const roleBody = await roleRes.json().catch(() => ({}))
+      if (!roleRes.ok || !roleBody?.id) {
+        setError(roleBody?.error || 'We could not create that role. Please try again.')
+        setLoading(false)
+        return
+      }
+      const role = { id: roleBody.id }
       setRoleId(role.id)
 
       // Create stage
@@ -85,18 +96,17 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      // Create invite row
-      await supabase.from('interviews').insert({
-        stage_id: stageId,
-        speaker: 'invite',
-        content: 'Interview invitation',
-        candidate_email: candidateEmail.toLowerCase(),
-        status: 'invited',
-        invited_at: new Date().toISOString(),
-      })
-
-      // Send invite email via existing API
-      await fetch('/api/send-invite', {
+      /* The invite row is written by /api/send-invite, not here.
+       *
+       * This used to insert it client-side first and then call the API,
+       * which inserted it again — two rows per candidate on the happy
+       * path. Worse, the call was `.catch(() => {})`, so when the API
+       * refused on quota the row this page had already written stayed
+       * behind: a candidate sitting in the workspace that nobody was
+       * charged for and no email ever reached.
+       *
+       * One writer, and its answer is actually read. */
+      const inviteRes = await fetch('/api/send-invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -104,7 +114,14 @@ export default function OnboardingPage() {
           stageId,
           roleTitle: jobTitle,
         }),
-      }).catch(() => {}) // don't block if email fails
+      })
+
+      if (!inviteRes.ok) {
+        const detail = await inviteRes.json().catch(() => ({}))
+        setError(detail?.error || 'We could not send that invite. Please try again.')
+        setLoading(false)
+        return
+      }
 
       // Mark onboarding complete
 await supabase

@@ -1,0 +1,18 @@
+-- See the Supabase migration history for the full text of these three,
+-- applied 2026-09-09:
+--
+--   replace_trial_with_free_and_honest_tiers
+--     There is no trial. The 'trial' plan row becomes a permanent Free
+--     plan: 2 roles, 0 candidates, no clock. Growth and Scale stop
+--     advertising feature differences that no code enforces.
+--
+--   webhook_events_track_processing
+--     dodo_webhook_events.processed_at, so a failed payment event is
+--     retried rather than swallowed.
+--
+--   guard_subscription_inserts
+--     A user could INSERT their own subscriptions row with
+--     plan_key 'enterprise' and complimentary true, because the client
+--     guard fired on UPDATE only while a self-INSERT policy existed.
+--     Client inserts are now rewritten to the Free plan, and
+--     `complimentary` is added to the UPDATE guard's column list.

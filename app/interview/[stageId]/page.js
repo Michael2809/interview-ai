@@ -26,6 +26,11 @@ const RETRY_BACKOFFS = [0, 1500, 4000]
  * it dies with the page.
  */
 const STORAGE_TIMEOUT_MS = 90 * 1000
+
+/* Retry schedule for a transcript row, in ms before each attempt.
+   Short and finite: the candidate is sitting there waiting, and a
+   row that has not landed in ~2.5s of trying is not going to. */
+const TRANSCRIPT_BACKOFFS = [0, 400, 900, 1200]
 const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000   // 2 hours to allow a retry
 const AVG_SECONDS_PER_QUESTION = 45           // used for the "N minutes remaining" estimate
 
@@ -964,7 +969,7 @@ function LiveScreen({
  * Screen 6 — DoneScreen
  * ────────────────────────────────────────────────────────── */
 
-function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFailed, retryAllowed, onRetry, canRetry }) {
+function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFailed, transcriptSaveFailed, retryAllowed, onRetry, canRetry }) {
   const days = Math.max(1, Number(slaDays) || 5)
   return (
     <PageShell>
@@ -985,11 +990,34 @@ function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFaile
           <p>
             {(recruiter || 'Your recruiter')}{company ? ` at ${company}` : ''} will review your interview within {days} business day{days === 1 ? '' : 's'}.
           </p>
+          {/* This used to promise an email "once they've made a decision",
+              and name the address it would come from. Nothing in the
+              product sends it — shortlist, hold and reject are silent.
+              Printing a promise the system cannot keep is how a hiring
+              tool earns the reputation hiring tools have. Say what is
+              actually true instead. */}
           <p className="text-[color:var(--color-rc-muted)]">
-            You&rsquo;ll get an email once they&rsquo;ve made a decision. Look for it from <span className="text-[color:var(--color-rc-ink)] font-medium">interviews@recrewtai.com</span>.
+            Any reply will come directly from {(recruiter || 'the hiring team')}{company ? ` at ${company}` : ''}, to
+            the address your invitation was sent to.
           </p>
         </div>
       </div>
+
+      {/* A lost answer is worse than a lost recording, so it is said first
+          and said plainly. Telling somebody their interview is complete
+          when part of it did not save is the one thing this screen must
+          never do. */}
+      {transcriptSaveFailed && (
+        <div className="mt-6 rounded-[14px] bg-white border border-[color:var(--color-rc-yellow)] p-4 md:p-5">
+          <SectionLabel>Some answers may not have saved</SectionLabel>
+          <p className="mt-2 text-[13.5px] text-[color:var(--color-rc-ink)] leading-relaxed">
+            We had trouble saving part of your interview. Please reply to the
+            email that brought you here and mention this, so the hiring team
+            can check what came through and offer you a retake if anything is
+            missing.
+          </p>
+        </div>
+      )}
 
       {videoSaveFailed && (
         <div className="mt-6 rounded-[14px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] p-4 md:p-5">
@@ -1061,6 +1089,32 @@ function BrowserUnsupportedScreen({ browserName }) {
 }
 
 
+/**
+ * The interview could not be loaded.
+ *
+ * Shown instead of letting the candidate sit a hollow interview. Says
+ * plainly that nothing was recorded, because the worst outcome here is a
+ * candidate who believes they have already had their shot.
+ */
+function InterviewUnavailableScreen() {
+  return (
+    <PageShell>
+      <SectionLabel>Interview unavailable</SectionLabel>
+      <Display className="mt-4 max-w-[26ch]">We could not load this interview.</Display>
+      <EditorialText className="mt-4 max-w-[54ch]">
+        Nothing has been recorded and nothing has been sent to the hiring team,
+        so your application is unaffected.
+      </EditorialText>
+      <EditorialText className="mt-3 max-w-[54ch]">
+        Refresh the page to try again. If it still does not load, reply to the
+        email that brought you here and let them know &mdash; the link may need
+        to be reissued.
+      </EditorialText>
+    </PageShell>
+  )
+}
+
+
 /* ─────────────────────────────────────────────────────────────
  * Main — InterviewPage
  * ────────────────────────────────────────────────────────── */
@@ -1091,6 +1145,11 @@ export default function InterviewPage() {
   const [permissionState, setPermissionState] = useState('idle')    // idle | requesting | granted | denied
   const [tryingPermission, setTryingPermission] = useState(false)
   const [browserOk, setBrowserOk] = useState(true)
+  // Null while loading, true once the real interview is in hand, false
+  // when we could not load it. See the fetch below for why this exists.
+  const [contextOk, setContextOk] = useState(null)
+  // True when at least one line of the interview could not be saved.
+  const [transcriptSaveFailed, setTranscriptSaveFailed] = useState(false)
   const [browserName, setBrowserName] = useState('')
   const [onlineOk, setOnlineOk] = useState(true)
 
@@ -1127,6 +1186,8 @@ export default function InterviewPage() {
   const audioChunksRef        = useRef([])
   const recognitionRef        = useRef(null)
   const transcriptRef         = useRef([])
+  // Rows that exhausted their retries, kept for one last flush at the end.
+  const unsavedRowsRef        = useRef([])
   const cachedVoiceRef        = useRef(null)
   // One id for this whole interview attempt, generated once when the component
   // mounts and written onto every transcript row. This is what makes separate
@@ -1172,13 +1233,28 @@ export default function InterviewPage() {
       // silently fell back to "a role" at "the team". /api/interview-
       // context reads them server-side and returns only what this
       // screen renders.
+      /* This request carries the interview itself, not just cosmetic
+       * copy, so it is not allowed to fail quietly.
+       *
+       * It used to catch the error and carry on. Because INTRO_QUESTIONS
+       * is always prepended, `questions.length > 0` stayed true and the
+       * candidate was walked through three unscored warm-up questions,
+       * shown the completion screen, and recorded as having interviewed.
+       * The recruiter then got a score computed from nothing. Neither
+       * side was told anything had gone wrong.
+       *
+       * A stage with no approved questions is the same hollow interview
+       * arrived at from the other direction, so it is refused too. */
       let ctx = null
       try {
         const res = await fetch('/api/interview-context?stageId=' + encodeURIComponent(stageId))
         if (res.ok) ctx = await res.json()
+        else console.error('interview-context returned', res.status)
       } catch (err) {
-        console.warn('interview-context failed, falling back to generic copy:', err)
+        console.error('interview-context failed:', err)
       }
+
+      setContextOk(Array.isArray(ctx?.questions) && ctx.questions.length > 0)
 
       if (ctx?.stage) setStage(ctx.stage)
       if (ctx?.role || ctx?.companyName) {
@@ -1660,7 +1736,9 @@ export default function InterviewPage() {
     // Persist the answer only for questions that opt into transcript
     // recording. Practice questions never touch the transcript.
     if (currentQ?.recorded !== false) {
-      addTranscriptRow('candidate', answer)
+      // Awaited: this is the candidate's answer, the thing the whole
+      // product exists to capture. Everything after it can wait ~0-2s.
+      await addTranscriptRow('candidate', answer)
     }
 
     // Adaptive follow-up: gated on question.adaptive, not on type
@@ -1778,22 +1856,84 @@ export default function InterviewPage() {
     setQaSending(false)
   }
 
+  /**
+   * Write one line of the interview, and actually check that it landed.
+   *
+   * The previous version was three separate mistakes stacked together,
+   * and every one of them hid the others:
+   *
+   *   1. It destructured nothing, so the returned `error` was discarded.
+   *      supabase-js RESOLVES with `{ error }` on an RLS denial or a
+   *      constraint violation rather than throwing, which means
+   *   2. the try/catch was dead code for the only failure that matters,
+   *      and
+   *   3. callers did not await it, so even a thrown network error
+   *      surfaced as an unhandled rejection instead of any UI state.
+   *
+   * Meanwhile `transcriptRef` was updated first and unconditionally, so
+   * the on-screen transcript and the scoring payload looked complete
+   * while the database held nothing. The candidate believed they had
+   * answered; the recruiter saw somebody who barely spoke.
+   *
+   * Now: retried, awaited, and a permanent failure is remembered so the
+   * candidate can be told rather than the console.
+   */
   async function addTranscriptRow(speaker, content) {
+    const row = {
+      stage_id: stageId,
+      speaker,
+      content,
+      candidate_name: candidateName,
+      // Stamp every row of this attempt with one id. Do NOT rely on `token`
+      // for this — that column defaults to gen_random_uuid(), so it is unique
+      // per ROW and identifies nothing. Without session_id the transcript
+      // view cannot tell one attempt from another and ends up concatenating
+      // every interview a candidate ever started.
+      session_id: sessionIdRef.current,
+    }
+
     transcriptRef.current = [...transcriptRef.current, { speaker, content }]
-    try {
-      await supabase.from('interviews').insert({
-        stage_id: stageId,
-        speaker,
-        content,
-        candidate_name: candidateName,
-        // Stamp every row of this attempt with one id. Do NOT rely on `token`
-        // for this — that column defaults to gen_random_uuid(), so it is unique
-        // per ROW and identifies nothing. Without session_id the transcript
-        // view cannot tell one attempt from another and ends up concatenating
-        // every interview a candidate ever started.
-        session_id: sessionIdRef.current,
-      })
-    } catch (err) { console.error('transcript insert failed:', err) }
+
+    for (let attempt = 0; attempt < TRANSCRIPT_BACKOFFS.length; attempt++) {
+      if (TRANSCRIPT_BACKOFFS[attempt] > 0) {
+        await new Promise((r) => setTimeout(r, TRANSCRIPT_BACKOFFS[attempt]))
+      }
+      try {
+        const { error } = await supabase.from('interviews').insert(row)
+        if (!error) return true
+        console.error(`transcript insert failed (attempt ${attempt + 1}):`, error)
+      } catch (err) {
+        console.error(`transcript insert threw (attempt ${attempt + 1}):`, err)
+      }
+    }
+
+    /* Out of retries. Keep the row so finishInterview can try once more
+       on the way out, and remember that something is missing. */
+    unsavedRowsRef.current.push(row)
+    setTranscriptSaveFailed(true)
+    return false
+  }
+
+  /**
+   * Last chance for anything that never landed.
+   *
+   * Called on the way out, when the network has usually recovered from
+   * whatever the blip was. Anything still failing here is genuinely lost
+   * and the candidate is told so.
+   */
+  async function flushUnsavedRows() {
+    if (unsavedRowsRef.current.length === 0) return
+    const queued = unsavedRowsRef.current
+    unsavedRowsRef.current = []
+    const stillFailing = []
+    for (const row of queued) {
+      try {
+        const { error } = await supabase.from('interviews').insert(row)
+        if (error) stillFailing.push(row)
+      } catch { stillFailing.push(row) }
+    }
+    unsavedRowsRef.current = stillFailing
+    setTranscriptSaveFailed(stillFailing.length > 0)
   }
 
   /**
@@ -1864,12 +2004,16 @@ export default function InterviewPage() {
      * may want to watch, not the thing being judged, and it must never
      * be able to take the interview down with it.
      */
+    /* One last attempt at anything that never landed, before we tell the
+       candidate they are finished. By now the blip has usually passed. */
+    try { await flushUnsavedRows() } catch (err) { console.error('flush failed:', err) }
+
     try {
       /* Server-side: a candidate is anonymous and has no UPDATE rights on
          `interviews`. This used to be a direct update from the browser and
          silently did nothing for every real candidate — it only ever
          appeared to work when a signed-in recruiter tested it themselves. */
-      await fetch('/api/interview-complete', {
+      const completeRes = await fetch('/api/interview-complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1880,6 +2024,11 @@ export default function InterviewPage() {
           inviteToken: inviteTokenRef.current,
         }),
       })
+      // Checked, not assumed: this route answers 400 and 500 with a body,
+      // and every one of them used to be discarded.
+      if (!completeRes.ok) {
+        console.error('interview-complete returned', completeRes.status)
+      }
       // Usage is attributed at INVITE time via the subscription system
       // (see /api/send-invite). The old on-completion bump double-counted
       // every candidate, so it was removed.
@@ -2062,6 +2211,7 @@ export default function InterviewPage() {
   /* ── Render ──────────────────────────────── */
 
   if (!browserOk) return <BrowserUnsupportedScreen browserName={browserName} />
+  if (contextOk === false) return <InterviewUnavailableScreen />
 
   if (step === 'landing') {
     return (
@@ -2075,7 +2225,7 @@ export default function InterviewPage() {
         onBegin={handleBeginFromLanding}
         consented={consented}
         setConsented={setConsented}
-        canBegin={!!candidateName.trim() && questions.length > 0 && consented}
+        canBegin={!!candidateName.trim() && contextOk === true && consented}
       />
     )
   }
@@ -2147,6 +2297,7 @@ export default function InterviewPage() {
         company={companyName}
         slaDays={slaDays}
         videoSaveFailed={videoSaveFailed}
+        transcriptSaveFailed={transcriptSaveFailed}
         retryAllowed={retryAllowed}
         canRetry={canRetry}
         onRetry={handleRetakeInterview}

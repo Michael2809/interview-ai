@@ -1311,23 +1311,38 @@ export default function CandidatesPage() {
     const prevStatus = row.dbStatus
     setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, dbStatus: nextStatus } : r))
     try {
-      const { error } = await supabase
+      /* `.select()` so we can see WHICH rows were touched.
+       *
+       * Archive writes to the `scores` row, and a candidate who has
+       * finished but not been scored yet does not have one. The update
+       * then matched nothing, returned no error, and the recruiter was
+       * told "Candidate archived." The row came back on refresh. An
+       * update that changes nothing is not a success. */
+      const { data: touched, error } = await supabase
         .from('scores')
         .update({ status: nextStatus })
         .eq('stage_id', String(row.stageId))
         .eq('candidate_name', row.name)
+        .select('id')
       if (error) throw error
+      if (!touched || touched.length === 0) {
+        throw new Error('no-score-row')
+      }
       flashSuccess(nextStatus === 'archived' ? 'Candidate archived.' : 'Candidate restored.')
     } catch (err) {
       // Roll back the optimistic update.
       setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, dbStatus: prevStatus } : r))
       // Log the real error internally — never surface it.
       console.error('Candidate archive/restore error:', err)
-      flashError(
-        nextStatus === 'archived'
-          ? 'Unable to archive the candidate. Please try again.'
-          : 'Unable to restore the candidate. Please try again.'
-      )
+      if (err?.message === 'no-score-row') {
+        flashError('This interview has not been scored yet, so there is nothing to archive.')
+      } else {
+        flashError(
+          nextStatus === 'archived'
+            ? 'Unable to archive the candidate. Please try again.'
+            : 'Unable to restore the candidate. Please try again.'
+        )
+      }
     } finally {
       setArchivingIds((prev) => { const n = new Set(prev); n.delete(row.id); return n })
     }
@@ -1372,20 +1387,32 @@ export default function CandidatesPage() {
     if (!pendingDelete) return
     setDeleting(true)
     try {
-      // Only completed rows have a score row we can delete cleanly.
-      // Ongoing/invited rows don't have a delete target today, so we
-      // surface an honest toast instead.
+      /* Goes through /api/delete-candidate, the same route the
+       * transcript page uses.
+       *
+       * This screen used to delete only the `scores` row. The list is
+       * built from `interviews` transcript rows, which were left behind,
+       * so the candidate reappeared on the next load — now with no score
+       * and no verdict, back in "needs review" — after being told
+       * "Candidate deleted." The route removes the recording, every
+       * transcript and invite row, and the score, and checks ownership
+       * first. */
       if (pendingDelete.kind === 'completed') {
-        const { error } = await supabase
-          .from('scores')
-          .delete()
-          .eq('stage_id', String(pendingDelete.stageId))
-          .eq('candidate_name', pendingDelete.name)
-        if (error) throw error
+        const res = await fetch('/api/delete-candidate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stageId: pendingDelete.stageId,
+            candidate: pendingDelete.name,
+          }),
+        })
+        const detail = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(detail?.error || 'delete failed')
         setRows((prev) => prev.filter((r) => r.id !== pendingDelete.id))
         flashSuccess('Candidate deleted.')
       } else {
-        flashSuccess('Removing invitees is coming soon.')
+        // Not a success. It used to say so in a green toast.
+        flashError('Invited candidates cannot be removed here yet. Withdraw the invite from the role instead.')
       }
     } catch (err) {
       // Log the real error internally so we can debug — never expose

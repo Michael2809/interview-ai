@@ -19,11 +19,15 @@ const KIND_META = {
   system:              { label: 'System',      Icon: AlertTriangle, color: 'text-[color:var(--color-rc-warm)]' },
 }
 
+/* Only kinds something actually writes.
+ *
+ * "Invites" and "System" filtered on notification kinds nothing in the
+ * codebase ever creates — the only insert anywhere is
+ * 'scoring_completed' — so both tabs permanently read "Nothing here
+ * yet." They come back when something writes those kinds. */
 const FILTERS = [
   { key: 'all',     label: 'All',        match: () => true },
   { key: 'reviews', label: 'Reviews',    match: (n) => n.kind === 'scoring_completed' || n.kind === 'interview_completed' },
-  { key: 'invites', label: 'Invites',    match: (n) => n.kind === 'invite_accepted' || n.kind === 'invite_withdrawn' },
-  { key: 'system',  label: 'System',     match: (n) => n.kind === 'system' },
 ]
 
 function groupByDay(items) {
