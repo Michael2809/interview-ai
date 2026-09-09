@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { awaitingDecision } from '@/lib/decisions'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -20,6 +21,7 @@ import {
   Archive,
   ArchiveRestore,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import { SkeletonRow, SkeletonLine } from '@/components/AppShell/Skeleton'
@@ -661,6 +663,105 @@ function RoleGroup({ label, count, rows, defaultExpanded, ...rowProps }) {
   )
 }
 
+/**
+ * How hard the first interview is pitched, from how senior the role is.
+ *
+ * Kept as an explicit map rather than a clever fallback: an "entry level"
+ * role generating advanced questions is the kind of thing nobody notices
+ * until a candidate complains.
+ */
+const STAGE_LEVEL = { entry: 'introductory', mid: 'mid-level', senior: 'advanced', lead: 'advanced' }
+
+/**
+ * Same ceiling as the JD reader, for the same reason: six requirements
+ * is a nineteen-minute interview, and seven is where candidates quit.
+ */
+const MAX_CRITERIA = 6
+
+/** Below this a score has nothing to stand on. */
+const MIN_CRITERIA = 3
+
+const EXPERIENCE_WORD  = { entry: 'Entry level', mid: 'Mid level', senior: 'Senior', lead: 'Lead' }
+const EMPLOYMENT_WORD  = { 'full-time': 'Full-time', 'part-time': 'Part-time', contract: 'Contract', internship: 'Internship' }
+const SALARY_WORD      = { hide: "won't discuss pay", defer: 'pay discussed later', show: 'range shared with candidates' }
+
+/* ─────────────────────────────────────────────────────────────
+ * Fold — a labelled line that opens into its controls.
+ *
+ * The drawer used to show every field at once, so confirming a role the
+ * AI had already worked out meant scrolling past six controls to check
+ * somebody else's typing. Each Fold states its answer in one line and
+ * keeps the inputs behind it. Correcting is still one click; reading is
+ * now free.
+ * ────────────────────────────────────────────────────────── */
+
+function Fold({ label, summary, children, defaultOpen = false, className = '' }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className={'border-t border-[color:var(--color-rc-line)] ' + className}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-start gap-3 py-3.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded"
+      >
+        <span className="shrink-0 w-[92px] pt-px text-[11.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
+          {label}
+        </span>
+        <span className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+          {summary}
+        </span>
+        <ChevronDown
+          size={15}
+          aria-hidden="true"
+          className={
+            'shrink-0 mt-0.5 text-[color:var(--color-rc-muted)] transition-transform duration-200 ' +
+            (open ? 'rotate-180' : 'group-hover:translate-y-px')
+          }
+        />
+      </button>
+      {open && <div className="pb-5">{children}</div>}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * CriteriaList — the requirements pulled out of a job description.
+ *
+ * Every row carries the phrase from the JD that produced it. That is not
+ * decoration: these become what candidates are scored against, and a
+ * recruiter cannot sensibly confirm a requirement without seeing where
+ * it came from. It also makes a bad extraction obvious at a glance
+ * rather than six interviews later.
+ * ────────────────────────────────────────────────────────── */
+
+function CriteriaList({ items, onRemove }) {
+  return (
+    <ul className="grid gap-3.5">
+      {items.map((c, i) => (
+        <li key={c.label + i} className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-medium text-[color:var(--color-rc-ink)]">{c.label}</p>
+            {c.evidence && (
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)] italic">
+                &ldquo;{c.evidence}&rdquo;
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(i)}
+            aria-label={'Remove ' + c.label}
+            className="shrink-0 text-[12px] text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-red)] transition-colors"
+          >
+            Remove
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /* ─────────────────────────────────────────────────────────────
  * CreateRoleDrawer — form moved out of the page
  * ────────────────────────────────────────────────────────── */
@@ -676,6 +777,41 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
   const [experienceLevel, setExperienceLevel] = useState('mid')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // ── JD-first intake ────────────────────────────────────────────
+  // The recruiter uploads a job description and the AI proposes every
+  // field below; they correct what is wrong and confirm. Typing the
+  // form by hand still works — this only ever pre-fills it.
+  const [manualMode, setManualMode] = useState(false)
+  const [jdParsing, setJdParsing] = useState(false)
+  const [jdError, setJdError] = useState('')
+  const [jdText, setJdText] = useState('')
+  const [jdFileName, setJdFileName] = useState('')
+  const [mustHaves, setMustHaves] = useState([])
+  const [niceToHaves, setNiceToHaves] = useState([])
+  const [salaryRange, setSalaryRange] = useState('')
+  const [salaryVisibility, setSalaryVisibility] = useState('hide')
+
+  // ── The two things the JD never says ───────────────────────────
+  // A job description is written to attract applicants, so it lists
+  // everything as required and nothing as negotiable. These two answers
+  // are the recruiter's actual hiring bar, and they are asked here —
+  // while the requirements are on screen — rather than on a setup page
+  // nobody reaches. Both are optional; skipping them costs nothing.
+  const [flexible, setFlexible] = useState([])
+  const [greatVsOkay, setGreatVsOkay] = useState('')
+  const [drafting, setDrafting] = useState(false)
+
+  // ── Requirements without a job description ─────────────────────
+  // Picking from a list beats typing into an empty box: recruiters will
+  // do it, and the result is still theirs because they ticked it. The
+  // alternative was the app guessing from the job title and never
+  // saying so.
+  const [suggestions, setSuggestions] = useState([])
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestError, setSuggestError] = useState('')
+  const [ownSkill, setOwnSkill] = useState('')
+  const suggestedFor = useRef('')
 
   useEffect(() => {
     if (!open) return
@@ -697,14 +833,191 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
       setEmploymentType('full-time')
       setExperienceLevel('mid')
     }
+    setManualMode(false)
+    setJdParsing(false)
+    setJdError('')
+    setJdText('')
+    setJdFileName('')
+    setMustHaves([])
+    setNiceToHaves([])
+    setSalaryRange('')
+    setSalaryVisibility('hide')
+    setFlexible([])
+    setGreatVsOkay('')
+    setDrafting(false)
+    setSuggestions([])
+    setSuggesting(false)
+    setSuggestError('')
+    setOwnSkill('')
+    suggestedFor.current = ''
     setError('')
   }, [open, prefill])
+
+  // Grow the title field to fit whatever the JD gave us.
+  //
+  // Measured three times, not once. The first pass runs before the
+  // editorial webfont has swapped in, so a title that fits on one line in
+  // the fallback face needs two in the real one — which is how
+  // "Digital Marketing Specialist (SEO, Email & Social)" ended up clipped
+  // after "Email &" even with a textarea doing the wrapping.
+  const titleRef = useRef(null)
+  useEffect(() => {
+    const el = titleRef.current
+    if (!el) return
+    const fit = () => {
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
+    }
+    fit()
+    let ro
+    if (typeof ResizeObserver !== 'undefined' && el.parentElement) {
+      ro = new ResizeObserver(fit)
+      ro.observe(el.parentElement)
+    }
+    document.fonts?.ready?.then(fit).catch(() => {})
+    return () => ro?.disconnect()
+  }, [title, open])
 
   const subcategories = category ? JOB_CATEGORIES[category] || [] : []
   const unlimited = isUnlimited(roleLimit)
   const limit = unlimited ? Infinity : roleLimit
   const overLimit = !unlimited && currentCount >= limit
-  const canSubmit = !!title.trim() && !saving && !overLimit
+  /* Every role must name at least a few things to score on, however it
+     was created. This used to read `!manualMode || ...`, so the minimum
+     applied only to hand-typed roles. A job description that parsed to
+     nothing - a scan, a vague listing, a parse that quietly failed - or
+     one whose requirements the recruiter removed, produced a role with
+     zero requirements. The questions were then written against a job
+     title, every score had no requirement to quote, and nothing on
+     screen ever said so. */
+  const enoughCriteria = mustHaves.length >= MIN_CRITERIA
+  const canSubmit = !!title.trim() && !saving && !overLimit && enoughCriteria
+
+  /**
+   * Hand the job description to /api/parse-jd and fill the form with
+   * what comes back. Nothing is saved here: this is a proposal the
+   * recruiter reviews, which is what makes it fair to score against
+   * later — the criteria end up being theirs, not the model's.
+   */
+  async function parseJobDescription(file) {
+    if (!file) return
+    setJdParsing(true)
+    setJdError('')
+    try {
+      const fd = new FormData()
+      fd.append('jd', file)
+      const res = await fetch('/api/parse-jd', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        setJdError(data.error || 'Could not read that job description.')
+        return
+      }
+      setJdFileName(file.name || 'job description')
+      if (data.title) setTitle(data.title)
+      if (data.summary) setDescription(data.summary)
+      if (data.department) {
+        // Only adopt a department we actually have a category for; a
+        // free-text guess would render as a blank Select.
+        const match = Object.keys(JOB_CATEGORIES).find(
+          (c) => c.toLowerCase() === String(data.department).toLowerCase(),
+        )
+        if (match) { setCategory(match); setSubcategory('') }
+      }
+      if (data.employment_type) setEmploymentType(data.employment_type)
+      if (data.experience_level) setExperienceLevel(data.experience_level)
+      setMustHaves(Array.isArray(data.must_haves) ? data.must_haves : [])
+      setNiceToHaves(Array.isArray(data.nice_to_haves) ? data.nice_to_haves : [])
+      setSalaryRange(data.salary_range || '')
+      setJdText(data.jd_text || '')
+    } catch (err) {
+      console.error('parse-jd threw:', err)
+      setJdError('Could not read that job description. Please try again.')
+    } finally {
+      setJdParsing(false)
+    }
+  }
+
+  function removeMustHave(i) {
+    const gone = mustHaves[i]?.label
+    setMustHaves((list) => list.filter((_, n) => n !== i))
+    if (gone) setFlexible((list) => list.filter((l) => l !== gone))
+  }
+  /**
+   * Ask for suggestions once the title has settled.
+   *
+   * Keyed on title + seniority because those are what change the answer:
+   * an entry-level and a lead version of the same title should not get
+   * the same list. Debounced so it does not fire on every keystroke, and
+   * skipped when we have already asked for this exact combination.
+   */
+  const suggestRequirements = useCallback(async (force = false) => {
+    const title_ = title.trim()
+    if (title_.length < 3) return
+    const key = `${title_}::${experienceLevel}`
+    if (!force && suggestedFor.current === key) return
+    suggestedFor.current = key
+    setSuggesting(true)
+    setSuggestError('')
+    try {
+      const res = await fetch('/api/suggest-requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roleTitle: title_,
+          experienceLevel,
+          employmentType,
+          department: category,
+          summary: description,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        setSuggestError(data.error || 'Could not suggest anything for that title.')
+        return
+      }
+      setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : [])
+    } catch (err) {
+      console.error('suggest-requirements threw:', err)
+      setSuggestError('Could not suggest anything for that title. Please try again.')
+    } finally {
+      setSuggesting(false)
+    }
+  }, [title, experienceLevel, employmentType, category, description])
+
+  useEffect(() => {
+    if (!open || !manualMode) return
+    const t = setTimeout(() => suggestRequirements(), 900)
+    return () => clearTimeout(t)
+  }, [open, manualMode, suggestRequirements])
+
+  /** Ticking a suggestion is what makes it a requirement. */
+  function toggleSuggestion(label) {
+    const on = mustHaves.some((m) => m.label === label)
+    if (on) {
+      setMustHaves((list) => list.filter((m) => m.label !== label))
+      // Un-ticking a requirement has to drop it from "would you bend on
+      // this", or the role saves a flexible_criteria entry pointing at a
+      // requirement that no longer exists.
+      setFlexible((f) => f.filter((l) => l !== label))
+      return
+    }
+    if (mustHaves.length >= MAX_CRITERIA) return
+    setMustHaves((list) => [...list, { label }])
+  }
+
+  function addOwnSkill() {
+    const label = ownSkill.trim().slice(0, 80)
+    if (label.length < 8) return
+    if (mustHaves.some((m) => m.label.toLowerCase() === label.toLowerCase())) { setOwnSkill(''); return }
+    if (mustHaves.length >= MAX_CRITERIA) return
+    setMustHaves((list) => [...list, { label }])
+    setOwnSkill('')
+  }
+
+  function toggleFlexible(label) {
+    setFlexible((list) => list.includes(label) ? list.filter((l) => l !== label) : [...list, label])
+  }
+  function removeNiceToHave(i) { setNiceToHaves((list) => list.filter((_, n) => n !== i)) }
 
   async function submit() {
     if (!title.trim()) { setError('Please enter a job title.'); return }
@@ -719,7 +1032,7 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
     // will exist with DEFAULT 'active', and every new row gets it
     // for free.  Sending the value explicitly would break inserts
     // when the column hasn't been added yet.
-    const { error: insertError } = await supabase.from('roles').insert({
+    const { data: created, error: insertError } = await supabase.from('roles').insert({
       title: title.trim(),
       description: description.trim() || null,
       department: category
@@ -727,14 +1040,98 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
         : null,
       employment_type: employmentType,
       experience_level: experienceLevel,
-    })
-    setSaving(false)
-    if (insertError) {
-      setError('Failed to create: ' + insertError.message)
+      // JD-first intake. Empty for a hand-typed role, which is fine:
+      // question generation falls back to the old behaviour when there
+      // are no confirmed criteria.
+      jd_text: jdText || null,
+      must_haves: mustHaves,
+      nice_to_haves: niceToHaves,
+      salary_range: salaryRange.trim() || null,
+      salary_visibility: salaryVisibility,
+      intake_confirmed_at: mustHaves.length ? new Date().toISOString() : null,
+      flexible_criteria: flexible,
+      great_vs_okay: greatVsOkay.trim() || null,
+      calibrated_at: (flexible.length || greatVsOkay.trim()) ? new Date().toISOString() : null,
+    }).select('id').single()
+
+    if (insertError || !created) {
+      setSaving(false)
+      setError('Failed to create: ' + (insertError?.message || 'unknown error'))
       return
     }
-    onCreated?.(title.trim())
+
+    // A role with no stage is a dead end — the recruiter lands on the
+    // detail page and is told to add one before anything works. There is
+    // exactly one sensible first stage, so make it.
+    const { data: stage, error: stageError } = await supabase.from('stages').insert({
+      role_id: created.id,
+      name: 'Screening interview',
+      level: STAGE_LEVEL[experienceLevel] || 'mid-level',
+      position: 1,
+    }).select('id').single()
+
+    if (stageError || !stage) {
+      // The role is real and saved. Send them to it rather than losing
+      // the work over a stage insert; they can add one there.
+      console.error('First stage insert failed:', stageError)
+      setSaving(false)
+      onCreated?.({ id: created.id, title: title.trim(), stageId: null })
+      return
+    }
+
+    // Draft the questions before handing over, so the page they land on
+    // is finished rather than empty with a button on it. A failure here
+    // is not fatal: the stage exists and "Draft with AI" is right there.
+    setDrafting(true)
+    try {
+      const res = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageName: 'Screening interview',
+          level: STAGE_LEVEL[experienceLevel] || 'mid-level',
+          topics: null,
+          roleTitle: title.trim(),
+          mustHaves,
+          flexible,
+          greatVsOkay: greatVsOkay.trim() || null,
+        }),
+      })
+      const result = await res.json().catch(() => ({}))
+      const rows = []
+      for (const g of result.groups || []) {
+        ;(g.options || []).forEach((o, i) => {
+          if (!o?.text) return
+          rows.push({
+            stage_id: stage.id,
+            text: o.text,
+            covers: o.covers || g.covers || null,
+            approved: i === 0,
+            source: 'ai',
+          })
+        })
+      }
+      if (rows.length) await supabase.from('questions').insert(rows)
+      else console.error('Question drafting returned nothing usable:', result)
+    } catch (err) {
+      console.error('Question drafting threw:', err)
+    } finally {
+      setDrafting(false)
+      setSaving(false)
+    }
+
+    onCreated?.({ id: created.id, title: title.trim(), stageId: stage.id })
   }
+
+  /* Two states, not one long form.
+   *
+   * Before a JD is read this drawer asks for exactly one thing. After it
+   * is read the drawer stops being a form and becomes a read-back: the
+   * things Recrewt worked out, stated plainly, with the detail folded
+   * away. A recruiter should be able to confirm a role in a glance,
+   * not scroll a filled-in form checking somebody else's typing.
+   */
+  const parsed = !!jdFileName || manualMode
 
   return (
     <Drawer
@@ -742,107 +1139,520 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
       onClose={onClose}
       side="right"
       size="clamp(360px,48vw,560px)"
-      title={prefill ? 'Duplicate role' : 'Create role'}
-      description="Recrewt will draft the interview questions for you once the role is saved."
+      title={prefill ? 'Duplicate role' : 'New role'}
+      description={parsed
+        ? 'Check this over. Everything here is editable.'
+        : 'Recrewt reads the job description and sets the role up.'}
       dismissible={!saving}
-      footer={
+      footer={parsed ? (
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button variant="primary" onClick={submit} loading={saving} disabled={!canSubmit}>
-            {prefill ? 'Duplicate role' : 'Create role'}
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={saving}
+            disabled={!canSubmit}
+            title={enoughCriteria ? undefined : `Choose at least ${MIN_CRITERIA} things to score on first.`}
+          >
+            {prefill
+              ? 'Duplicate role'
+              : drafting ? 'Drafting the questions…' : 'Create role and draft the questions'}
           </Button>
         </>
-      }
+      ) : (
+        <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+      )}
     >
-      <div className="space-y-5">
-        <TextField
-          label="Job title"
-          required
-          placeholder="e.g. Junior Backend Developer"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          autoFocus
-        />
-
-        <div>
-          <label className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)] tracking-[-0.005em]">
-            Job description
+      {!parsed ? (
+        /* ── Nothing yet: one decision on the whole screen ────────── */
+        <div className="py-6">
+          <label
+            className={
+              'group relative flex flex-col items-center justify-center text-center ' +
+              'min-h-[260px] px-8 rounded-[18px] cursor-pointer ' +
+              'border border-dashed transition-colors duration-200 ' +
+              (jdParsing
+                ? 'border-[color:var(--color-rc-yellow)] bg-[color:var(--color-rc-soft)]'
+                : 'border-[color:var(--color-rc-line)] bg-white hover:border-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)]')
+            }
+          >
+            <input
+              type="file"
+              accept=".pdf,.docx,.doc,.txt,.md"
+              className="sr-only"
+              disabled={jdParsing}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                parseJobDescription(f)
+              }}
+            />
+            {jdParsing ? (
+              <>
+                <Spinner />
+                <p className="mt-4 text-[15px] font-medium text-[color:var(--color-rc-ink)]">
+                  Reading the job description
+                </p>
+                <p className="mt-1 text-[13px] text-[color:var(--color-rc-muted)]">
+                  About ten seconds.
+                </p>
+              </>
+            ) : (
+              <>
+                <Upload size={22} className="text-[color:var(--color-rc-muted)]" aria-hidden="true" />
+                <p
+                  className="mt-4 text-[19px] leading-tight text-[color:var(--color-rc-ink)]"
+                  style={{ fontFamily: 'var(--font-editorial), inherit' }}
+                >
+                  Drop the job description
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[34ch]">
+                  PDF, Word or plain text. Recrewt pulls out the role, what it
+                  needs, and drafts the questions.
+                </p>
+              </>
+            )}
           </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            placeholder="Briefly describe the role and responsibilities."
-            className="w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0 resize-none"
-          />
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Select
-            label="Department"
-            placeholder="Choose a category"
-            value={category}
-            onChange={(e) => { setCategory(e.target.value); setSubcategory('') }}
-            options={Object.keys(JOB_CATEGORIES).map((c) => ({ value: c, label: c }))}
+          {jdError && (
+            <p className="mt-4 text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
+              {jdError}
+            </p>
+          )}
+
+          <p className="mt-5 text-center text-[13px] text-[color:var(--color-rc-muted)]">
+            No job description?{' '}
+            <button
+              type="button"
+              onClick={() => setManualMode(true)}
+              className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4"
+            >
+              Set it up yourself
+            </button>
+          </p>
+        </div>
+      ) : (
+        /* ── Read-back: what Recrewt worked out ───────────────────── */
+        <div>
+          {/* A textarea, not an input, because real job titles run long —
+              "Digital Marketing Specialist (SEO, Email & Social)" was
+              clipped mid-word in a single-line field, so the recruiter
+              could not see what they were confirming. */}
+          <textarea
+            ref={titleRef}
+            rows={1}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Job title"
+            aria-label="Job title"
+            className="w-full block resize-none overflow-hidden bg-transparent text-[24px] leading-[1.2] tracking-[-0.01em] text-[color:var(--color-rc-ink)] placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-60 border-0 border-b border-transparent hover:border-[color:var(--color-rc-line)] focus:outline-none focus:border-[color:var(--color-rc-ink)] transition-colors py-1"
+            style={{ fontFamily: 'var(--font-editorial), inherit' }}
           />
-          {category === 'Other' ? (
-            <TextField
-              label="Specialisation"
-              placeholder="e.g. Legal, PR, Research"
-              value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
-            />
-          ) : (
-            <Select
-              label="Specialisation"
-              placeholder={category ? `Any ${category}` : 'Pick a department first'}
-              value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
-              disabled={!category}
-              options={subcategories.map((s) => ({ value: s, label: s }))}
-            />
+
+          {description && (
+            <p className="mt-3 text-[14px] leading-relaxed text-[color:var(--color-rc-muted)]">
+              {description}
+            </p>
+          )}
+
+          {jdFileName && (
+            <p className="mt-3 text-[12.5px] text-[color:var(--color-rc-muted)]">
+              Read from {jdFileName}.{' '}
+              <label className="cursor-pointer text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.md"
+                  className="sr-only"
+                  disabled={jdParsing || saving}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    parseJobDescription(f)
+                  }}
+                />
+                {jdParsing ? 'Reading…' : 'Use a different file'}
+              </label>
+            </p>
+          )}
+
+          {jdError && (
+            <p className="mt-4 text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
+              {jdError}
+            </p>
+          )}
+
+          {/* The promise, then the thing it is a promise about.
+              Criteria first and open: they are what the whole product
+              does, and a recruiter who reads nothing else on this screen
+              should read these. */}
+          {(parsed || mustHaves.length > 0) && (
+            <div className="mt-7 rounded-[16px] border border-[color:var(--color-rc-line)] bg-white p-4 md:p-5">
+              <p
+                className="text-[16px] leading-snug text-[color:var(--color-rc-ink)]"
+                style={{ fontFamily: 'var(--font-editorial), inherit' }}
+              >
+                {manualMode || mustHaves.length < MIN_CRITERIA
+                  ? 'Choose what every candidate is interviewed and scored on.'
+                  : `Every candidate is interviewed and scored on these ${mustHaves.length} things.`}
+              </p>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                {manualMode
+                  ? `Tick the ones that matter for this job. Pick at least ${MIN_CRITERIA}, up to ${MAX_CRITERIA}. Every score shows the answer that earned it, quoted against one of these.`
+                  : mustHaves.length < MIN_CRITERIA
+                    ? `We could not pull enough out of that document. Add what this job really requires — at least ${MIN_CRITERIA}. Without them the questions get written against the job title alone, and no score can show what earned it.`
+                    : 'Each score shows the answer that earned it, quoted. Drop anything that is not really required — it only makes the ranking noisier.'}
+              </p>
+
+              {manualMode ? (
+                <div className="mt-3.5">
+                  {suggesting && suggestions.length === 0 && (
+                    <div className="flex items-center gap-2.5 py-3">
+                      <Spinner />
+                      <span className="text-[13px] text-[color:var(--color-rc-muted)]">
+                        Working out what matters for a {title.trim() || 'role'}…
+                      </span>
+                    </div>
+                  )}
+
+                  {!suggesting && suggestions.length === 0 && (
+                    <p className="py-2 text-[13px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                      {title.trim().length < 3
+                        ? 'Add a job title above and Recrewt will suggest what to score on.'
+                        : suggestError || 'Nothing suggested yet.'}
+                    </p>
+                  )}
+
+                  {suggestions.length > 0 && (
+                    <ul className="grid gap-0.5">
+                      {suggestions.map((label) => {
+                        const on = mustHaves.some((m) => m.label === label)
+                        const full = !on && mustHaves.length >= MAX_CRITERIA
+                        return (
+                          <li key={label}>
+                            <label
+                              className={
+                                'flex items-start gap-3 px-2.5 py-2 rounded-[10px] transition-colors ' +
+                                (full
+                                  ? 'opacity-45 cursor-not-allowed'
+                                  : 'cursor-pointer hover:bg-[color:var(--color-rc-soft)]')
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                disabled={full}
+                                onChange={() => toggleSuggestion(label)}
+                                className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[color:var(--color-rc-line-hover)] accent-[color:var(--color-rc-ink)] focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+                              />
+                              <span className="text-[13.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+                                {label}
+                              </span>
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+
+                  {/* Anything they ticked that did not come from the list,
+                      plus anything they typed. Shown separately so the
+                      checkbox list stays the list we offered. */}
+                  {mustHaves.filter((m) => !suggestions.includes(m.label)).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-[color:var(--color-rc-line)]">
+                      <CriteriaList
+                        items={mustHaves.filter((m) => !suggestions.includes(m.label))}
+                        onRemove={(i) => {
+                          const own = mustHaves.filter((m) => !suggestions.includes(m.label))
+                          const label = own[i]?.label
+                          if (label) toggleSuggestion(label)
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div className="mt-3 pt-3 border-t border-[color:var(--color-rc-line)]">
+                    <label htmlFor="own-skill" className="block text-[12.5px] text-[color:var(--color-rc-muted)]">
+                      Something missing? Write it as a thing they have done, e.g.
+                      &ldquo;has run month-end close for a client&rdquo;.
+                    </label>
+                    <div className="mt-2 flex items-start gap-2">
+                      <input
+                        id="own-skill"
+                        type="text"
+                        value={ownSkill}
+                        maxLength={80}
+                        disabled={mustHaves.length >= MAX_CRITERIA}
+                        onChange={(e) => setOwnSkill(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOwnSkill() } }}
+                        placeholder="Add your own"
+                        className="flex-1 min-w-0 bg-white text-[color:var(--color-rc-ink)] border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3 py-2 text-[13.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] disabled:opacity-45"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={addOwnSkill}
+                        disabled={ownSkill.trim().length < 8 || mustHaves.length >= MAX_CRITERIA}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                    <p className="text-[12.5px] tabular-nums text-[color:var(--color-rc-muted)]">
+                      {mustHaves.length} of {MAX_CRITERIA} chosen
+                      {mustHaves.length < MIN_CRITERIA ? ` · ${MIN_CRITERIA - mustHaves.length} more to go` : ''}
+                    </p>
+                    {suggestions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => suggestRequirements(true)}
+                        disabled={suggesting}
+                        className="text-[12.5px] text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 disabled:opacity-50"
+                      >
+                        {suggesting ? 'Suggesting…' : 'Suggest a different set'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3.5">
+                  <CriteriaList items={mustHaves} onRemove={removeMustHave} />
+                  {/* Remove-only was the whole bug: a document that parsed
+                      to nothing left the recruiter with a card they could
+                      not fill and a role they could still create. */}
+                  {mustHaves.length < MIN_CRITERIA && (
+                    <div className={mustHaves.length ? 'mt-3 pt-3 border-t border-[color:var(--color-rc-line)]' : ''}>
+                      <label htmlFor="jd-own-skill" className="block text-[12.5px] text-[color:var(--color-rc-muted)]">
+                        Write each one as a thing they have done, e.g.
+                        &ldquo;has run month-end close for a client&rdquo;.
+                      </label>
+                      <div className="mt-2 flex items-start gap-2">
+                        <input
+                          id="jd-own-skill"
+                          type="text"
+                          value={ownSkill}
+                          maxLength={80}
+                          onChange={(e) => setOwnSkill(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOwnSkill() } }}
+                          placeholder="Add a requirement"
+                          className="flex-1 min-w-0 bg-white text-[color:var(--color-rc-ink)] border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3 py-2 text-[13.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)]"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={addOwnSkill}
+                          disabled={ownSkill.trim().length < 8}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      <p className="mt-2 text-[12.5px] tabular-nums text-[color:var(--color-rc-muted)]">
+                        {mustHaves.length} of {MIN_CRITERIA} needed
+                        {` · ${MIN_CRITERIA - mustHaves.length} more to go`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Question one: what would you actually bend on? Nothing to
+                  bend on until something is chosen. */}
+              <div className={'mt-5 pt-4 border-t border-[color:var(--color-rc-line)] ' + (mustHaves.length ? '' : 'hidden')}>
+                <p className="text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+                  Would you bend on any of them?
+                </p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                  A job description lists everything as required. Tick the ones
+                  you would still hire someone without, and they count for half.
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {mustHaves.map((c) => {
+                    const on = flexible.includes(c.label)
+                    return (
+                      <button
+                        key={c.label}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleFlexible(c.label)}
+                        className={
+                          'text-left text-[12.5px] leading-snug px-2.5 py-1.5 rounded-full border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] ' +
+                          (on
+                            ? 'border-[color:var(--color-rc-ink)] bg-[color:var(--color-rc-ink)] text-white'
+                            : 'border-[color:var(--color-rc-line)] text-[color:var(--color-rc-muted)] hover:border-[color:var(--color-rc-ink)] hover:text-[color:var(--color-rc-ink)]')
+                        }
+                      >
+                        {c.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Question two: the bar itself, in their words. */}
+              <div className="mt-5 pt-4 border-t border-[color:var(--color-rc-line)]">
+                <label
+                  htmlFor="great-vs-okay"
+                  className="block text-[13px] font-medium text-[color:var(--color-rc-ink)]"
+                >
+                  What separates a great one from an okay one?
+                </label>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                  One sentence in your own words. Candidates never see this — it
+                  aims the questions at ground where the difference shows.
+                </p>
+                <textarea
+                  id="great-vs-okay"
+                  value={greatVsOkay}
+                  onChange={(e) => setGreatVsOkay(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. the good ones can say what they'd do differently, not just what they did"
+                  className="mt-2.5 w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* The four dropdowns, as one readable line until you need them. */}
+          <Fold
+            className="mt-7"
+            summary={[
+              experienceLevel && EXPERIENCE_WORD[experienceLevel],
+              employmentType && EMPLOYMENT_WORD[employmentType],
+              category || null,
+            ].filter(Boolean).join('  ·  ') || 'Set the basics'}
+            label="Basics"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <Select
+                label="Experience"
+                value={experienceLevel}
+                onChange={(e) => setExperienceLevel(e.target.value)}
+                options={[
+                  { value: 'entry',  label: 'Entry level' },
+                  { value: 'mid',    label: 'Mid level' },
+                  { value: 'senior', label: 'Senior' },
+                  { value: 'lead',   label: 'Lead' },
+                ]}
+              />
+              <Select
+                label="Employment"
+                value={employmentType}
+                onChange={(e) => setEmploymentType(e.target.value)}
+                options={[
+                  { value: 'full-time', label: 'Full-time' },
+                  { value: 'part-time', label: 'Part-time' },
+                  { value: 'contract',  label: 'Contract' },
+                ]}
+              />
+              <Select
+                label="Department"
+                placeholder="Choose a category"
+                value={category}
+                onChange={(e) => { setCategory(e.target.value); setSubcategory('') }}
+                options={Object.keys(JOB_CATEGORIES).map((c) => ({ value: c, label: c }))}
+              />
+              {category === 'Other' ? (
+                <TextField
+                  label="Specialisation"
+                  placeholder="e.g. Legal, PR, Research"
+                  value={subcategory}
+                  onChange={(e) => setSubcategory(e.target.value)}
+                />
+              ) : (
+                <Select
+                  label="Specialisation"
+                  placeholder={category ? `Any ${category}` : 'Pick a department first'}
+                  value={subcategory}
+                  onChange={(e) => setSubcategory(e.target.value)}
+                  disabled={!category}
+                  options={subcategories.map((s) => ({ value: s, label: s }))}
+                />
+              )}
+              <div className="sm:col-span-2">
+                <label className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+                  Summary
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  placeholder="One line a recruiter would recognise as this role."
+                  className="w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] resize-none"
+                />
+              </div>
+            </div>
+          </Fold>
+
+          {niceToHaves.length > 0 && (
+            <Fold
+              summary={niceToHaves.map((c) => c.label).join('  ·  ')}
+              label="Nice to have"
+              defaultOpen={false}
+            >
+              <p className="pt-1 pb-3 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                Noted on the candidate&rsquo;s profile, never scored.
+              </p>
+              <CriteriaList items={niceToHaves} onRemove={removeNiceToHave} />
+            </Fold>
+          )}
+
+          <Fold
+            summary={
+              (salaryRange ? salaryRange : 'No range') +
+              '  ·  ' + SALARY_WORD[salaryVisibility]
+            }
+            label="Pay"
+            defaultOpen={false}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <TextField
+                label="Range"
+                placeholder="Not stated in the JD"
+                value={salaryRange}
+                onChange={(e) => setSalaryRange(e.target.value)}
+              />
+              <Select
+                label="If a candidate asks"
+                value={salaryVisibility}
+                onChange={(e) => setSalaryVisibility(e.target.value)}
+                options={[
+                  { value: 'hide',  label: "Don't discuss it" },
+                  { value: 'defer', label: 'Say it comes later' },
+                  { value: 'show',  label: 'Tell them the range' },
+                ]}
+              />
+            </div>
+            <p className="pt-3 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+              Recrewt never volunteers pay. This only decides what it says when
+              a candidate asks.
+            </p>
+          </Fold>
+
+          {!enoughCriteria && title.trim() && (
+            <p className="mt-5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+              Pick at least {MIN_CRITERIA} things to score on before creating the role.
+              Fewer than that and the questions get written against a job title
+              instead of against this job.
+            </p>
+          )}
+
+          {error && (
+            <p className="mt-5 text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
+              {error}
+            </p>
+          )}
+
+          {plan === 'trial' && Number.isFinite(limit) && (
+            <p className="mt-5 text-[12.5px] text-[color:var(--color-rc-muted)]">
+              {Math.max(0, limit - currentCount)} of {limit} role slots remaining on your trial.{' '}
+              <Link href="/upgrade" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">
+                Upgrade &rarr;
+              </Link>
+            </p>
           )}
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Select
-            label="Employment"
-            value={employmentType}
-            onChange={(e) => setEmploymentType(e.target.value)}
-            options={[
-              { value: 'full-time', label: 'Full-time' },
-              { value: 'part-time', label: 'Part-time' },
-              { value: 'contract',  label: 'Contract'  },
-            ]}
-          />
-          <Select
-            label="Experience"
-            value={experienceLevel}
-            onChange={(e) => setExperienceLevel(e.target.value)}
-            options={[
-              { value: 'entry',  label: 'Entry level'  },
-              { value: 'mid',    label: 'Mid level'    },
-              { value: 'senior', label: 'Senior'       },
-              { value: 'lead',   label: 'Lead'         },
-            ]}
-          />
-        </div>
-
-        {error && (
-          <p className="text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
-            {error}
-          </p>
-        )}
-
-        {plan === 'trial' && Number.isFinite(limit) && (
-          <p className="text-[12.5px] text-[color:var(--color-rc-muted)]">
-            {Math.max(0, limit - currentCount)} of {limit} role slots remaining on your trial.{' '}
-            <Link href="/upgrade" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">
-              Upgrade &rarr;
-            </Link>
-          </p>
-        )}
-      </div>
+      )}
     </Drawer>
   )
 }
@@ -1003,7 +1813,7 @@ export default function RolesPage() {
     const rolesArr = Object.values(roleMap).map((r) => {
       const invitedCount     = r.invited.size
       const completedCount   = r.completed.size
-      const waitingCount     = r.completedCandidates.filter((c) => !c.status).length
+      const waitingCount     = r.completedCandidates.filter((c) => awaitingDecision(c.status)).length
       // Verdict breakdown — surfaced on each row so recruiters see
       // the full pipeline shape without opening the role.
       const shortlistedCount = r.completedCandidates.filter((c) => c.status === 'shortlisted').length
@@ -1108,10 +1918,28 @@ export default function RolesPage() {
     }
   }
 
-  function handleCreated(newTitle) {
+  /**
+   * A new role goes straight to its questions.
+   *
+   * Landing back on the roles list is the wrong place: the recruiter has
+   * just described a job and the next thing they need is to look at the
+   * questions it produced. Making them find the row, open it, find the
+   * Interviews tab and press "Draft with AI" is four steps of hunting
+   * for something we already did for them.
+   *
+   * Duplicates are the exception — nothing new was drafted, so the list
+   * is where they belong.
+   */
+  function handleCreated(result) {
+    const created = typeof result === 'string' ? { title: result } : (result || {})
     setDrawerOpen(false)
+    const wasDuplicate = !!drawerPrefill
     setDrawerPrefill(null)
-    setMessage(`Role "${newTitle}" created.`)
+    if (created.id && !wasDuplicate) {
+      router.push(`/roles/${created.id}?tab=interviews`)
+      return
+    }
+    setMessage(`Role "${created.title || 'Untitled'}" created.`)
     setTimeout(() => setMessage(''), 3200)
     loadData()
   }

@@ -25,10 +25,10 @@ const anthropic = new Anthropic({
 const NONE = 'NONE'
 
 export async function POST(request) {
-  let stageName, level, question, answer
+  let stageName, level, question, answer, required
   try {
     const body = await request.json()
-    ;({ stageName, level, question, answer } = body)
+    ;({ stageName, level, question, answer, required } = body)
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -37,7 +37,48 @@ export async function POST(request) {
     return Response.json({ followUp: null })
   }
 
-  const prompt = `You are conducting a "${stageName || 'interview'}" interview at "${level || 'standard'}" difficulty.
+  // Scored role questions always get exactly one follow-up. An optional
+  // follow-up made the interview a different depth for every candidate,
+  // which puts noise straight into the ranking. `required` removes the
+  // model's option to decline. It must still ground the question in what
+  // the candidate actually said; it just may not skip.
+  const prompt = required
+    ? buildRequiredPrompt({ stageName, level, question, answer })
+    : buildOptionalPrompt({ stageName, level, question, answer })
+
+  try {
+    const result = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: prompt }],
+    })
+
+    const text = (result.content?.[0]?.text || '').trim()
+
+    // Treat anything that looks like a refusal as "no follow-up". Being strict
+    // here matters: a stray "NONE." reaching the candidate as a spoken question
+    // would be worse than skipping the follow-up entirely.
+    const normalized = text.replace(/[."'\s]/g, '').toUpperCase()
+    if (!text || normalized === NONE || normalized.startsWith(NONE)) {
+      return Response.json({ followUp: null })
+    }
+
+    // A "follow-up" that isn't a question is almost certainly the model
+    // narrating rather than asking. Skip rather than speak it.
+    if (!text.includes('?')) {
+      return Response.json({ followUp: null })
+    }
+
+    return Response.json({ followUp: text })
+  } catch (error) {
+    console.error('follow-up generation failed:', error?.message ?? error)
+    // Fail closed: no follow-up, interview advances normally.
+    return Response.json({ followUp: null })
+  }
+}
+
+function buildOptionalPrompt({ stageName, level, question, answer }) {
+  return `You are conducting a "${stageName || 'interview'}" interview at "${level || 'standard'}" difficulty.
 
 You asked:
 "${question}"
@@ -69,34 +110,36 @@ Match the "${level || 'standard'}" difficulty.
 If no follow-up is warranted, reply with exactly: ${NONE}
 
 Reply with ONLY the question, or ONLY ${NONE}.`
+}
 
-  try {
-    const result = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 200,
-      messages: [{ role: 'user', content: prompt }],
-    })
+function buildRequiredPrompt({ stageName, level, question, answer }) {
+  return `You are conducting a "${stageName || 'interview'}" interview at "${level || 'standard'}" difficulty.
 
-    const text = (result.content?.[0]?.text || '').trim()
+You asked:
+"${question}"
 
-    // Treat anything that looks like a refusal as "no follow-up". Being strict
-    // here matters: a stray "NONE." reaching the candidate as a spoken question
-    // would be worse than skipping the follow-up entirely.
-    const normalized = text.replace(/[."'\s]/g, '').toUpperCase()
-    if (!text || normalized === NONE || normalized.startsWith(NONE)) {
-      return Response.json({ followUp: null })
-    }
+The candidate answered (this is RAW speech-to-text: no punctuation, and some
+words are misrecognised - judge the substance, never the phrasing):
+"${answer}"
 
-    // A "follow-up" that isn't a question is almost certainly the model
-    // narrating rather than asking. Skip rather than speak it.
-    if (!text.includes('?')) {
-      return Response.json({ followUp: null })
-    }
+Ask exactly ONE follow-up question. You may not decline.
 
-    return Response.json({ followUp: text })
-  } catch (error) {
-    console.error('follow-up generation failed:', error?.message ?? error)
-    // Fail closed: no follow-up, interview advances normally.
-    return Response.json({ followUp: null })
-  }
+Every candidate for this role answers the same questions and gets one
+follow-up on each, so their answers can be compared fairly. Skipping would
+give this candidate a shallower interview than the others.
+
+Choose the single most useful thing to probe, in this order of preference:
+1. A claim with no scale, number, timeframe or outcome behind it
+2. An outcome described without saying how they got there
+3. Something described as "we" where their own part is unclear
+4. A decision named without the alternatives or the trade-off
+5. If the answer was genuinely complete, ask what they would do differently,
+   or how their approach would change under a specific harder constraint
+
+Write ONE short, conversational question that quotes or references something
+concrete the candidate actually said. Never ask about how they spoke, their
+grammar, their fluency or their pace. Do not preface it. Match the
+"${level || 'standard'}" difficulty.
+
+Reply with ONLY the question.`
 }

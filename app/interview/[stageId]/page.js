@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
+import { INTRO_QUESTIONS as INTRO_SPEC, scoredQuestionTexts } from '../../../lib/interview-questions'
 import Link from 'next/link'
 import { ScanFace, Camera, Mic, Wifi, Globe, CheckCircle2, XCircle, Circle, Sparkles, ArrowLeft, ArrowRight, Type, RefreshCcw, AlertTriangle } from 'lucide-react'
 import Button from '../../../components/ui/Button'
@@ -15,6 +16,16 @@ import Spinner from '../../../components/ui/Spinner'
 const STEPS = ['landing', 'device', 'howto', 'warmup', 'live', 'done']
 const MIN_VIDEO_BYTES = 10 * 1024
 const RETRY_BACKOFFS = [0, 1500, 4000]
+
+/**
+ * Ceiling on a single upload to Supabase storage.
+ *
+ * Ninety seconds is generous for a fifteen-minute webm on a poor
+ * connection and still finite, which is the point: an unbounded upload
+ * hangs until the candidate closes the tab, and everything queued behind
+ * it dies with the page.
+ */
+const STORAGE_TIMEOUT_MS = 90 * 1000
 const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000   // 2 hours to allow a retry
 const AVG_SECONDS_PER_QUESTION = 45           // used for the "N minutes remaining" estimate
 
@@ -383,10 +394,93 @@ function MetaRow({ label, value }) {
 
 
 /* ─────────────────────────────────────────────────────────────
+ * CandidateQAScreen — "any questions for us?"
+ *
+ * The half of an interview every async screening tool leaves out. A
+ * candidate records into a void, gets nothing back, and half of them
+ * never finish. This is the beat that makes it feel like a conversation.
+ *
+ * Text rather than voice, on purpose: the answer needs a server round
+ * trip, and a six second silence before a spoken reply reads as broken
+ * in a way a typing pause does not.
+ *
+ * Skippable, and capped. Nobody should have to ask a question in order
+ * to finish their interview.
+ * ────────────────────────────────────────────────────────── */
+
+function CandidateQAScreen({ asked, limit, input, setInput, onAsk, onDone, sending, company }) {
+  const remaining = limit - asked.length
+  const atLimit = remaining <= 0
+  return (
+    <PageShell>
+      <SectionLabel>Your turn</SectionLabel>
+      <Display className="mt-4">Anything you&rsquo;d like to ask?</Display>
+      <EditorialText className="mt-4">
+        You&rsquo;ve finished the questions. Ask up to {limit} things about the role
+        or about {company || 'the company'}, or skip straight to the end &mdash; it
+        makes no difference to your interview.
+      </EditorialText>
+
+      {asked.length > 0 && (
+        <div className="mt-8 grid gap-3">
+          {asked.map((qa, i) => (
+            <div key={i} className="rounded-[14px] border border-[color:var(--color-rc-line)] bg-white p-4 md:p-5">
+              <p className="text-[13.5px] font-medium text-[color:var(--color-rc-ink)]">{qa.question}</p>
+              <p className="mt-2 text-[14px] leading-relaxed text-[color:var(--color-rc-ink)] opacity-90">
+                {qa.answer}
+              </p>
+              {!qa.answered && (
+                <p className="mt-2 text-[12px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
+                  Passed to the recruiter
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!atLimit && (
+        <div className="mt-8">
+          <label htmlFor="candidate-question" className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+            Your question
+          </label>
+          <textarea
+            id="candidate-question"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onAsk() }
+            }}
+            rows={3}
+            disabled={sending}
+            placeholder="e.g. What does the team look like? What happens after this?"
+            className="w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] resize-none disabled:opacity-60"
+          />
+          <p className="mt-2 text-[12.5px] text-[color:var(--color-rc-muted)]">
+            {remaining} {remaining === 1 ? 'question' : 'questions'} left.
+          </p>
+        </div>
+      )}
+
+      <ActionRow>
+        <SecondaryButton onClick={onDone} disabled={sending}>
+          {asked.length > 0 ? 'That is everything' : 'No questions, finish'}
+        </SecondaryButton>
+        {!atLimit && (
+          <PrimaryButton onClick={onAsk} disabled={sending || !input.trim()} iconRight={<ArrowRight size={15} />}>
+            {sending ? 'Asking…' : 'Ask'}
+          </PrimaryButton>
+        )}
+      </ActionRow>
+    </PageShell>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Screen 1 — LandingScreen
  * ────────────────────────────────────────────────────────── */
 
-function LandingScreen({ stage, role, recruiter, questionCount, candidateName, setCandidateName, onBegin, canBegin }) {
+function LandingScreen({ stage, role, recruiter, questionCount, candidateName, setCandidateName, onBegin, canBegin, consented, setConsented }) {
   const estMinutes = Math.max(3, Math.round((questionCount * AVG_SECONDS_PER_QUESTION) / 60))
   const inviter = recruiter || 'Your recruiter'
   const company = role?.company_name || 'the team'
@@ -430,6 +524,25 @@ function LandingScreen({ stage, role, recruiter, questionCount, candidateName, s
         />
       </div>
 
+      {/* Explicit consent. Continuing is not agreeing: India's DPDP rules
+          require a clear affirmative action, so the candidate ticks this
+          themselves and the button stays disabled until they do. */}
+      <div className="mt-8 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6">
+        <label htmlFor="candidate-consent" className="flex items-start gap-3 cursor-pointer">
+          <input
+            id="candidate-consent"
+            type="checkbox"
+            checked={consented}
+            onChange={(e) => setConsented(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[color:var(--color-rc-ink)]"
+          />
+          <span className="text-[13.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+            I agree to being recorded and to my answers being analysed by AI,
+            and shared with {company}.
+          </span>
+        </label>
+      </div>
+
       <ActionRow>
         <PrimaryButton onClick={onBegin} disabled={!canBegin} iconRight={<ArrowRight size={15} />} size="lg">
           Begin interview
@@ -437,7 +550,6 @@ function LandingScreen({ stage, role, recruiter, questionCount, candidateName, s
       </ActionRow>
 
       <p className="mt-6 text-[12.5px] text-[color:var(--color-rc-muted)] max-w-[46ch] leading-relaxed">
-        By continuing, you agree to being recorded and evaluated as described above.
         Read our <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[color:var(--color-rc-ink)] underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">privacy policy</Link>.
       </p>
     </PageShell>
@@ -627,8 +739,11 @@ const WARMUP_QUESTION = 'In one sentence, tell me your name and what you do for 
  * can be added by picking the right flag combination — no engine
  * changes required.
  */
-function makeIntroQuestion(text) {
-  return { type: 'intro', adaptive: false, scored: true, recorded: true, text }
+function makeIntroQuestion(text, scored = true) {
+  // The first intro question is a warm-up: recorded so the recruiter can
+  // read it and the speech analysis has a clean sample, but unscored —
+  // "tell me about yourself" is not evidence about the job.
+  return { type: 'intro', adaptive: false, scored, recorded: true, text }
 }
 function makeFollowupQuestion(text) {
   return { type: 'followup', adaptive: false, scored: true, recorded: true, text }
@@ -638,16 +753,31 @@ function makePracticeQuestion(text) {
   return { type: 'practice', adaptive: false, scored: false, recorded: false, text }
 }
 function toAiQuestion(row) {
-  // Recruiter-approved AI-generated question. Everything on, so it
-  // gets recorded, scored, and may spawn one adaptive follow-up.
-  return { ...row, type: 'ai', adaptive: true, scored: true, recorded: true }
+  // Recruiter-approved role question. Recorded and scored, always.
+  //
+  // `requireFollowUp` is the difference between a fair ranking and a
+  // noisy one. While the follow-up was optional, one candidate got
+  // three and the next got none — one had a deeper interview than the
+  // other, and of course they scored differently. Same shape for
+  // everyone, so the scores mean the same thing.
+  //
+  // The exception is a question the recruiter wrote themselves. That
+  // wording is already exactly what they meant to ask, and chasing it
+  // with a generated "can you say more about that" reads as the machine
+  // second-guessing them. Still scored, just not followed up — and
+  // every candidate gets the same treatment, so the shape holds.
+  const custom = row?.source === 'custom'
+  return {
+    ...row,
+    type: 'ai',
+    adaptive: !custom,
+    requireFollowUp: !custom,
+    scored: true,
+    recorded: true,
+  }
 }
 
-const INTRO_QUESTIONS = [
-  makeIntroQuestion('Tell me a little about yourself.'),
-  makeIntroQuestion('Walk me through your background — what kind of work or experience have you had so far?'),
-  makeIntroQuestion('What made you interested in applying for this kind of role?'),
-]
+const INTRO_QUESTIONS = INTRO_SPEC.map((q) => makeIntroQuestion(q.text, q.scored))
 
 function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listening, transcript, onRetry, awaitingStart, onStartSpeaking, countdown }) {
   return (
@@ -939,7 +1069,17 @@ export default function InterviewPage() {
   const params = useParams()
   const stageId = params.stageId
 
-  const [step, setStep] = useState('landing')     // landing | device | howto | warmup | live | transition | saving | done
+  const [step, setStep] = useState('landing')     // landing | device | howto | warmup | live | transition | candidate-qa | saving | done
+  const [consented, setConsented] = useState(false)
+
+  // ── Candidate Q&A ──────────────────────────────────────────────
+  // The half of a real interview every async tool leaves out. Asked
+  // last, deliberately: earlier and the AI's answers would leak what
+  // the role is looking for and candidates would tailor their answers
+  // to it.
+  const [qaAsked, setQaAsked] = useState([])   // [{ question, answer, answered }]
+  const [qaInput, setQaInput] = useState('')
+  const [qaSending, setQaSending] = useState(false)
   const [prevStep, setPrevStep] = useState(null)  // for retry
 
   const [stage, setStage]         = useState(null)
@@ -987,13 +1127,23 @@ export default function InterviewPage() {
   const audioChunksRef        = useRef([])
   const recognitionRef        = useRef(null)
   const transcriptRef         = useRef([])
-  const sessionRowRef         = useRef(null)
   const cachedVoiceRef        = useRef(null)
   // One id for this whole interview attempt, generated once when the component
   // mounts and written onto every transcript row. This is what makes separate
   // attempts distinguishable — see addTranscriptRow.
   const sessionIdRef          = useRef(
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null,
+  )
+  /* The `?token=` from the emailed invite link.
+     Read once from the URL rather than through useSearchParams, because
+     this component must not re-render on a query-string change while a
+     recording is running. Null when the candidate reached the interview
+     by some other route, which is allowed - it only costs them a
+     reminder they did not need. */
+  const inviteTokenRef        = useRef(
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('token')
+      : null,
   )
   // Holds the <audio> element playing VoxCPM speech, so it can be stopped
   // when a question is interrupted or the candidate hits "repeat".
@@ -1014,35 +1164,34 @@ export default function InterviewPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: stageData } = await supabase.from('stages').select().eq('id', stageId).single()
-      if (stageData) setStage(stageData)
-
-      let roleRow = null
-      if (stageData?.role_id) {
-        const { data } = await supabase.from('roles').select().eq('id', stageData.role_id).single()
-        roleRow = data
-        setRole(data)
+      // One server call instead of four browser queries.
+      //
+      // Candidates are not signed in, and `roles` / `settings` are
+      // authenticated-only, so the browser could never read the job
+      // title, the company name or the recruiter's name — the screen
+      // silently fell back to "a role" at "the team". /api/interview-
+      // context reads them server-side and returns only what this
+      // screen renders.
+      let ctx = null
+      try {
+        const res = await fetch('/api/interview-context?stageId=' + encodeURIComponent(stageId))
+        if (res.ok) ctx = await res.json()
+      } catch (err) {
+        console.warn('interview-context failed, falling back to generic copy:', err)
       }
 
-      const { data: qData } = await supabase
-        .from('questions').select().eq('stage_id', stageId).eq('approved', true)
-      if (qData) {
-        // Prepend the standard introduction questions before the
-        // recruiter's approved AI questions. Each question carries
-        // its own capability flags (adaptive / scored / recorded),
-        // so submitAnswer() gates behaviour on the flags — not on
-        // the type string.
-        setQuestions([...INTRO_QUESTIONS, ...qData.map(toAiQuestion)])
+      if (ctx?.stage) setStage(ctx.stage)
+      if (ctx?.role || ctx?.companyName) {
+        setRole({ ...(ctx.role || {}), company_name: ctx.companyName || null })
       }
+      if (ctx?.recruiter) setRecruiter(ctx.recruiter)
 
-      // Recruiter name (from role.user_id → settings.full_name)
-      if (roleRow?.user_id) {
-        const { data: settingsRow } = await supabase
-          .from('settings').select('full_name, company_name').eq('user_id', roleRow.user_id).single()
-        if (settingsRow?.full_name) setRecruiter(settingsRow.full_name.split(' ')[0])
-        // Attach company_name into role for the welcome copy
-        if (settingsRow?.company_name) setRole((r) => r ? { ...r, company_name: settingsRow.company_name } : r)
-      }
+      // Prepend the standard introduction questions before the
+      // recruiter's approved AI questions. Each question carries
+      // its own capability flags (adaptive / scored / recorded),
+      // so submitAnswer() gates behaviour on the flags — not on
+      // the type string.
+      setQuestions([...INTRO_QUESTIONS, ...(ctx?.questions || []).map(toAiQuestion)])
     })()
 
     // Browser + online checks
@@ -1266,7 +1415,15 @@ export default function InterviewPage() {
     if (streamRef.current) { setPermissionState('granted'); return }
     setTryingPermission(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      // Capped rather than left to the camera's default, which on a
+      // modern laptop is 1080p. Nobody reviewing a screening interview
+      // needs to count the candidate's eyelashes, and every extra pixel
+      // is a bigger file to get across a bad connection at the one moment
+      // the candidate is most likely to give up and close the tab.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 24 } },
+        audio: true,
+      })
       streamRef.current = stream
       setPermissionState('granted')
     } catch (err) {
@@ -1362,7 +1519,11 @@ export default function InterviewPage() {
       ? 'video/webm;codecs=vp8,opus'
       : MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : ''
     try {
-      const videoRecorder = new MediaRecorder(stream, { mimeType: videoMime, videoBitsPerSecond: 500000, audioBitsPerSecond: 64000 })
+      // 300kbps of 480p is a perfectly legible talking head, and it is
+      // the difference between a twenty-minute interview weighing about
+      // 45MB and about 75MB. Size is not a quality question here, it is
+      // whether the recording arrives at all.
+      const videoRecorder = new MediaRecorder(stream, { mimeType: videoMime, videoBitsPerSecond: 300000, audioBitsPerSecond: 64000 })
       mediaRecorderRef.current = videoRecorder
       chunksRef.current = []
       videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
@@ -1382,13 +1543,17 @@ export default function InterviewPage() {
       console.error('MediaRecorder start failed:', err)
     }
 
-    // Session tracking row
-    const { data: sessionRow } = await supabase.from('interviews').insert({
+    /* Session tracking row.
+       Deliberately no .select() on the way back. Reading the inserted row
+       requires a SELECT policy, and the only one that made it work was an
+       anon policy of `using (true)` — which let anyone holding the public
+       key read every transcript in the database. The attempt is addressed
+       by session_id from here on instead. */
+    await supabase.from('interviews').insert({
       stage_id: stageId, speaker: 'session_start', content: 'in_progress',
       candidate_name: candidateName, status: 'in_progress',
       session_id: sessionIdRef.current,
-    }).select().single()
-    if (sessionRow) sessionRowRef.current = sessionRow.id
+    })
 
     setStep('live')
     setCurrentIndex(0)
@@ -1511,7 +1676,7 @@ export default function InterviewPage() {
       setAskedFollowUp(true)
       setStep('transition')
 
-      const followUpText = await requestFollowUp(currentQ.text, answer)
+      const followUpText = await requestFollowUp(currentQ.text, answer, !!currentQ.requireFollowUp)
 
       if (followUpText) {
         setStep('live')
@@ -1532,7 +1697,7 @@ export default function InterviewPage() {
     const next = currentIndex + 1
     setStep('transition')
     setTimeout(() => {
-      if (next >= questions.length) { finishInterview(); return }
+      if (next >= questions.length) { setStep('candidate-qa'); return }
       setCurrentIndex(next)
       setStep('live')
       askQuestion(next, false)
@@ -1547,7 +1712,7 @@ export default function InterviewPage() {
    * watching a transition screen. If Claude is slow we advance rather than
    * leave them staring at nothing.
    */
-  async function requestFollowUp(question, answer) {
+  async function requestFollowUp(question, answer, required = false) {
     try {
       const res = await fetch('/api/follow-up', {
         method: 'POST',
@@ -1557,6 +1722,7 @@ export default function InterviewPage() {
           level: stage?.level || 'standard',
           question,
           answer,
+          required,
         }),
         signal: AbortSignal.timeout(FOLLOWUP_TIMEOUT_MS),
       })
@@ -1568,6 +1734,48 @@ export default function InterviewPage() {
       console.warn('[follow-up] skipped:', err?.message || err)
       return null
     }
+  }
+
+  const QA_LIMIT = 3
+
+  /**
+   * Answer one candidate question, closed-book.
+   *
+   * The server will only answer from the recruiter's company profile; it
+   * returns answered:false for anything it does not hold. We record both
+   * the answer AND the unanswered ones, because what candidates keep
+   * asking about is worth more to the recruiter than any single reply.
+   *
+   * Stored under the `candidate_qa` speaker so it never reaches scoring:
+   * some candidates are coached to ask sharp questions and most are not,
+   * and grading that would measure polish, not ability.
+   */
+  async function submitCandidateQuestion() {
+    const q = qaInput.trim()
+    if (!q || qaSending || qaAsked.length >= QA_LIMIT) return
+    setQaSending(true)
+    setQaInput('')
+
+    let entry = {
+      question: q,
+      answer: "I don't have that to hand, but I've noted it for the recruiter.",
+      answered: false,
+    }
+    try {
+      const res = await fetch('/api/candidate-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId: String(stageId), question: q }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data?.answer) entry = { question: q, answer: data.answer, answered: !!data.answered }
+    } catch (err) {
+      console.warn('candidate question failed:', err)
+    }
+
+    setQaAsked((prev) => [...prev, entry])
+    addTranscriptRow('candidate_qa', JSON.stringify(entry))
+    setQaSending(false)
   }
 
   async function addTranscriptRow(speaker, content) {
@@ -1588,6 +1796,46 @@ export default function InterviewPage() {
     } catch (err) { console.error('transcript insert failed:', err) }
   }
 
+  /**
+   * Ask the server to score this interview.
+   *
+   * Fire-and-forget on purpose. The server is idempotent for concurrent
+   * duplicates (see SCORE_TTL_MS in /api/score-interview), keepalive:true
+   * survives the page being closed, and the transcript page carries a
+   * safety net for the case where this request never lands at all. What
+   * it must never do is block, or sit behind a file upload.
+   */
+  function kickAutoScore() {
+    try {
+      // Q&A rows are excluded: they are the candidate interviewing US.
+      // Left in, they would read as extra candidate answers and inflate
+      // the volume and depth signals the score leans on.
+      const transcriptRows = transcriptRef.current
+        .filter((l) => l.speaker !== 'candidate_qa')
+        .map((l) => ({ speaker: l.speaker, content: l.content }))
+      const body = JSON.stringify({
+        transcript: transcriptRows,
+        stageName: stage?.name || 'Interview',
+        stageId: String(stageId),
+        candidateName,
+        // Only the scored set, built by the shared helper so this list is
+        // identical to the one the transcript page's re-score sends.
+        questions: scoredQuestionTexts(questions.filter((q) => q.type === 'ai')),
+      })
+      // One request, never awaited. The server checks its own upsert error
+      // and returns the cached row for concurrent duplicates, so retrying
+      // here only ever doubled the model spend.
+      fetch('/api/score-interview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch((err) => console.warn('score-interview kick failed:', err))
+    } catch (err) {
+      console.error('Auto-score orchestration failed:', err)
+    }
+  }
+
   /* ── Finish + upload pipeline ────────────── */
 
   async function finishInterview() {
@@ -1602,10 +1850,56 @@ export default function InterviewPage() {
 
     releaseStream()
 
+    /* ── Finish the interview BEFORE touching the uploads ──────────
+     *
+     * This used to run last, behind the video and audio uploads, and a
+     * real interview was lost to it: fifteen answered questions sitting
+     * in the database, and no score, no completion, nothing waiting for
+     * the recruiter, because Cloudinary would not accept the video and
+     * the candidate closed the tab while it retried.
+     *
+     * The transcript is what gets scored. It was already saved, row by
+     * row, as they answered. Making the outcome of the interview wait on
+     * a video file is backwards: the recording is evidence a recruiter
+     * may want to watch, not the thing being judged, and it must never
+     * be able to take the interview down with it.
+     */
+    try {
+      /* Server-side: a candidate is anonymous and has no UPDATE rights on
+         `interviews`. This used to be a direct update from the browser and
+         silently did nothing for every real candidate — it only ever
+         appeared to work when a signed-in recruiter tested it themselves. */
+      await fetch('/api/interview-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageId,
+          sessionId: sessionIdRef.current,
+          // Lets the server close the invite this candidate came in on,
+          // so reminders never chase somebody who already interviewed.
+          inviteToken: inviteTokenRef.current,
+        }),
+      })
+      // Usage is attributed at INVITE time via the subscription system
+      // (see /api/send-invite). The old on-completion bump double-counted
+      // every candidate, so it was removed.
+    } catch (err) { console.error('completion housekeeping:', err) }
+
+    kickAutoScore()
+
+    // They are finished, and their answers are safe. Say so now rather
+    // than holding them on a spinner while a video uploads: a candidate
+    // staring at "saving" is a candidate about to close the tab.
+    setStep('done')
+    clearStoredSession(stageId)
+
     // ── Video upload (resilient pipeline from previous pass) ──
     const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
     const videoFilename = stageId + '-' + Date.now() + '.webm'
     let videoUrl = null
+    // Set when the storage fallback saved the recording. The row is
+    // written server-side in that path, so there is no URL here to test.
+    let backupSaved = false
 
     if (videoBlob.size < MIN_VIDEO_BYTES) {
       console.warn('Video blob is too small to be a real recording:', videoBlob.size, 'bytes')
@@ -1631,22 +1925,44 @@ export default function InterviewPage() {
       if (!videoUrl) {
         setUploadStatus('Cloudinary unavailable — saving to backup storage…')
         try {
-          const { error: putErr } = await supabase.storage.from('interview-videos').upload(videoFilename, videoBlob, { contentType: 'video/webm' })
+          // Bounded. supabase-js has no abort for an upload, and a stalled
+          // one hangs until the tab closes — which is how the first real
+          // interview ended up with no recording AND no completion, both
+          // waiting behind a request that was never coming back.
+          const { error: putErr } = await Promise.race([
+            supabase.storage.from('interview-videos').upload(videoFilename, videoBlob, { contentType: 'video/webm' }),
+            new Promise((resolve) => setTimeout(() => resolve({ error: new Error('Backup storage timed out') }), STORAGE_TIMEOUT_MS)),
+          ])
           if (!putErr) {
-            const { data: signed } = await supabase.storage.from('interview-videos').createSignedUrl(videoFilename, 60 * 60 * 24 * 30)
-            if (signed?.signedUrl) videoUrl = signed.signedUrl
+            /* Signing happens on the server. Signing from here needed a
+               storage read policy, and the only one that worked let
+               anyone with the public key download every recording in the
+               bucket. `backupSaved` stands in for the URL we no longer
+               see: the row is written server-side. */
+            const rec = await fetch('/api/interview-media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                stageId, sessionId: sessionIdRef.current, candidateName,
+                filename: videoFilename, kind: 'video',
+              }),
+            })
+            if (rec.ok) backupSaved = true
+            else console.error('Backup recording could not be recorded:', rec.status)
           } else { console.error('Supabase storage upload failed:', putErr) }
         } catch (err) { console.error('Supabase storage exception:', err) }
       }
 
       if (videoUrl) {
+        // Cloudinary path: the URL is public and already usable, so the
+        // row goes in from here.
         const { error: insErr } = await supabase.from('interviews').insert({
           stage_id: stageId, speaker: 'video', content: videoFilename,
           candidate_name: candidateName, video_url: videoUrl,
           session_id: sessionIdRef.current,
         })
         if (insErr) { console.error('video row insert failed:', insErr); setVideoSaveFailed(true) }
-      } else {
+      } else if (!backupSaved) {
         setVideoSaveFailed(true)
       }
     }
@@ -1658,76 +1974,35 @@ export default function InterviewPage() {
     const audioBlob = new Blob(audioChunksRef.current, { type: audioContentType })
     const audioFilename = stageId + '-audio-' + Date.now() + '.' + audioExt
     try {
-      const { error: audioErr } = await supabase.storage.from('interview-videos').upload(audioFilename, audioBlob, { contentType: audioContentType })
+      const { error: audioErr } = await Promise.race([
+        supabase.storage.from('interview-videos').upload(audioFilename, audioBlob, { contentType: audioContentType }),
+        new Promise((resolve) => setTimeout(() => resolve({ error: new Error('Audio upload timed out') }), STORAGE_TIMEOUT_MS)),
+      ])
       if (!audioErr) {
-        const { data: audioUrlData } = await supabase.storage.from('interview-videos').createSignedUrl(audioFilename, 60 * 60 * 24 * 7)
-        if (audioUrlData) {
-          await supabase.from('interviews').insert({
-            stage_id: stageId, speaker: 'audio', content: 'Audio recording',
-            candidate_name: candidateName, video_url: audioUrlData.signedUrl,
-            session_id: sessionIdRef.current,
-          })
-          fetch('/api/analyze-audio', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audioUrl: audioUrlData.signedUrl, stageId, candidateName, sessionId: sessionIdRef.current }),
-          })
-        }
+        /* Same reasoning as the video above: the browser uploads, the
+           server signs. Both routes take the filename and never hand a
+           storage URL back to the client. */
+        await fetch('/api/interview-media', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stageId, sessionId: sessionIdRef.current, candidateName,
+            filename: audioFilename, kind: 'audio',
+          }),
+        })
+        fetch('/api/analyze-audio', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioFilename, stageId, candidateName, sessionId: sessionIdRef.current }),
+        })
       }
     } catch (err) { console.error('audio upload failed:', err) }
 
-    // ── Session complete + trial counter + auto-score ──
-    try {
-      if (sessionRowRef.current) {
-        await supabase.from('interviews').update({
-          status: 'completed', completed_at: new Date().toISOString(),
-        }).eq('id', sessionRowRef.current)
-      }
-      // Usage is now attributed at INVITE time via the subscription
-      // system (see /api/send-invite). The old on-completion bump
-      // double-counted every candidate, so it was removed.
-    } catch (err) { console.error('completion housekeeping:', err) }
-
-    // ── Auto-score ──
-    // Single non-blocking fire-and-forget. The server now:
-    //   • checks its upsert error (no more silent 200 with no row)
-    //   • idempotently returns the cached row for concurrent duplicate
-    //     requests (see SCORE_TTL_MS in /api/score-interview)
-    // So retries at this layer just doubled LLM spend and burned time
-    // on the "saving" screen. We fire once with keepalive:true so the
-    // request survives page unload, and let the transcript-page
-    // safety net cover the case where this request never reaches the
-    // server at all (e.g., candidate on flaky Wi-Fi at that moment).
-    try {
-      const transcriptRows = transcriptRef.current.map((l) => ({ speaker: l.speaker, content: l.content }))
-      const body = JSON.stringify({
-        transcript: transcriptRows,
-        stageName: stage?.name || 'Interview',
-        stageId: String(stageId),
-        candidateName,
-        questions: questions.map((q) => q.text),
-      })
-      // keepalive:true survives page unload; we do NOT await so the
-      // candidate isn't blocked on the "saving" screen for 30-90s
-      // while Claude Opus reasons through the transcript.
-      fetch('/api/score-interview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch((err) => console.warn('score-interview kick failed:', err))
-    } catch (err) {
-      console.error('Auto-score orchestration failed:', err)
-    }
-
-    setStep('done')
-    // On completion, clear the resume marker
-    clearStoredSession(stageId)
+    // ── Recording saved (or not). Nothing below is load-bearing. ──
   }
 
   /* ── Handlers ────────────────────────────── */
 
   async function handleBeginFromLanding() {
-    if (!candidateName.trim()) return
+    if (!candidateName.trim() || !consented) return
     setStep('device')
   }
   function handleBackFromDevice() { setStep('landing') }
@@ -1798,7 +2073,9 @@ export default function InterviewPage() {
         candidateName={candidateName}
         setCandidateName={setCandidateName}
         onBegin={handleBeginFromLanding}
-        canBegin={!!candidateName.trim() && questions.length > 0}
+        consented={consented}
+        setConsented={setConsented}
+        canBegin={!!candidateName.trim() && questions.length > 0 && consented}
       />
     )
   }
@@ -1847,6 +2124,20 @@ export default function InterviewPage() {
     )
   }
   if (step === 'transition') return <TransitionScreen />
+  if (step === 'candidate-qa') {
+    return (
+      <CandidateQAScreen
+        asked={qaAsked}
+        limit={QA_LIMIT}
+        input={qaInput}
+        setInput={setQaInput}
+        onAsk={submitCandidateQuestion}
+        onDone={finishInterview}
+        sending={qaSending}
+        company={companyName}
+      />
+    )
+  }
   if (step === 'saving') return <SavingScreen status={uploadStatus} />
   if (step === 'done') {
     return (

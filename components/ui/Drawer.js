@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 /**
@@ -62,12 +63,24 @@ export default function Drawer({
 }) {
   const dialogRef = useRef(null);
   const returnFocusRef = useRef(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!open) return;
     returnFocusRef.current = document.activeElement;
-    const prev = document.body.style.overflow;
+
+    // Lock BOTH. Which element actually scrolls the document varies with
+    // the layout, and locking only <body> left the whole page — drawer
+    // included — scrolling away underneath the recruiter until they were
+    // looking at a blank white panel.
+    const html = document.documentElement;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = html.style.overflow;
     document.body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
+
     const id = requestAnimationFrame(() => dialogRef.current?.focus());
     function onKey(e) {
       if (e.key === 'Escape' && dismissible) onClose?.();
@@ -75,7 +88,8 @@ export default function Drawer({
     window.addEventListener('keydown', onKey);
     return () => {
       cancelAnimationFrame(id);
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevBody;
+      html.style.overflow = prevHtml;
       window.removeEventListener('keydown', onKey);
       if (returnFocusRef.current instanceof HTMLElement) {
         returnFocusRef.current.focus?.();
@@ -83,9 +97,14 @@ export default function Drawer({
     };
   }, [open, dismissible, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  // Rendered into <body>, not where it was declared. `position: fixed`
+  // resolves against the nearest ancestor with a transform, filter or
+  // perspective rather than the viewport, so a drawer left inside the
+  // page tree can silently start scrolling with the content the day
+  // somebody animates a wrapper above it.
+  return createPortal((
     <div className="fixed inset-0 z-50" aria-hidden={!open}>
       <div
         className="absolute inset-0 bg-[color:rgba(17,17,17,0.42)]"
@@ -150,7 +169,12 @@ export default function Drawer({
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 text-[14.5px] leading-relaxed">
+        {/* Vertical only. A drawer that scrolls sideways means something
+            inside refused to shrink, and the fix is always in that child,
+            never here. Left unlocked, one long unbroken line pushes every
+            control in the panel off the right edge. Genuinely wide content
+            (a table, a code block) should scroll inside its own box. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5 text-[14.5px] leading-relaxed">
           {children}
         </div>
 
@@ -161,5 +185,5 @@ export default function Drawer({
         )}
       </div>
     </div>
-  );
+  ), document.body);
 }

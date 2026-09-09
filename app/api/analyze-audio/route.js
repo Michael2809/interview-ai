@@ -1,10 +1,38 @@
 import { AssemblyAI } from 'assemblyai'
-import { supabase } from '../../../lib/supabase'
+import { createServiceClient } from '@/lib/supabase/service'
 
 const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY })
 
+const BUCKET = 'interview-videos'
+const FILENAME = /^([0-9]+)-audio-[0-9]+\.(webm|mp4)$/
+
+/**
+ * Takes a filename, not a URL.
+ *
+ * It used to take the signed audio URL straight from the candidate's
+ * browser, which meant the browser had to be able to sign storage
+ * objects - and the policy that allowed that let anyone with the public
+ * key download every recording in the bucket. The signing happens here
+ * now, with the service key, and the URL is handed to AssemblyAI without
+ * ever passing through a client.
+ */
 export async function POST(request) {
-  const { audioUrl, stageId, candidateName, sessionId } = await request.json()
+  const { audioFilename, stageId, candidateName, sessionId } = await request.json()
+
+  const match = FILENAME.exec(String(audioFilename || ''))
+  if (!match || match[1] !== String(stageId)) {
+    return Response.json({ error: 'Unrecognised audio file.' }, { status: 400 })
+  }
+
+  const supabase = createServiceClient()
+
+  const { data: signed, error: signErr } = await supabase
+    .storage.from(BUCKET).createSignedUrl(audioFilename, 60 * 60 * 2)
+  if (signErr || !signed?.signedUrl) {
+    console.error('analyze-audio: signing failed:', signErr)
+    return Response.json({ error: 'Could not read the audio.' }, { status: 502 })
+  }
+  const audioUrl = signed.signedUrl
 
   try {
     const transcript = await client.transcripts.transcribe({

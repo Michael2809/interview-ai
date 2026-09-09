@@ -3,12 +3,15 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { scoredQuestionTexts } from '@/lib/interview-questions'
+import { EXPIRY_OPTIONS, DEFAULT_EXPIRY } from '@/lib/share'
+import { readCandidateInterview } from '@/lib/transcript'
 import Link from 'next/link'
 import {
   ArrowLeft, ChevronRight, ChevronDown, MoreHorizontal, Sparkles, ThumbsUp,
   ThumbsDown, Pause, Play, Download, Copy, CheckCircle2, XCircle, Circle,
   AlertTriangle, Clock, Mic, MessageSquare, Gauge, Smile, Info, FileText,
-  RefreshCcw, User, ExternalLink,
+  RefreshCcw, User, ExternalLink, Trash2, Share2, Link2, Check,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import QueueNav, { readReviewQueue } from '@/components/AppShell/ReviewQueue'
@@ -593,7 +596,7 @@ function ConfidenceBadge({ confidence, reasons, copy }) {
  * + primary action row.
  * ────────────────────────────────────────────────────────── */
 
-function OverflowMenu({ onReScore, onExport, rescoring, disabled }) {
+function OverflowMenu({ onReScore, onExport, onDelete, rescoring, disabled }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -636,6 +639,14 @@ function OverflowMenu({ onReScore, onExport, rescoring, disabled }) {
             className="w-full text-left px-3.5 py-2 text-[13.5px] text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)] flex items-center gap-2"
           >
             <Download size={13} aria-hidden="true" /> Export PDF
+          </button>
+          <div role="separator" className="my-1.5 h-px bg-[color:var(--color-rc-line)]" />
+          <button
+            type="button" role="menuitem"
+            onClick={() => { setOpen(false); onDelete() }}
+            className="w-full text-left px-3.5 py-2 text-[13.5px] text-[color:var(--color-rc-red)] hover:bg-[color:var(--color-rc-red)]/8 flex items-center gap-2"
+          >
+            <Trash2 size={13} aria-hidden="true" /> Delete candidate data
           </button>
         </div>
       )}
@@ -705,7 +716,7 @@ function interviewStatusChip(score, hasTranscript) {
 function VerdictHeader({
   candidateName, roleTitle, stageName, completedAt, startedAt, durationMs,
   score, recommendation, currentStatus, confidence, confidenceReasons, confidenceCopy,
-  hasTranscript, onSetStatus, updatingStatus, onReScore, onExport, rescoring, canScore,
+  hasTranscript, onSetStatus, updatingStatus, onReScore, onExport, onDelete, onShare, rescoring, canScore,
 }) {
   const scoreText = scoreDisplay(score)
   const rec = recommendation || recommendationFromScore(score)
@@ -795,7 +806,19 @@ function VerdictHeader({
         {decisionButton('shortlisted', 'Shortlist', ThumbsUp, 'primary')}
         {decisionButton('on-hold',     'Hold',      Pause,   'primary')}
         {decisionButton('rejected',    'Reject',    ThumbsDown, 'danger')}
-        <OverflowMenu onReScore={onReScore} onExport={onExport} rescoring={rescoring} disabled={!canScore} />
+        {/* Share sits with the decisions, not in the overflow menu: for
+            most roles the person who decides is not the person holding
+            this login, so sending the result IS the next action. */}
+        <Button
+          variant="secondary"
+          size="md"
+          iconLeft={<Share2 size={14} />}
+          onClick={onShare}
+          disabled={!hasTranscript}
+        >
+          Share
+        </Button>
+        <OverflowMenu onReScore={onReScore} onExport={onExport} onDelete={onDelete} rescoring={rescoring} disabled={!canScore} />
       </div>
       {/* Sentinel below the action row — the sticky bar shows only
           when this element scrolls out of view. */}
@@ -1107,6 +1130,52 @@ function EvidenceCard({ title, evidence, variant }) {
   )
 }
 
+/**
+ * CandidateQuestionsSection — what the candidate asked at the end.
+ *
+ * Not scored and never will be. It is here because it is the only place
+ * in the product where the candidate tells you something you did not ask
+ * for, and the questions Recrewt could not answer are the ones the
+ * recruiter now owes them a reply to.
+ */
+function CandidateQuestionsSection({ items }) {
+  if (!Array.isArray(items) || items.length === 0) return null
+  const unanswered = items.filter((q) => !q.answered)
+  return (
+    <section id="section-candidate-questions" className="mt-10 scroll-mt-24">
+      <div className="flex items-baseline justify-between gap-3">
+        <SectionHeading>They asked you</SectionHeading>
+        {unanswered.length > 0 && (
+          <span className="text-[12px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
+            {unanswered.length} needs a reply
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-[13px] text-[color:var(--color-rc-muted)]">
+        Asked after the interview. Not part of the score.
+      </p>
+      <div className="mt-3 grid gap-2.5">
+        {items.map((qa, i) => (
+          <div
+            key={i}
+            className={
+              'rounded-[12px] border bg-white px-4 py-3.5 ' +
+              (qa.answered
+                ? 'border-[color:var(--color-rc-line)]'
+                : 'border-[color:var(--color-rc-yellow)]')
+            }
+          >
+            <p className="text-[13.5px] font-medium text-[color:var(--color-rc-ink)]">{qa.question}</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-[color:var(--color-rc-muted)]">
+              {qa.answered ? qa.answer : 'Recrewt did not have this. Nobody has answered it yet.'}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function StrengthsAndConcerns({ strengths, concerns }) {
   const hasS = Array.isArray(strengths) && strengths.length > 0
   const hasC = Array.isArray(concerns) && concerns.length > 0
@@ -1148,12 +1217,33 @@ function bandChipColor(recommendation) {
   return 'text-[color:var(--color-rc-warm)]'
 }
 
-function QuestionRow({ qr, index, note, onSaveNote, saving, lastEditedAt }) {
+/**
+ * What a question was for, in the words the recruiter already saw.
+ *
+ * A requirement tag is the difference between "we scored them 6" and "we
+ * scored them 6 on the thing you told us mattered". Questions the
+ * recruiter wrote get their own label rather than a fabricated
+ * requirement — they never claimed it mapped to one.
+ */
+function normaliseQuestionKey(text) {
+  // The scorer echoes the question back, and punctuation and whitespace
+  // do not always survive the round trip. Match on the words.
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function questionTag(meta) {
+  if (!meta) return null
+  if (meta.source === 'custom') return 'Your question'
+  return meta.covers || null
+}
+
+function QuestionRow({ qr, index, note, onSaveNote, saving, lastEditedAt, meta }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(note || '')
   useEffect(() => { setDraft(note || '') }, [note])
   const scoreText = scoreDisplay(qr.score)
   const rec = qr.recommendation || null
+  const tag = questionTag(meta)
 
   useEffect(() => {
     if (!open) return
@@ -1180,7 +1270,12 @@ function QuestionRow({ qr, index, note, onSaveNote, saving, lastEditedAt }) {
           className={'mt-1.5 shrink-0 text-[color:var(--color-rc-muted)] transition-transform ' + (open ? 'rotate-0' : '-rotate-90')}
         />
         <div className="min-w-0 flex-1">
-          <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">Q{index}</div>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">Q{index}</span>
+            {tag && (
+              <span className="text-[11.5px] leading-snug text-[color:var(--color-rc-muted)]">{tag}</span>
+            )}
+          </div>
           <div className="mt-0.5 text-[14.5px] font-medium text-[color:var(--color-rc-ink)] leading-relaxed">
             {qr.question}
           </div>
@@ -1235,7 +1330,7 @@ function QuestionRow({ qr, index, note, onSaveNote, saving, lastEditedAt }) {
   )
 }
 
-function QuestionReviewList({ reviews, notesByQuestion, onSaveNote, savingSet }) {
+function QuestionReviewList({ reviews, notesByQuestion, onSaveNote, savingSet, questionMeta }) {
   if (!Array.isArray(reviews) || reviews.length === 0) {
     return (
       <section className="mt-10">
@@ -1261,6 +1356,7 @@ function QuestionReviewList({ reviews, notesByQuestion, onSaveNote, savingSet })
               note={note?.body || ''}
               lastEditedAt={note?.updated_at || null}
               saving={savingSet.has(key)}
+              meta={questionMeta?.[normaliseQuestionKey(qr.question)] || null}
               onSaveNote={(qq, body) => onSaveNote(qq.question, body)}
             />
           )
@@ -1576,10 +1672,320 @@ function ReScoreModal({ open, onClose, onConfirm, currentScore, rescoring }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+ * Delete candidate data — irreversible, so the recruiter types the
+ * candidate's name. A single click is too cheap for an action that
+ * destroys a recording, a transcript and a score with no undo.
+ * ────────────────────────────────────────────────────────── */
+
+function DeleteCandidateModal({ open, onClose, onConfirm, candidateName, deleting }) {
+  const [typed, setTyped] = useState('')
+  useEffect(() => { if (open) setTyped('') }, [open])
+  const armed = typed.trim().toLowerCase() === String(candidateName || '').trim().toLowerCase()
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Delete this candidate's data?"
+      description="The video recording, the full transcript and the AI evaluation are permanently erased. This cannot be undone."
+      size="sm"
+      dismissible={!deleting}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={deleting}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={onConfirm}
+            disabled={!armed || deleting}
+            loading={deleting}
+            iconLeft={<Trash2 size={14} />}
+          >
+            Delete permanently
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+        Use this when a candidate asks you to erase their data. If you only want
+        them out of your way, use Archive instead.
+      </p>
+      <div className="mt-4">
+        <label htmlFor="confirm-delete-name" className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+          Type <span className="font-semibold">{candidateName}</span> to confirm
+        </label>
+        <TextField
+          id="confirm-delete-name"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={candidateName}
+          autoComplete="off"
+          disabled={deleting}
+        />
+      </div>
+    </Modal>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Export PDF — client-side, uses window.print with print styles.
  * A future enhancement can swap for html-to-pdf; the modal is
  * scoped so we can upgrade without any UI changes.
  * ────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────
+ * ShareModal — a read-only link for somebody without an account
+ *
+ * The recruiter is the only person who can see a candidate's result
+ * today, which makes the result useless to the person who actually
+ * decides. This mints a link scoped to ONE candidate that carries no
+ * notes, no hiring status and no way into the rest of the workspace.
+ * ────────────────────────────────────────────────────────── */
+
+function relativeExpiry(iso) {
+  if (!iso) return 'No expiry'
+  const ms = new Date(iso).getTime() - Date.now()
+  if (!Number.isFinite(ms)) return ''
+  if (ms <= 0) return 'Expired'
+  const days = Math.ceil(ms / (24 * 60 * 60 * 1000))
+  if (days === 1) return 'Expires tomorrow'
+  return `Expires in ${days} days`
+}
+
+function ShareLinkRow({ link, onRevoke, revoking }) {
+  const [copied, setCopied] = useState(false)
+  const url = typeof window !== 'undefined'
+    ? `${window.location.origin}/share/${link.token}`
+    : `/share/${link.token}`
+  const dead = Boolean(link.revoked_at) ||
+    (link.expires_at && new Date(link.expires_at).getTime() <= Date.now())
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // Clipboard is blocked in some embedded browsers. Selecting the
+      // text is the fallback, so the input stays readable and focusable
+      // rather than the copy silently doing nothing.
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="rounded-[12px] border border-[color:var(--color-rc-line)] bg-white p-3.5">
+      <div className="flex items-center gap-2">
+        <input
+          readOnly
+          value={url}
+          onFocus={(e) => e.target.select()}
+          className={
+            'min-w-0 flex-1 text-[12.5px] font-mono bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] rounded px-2.5 py-1.5 text-[color:var(--color-rc-ink)] ' +
+            (dead ? 'line-through opacity-60' : '')
+          }
+          aria-label="Share link"
+        />
+        {!dead && (
+          <Button variant="secondary" size="sm" onClick={copy} iconLeft={copied ? <Check size={13} /> : <Copy size={13} />}>
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        )}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-[11.5px] text-[color:var(--color-rc-muted)]">
+          {link.label ? <span className="text-[color:var(--color-rc-ink)]">{link.label} · </span> : null}
+          {link.revoked_at ? 'Turned off' : relativeExpiry(link.expires_at)}
+          {' · '}
+          {link.view_count > 0
+            ? `Opened ${link.view_count} time${link.view_count === 1 ? '' : 's'}`
+            : 'Not opened yet'}
+          {link.include_video ? '' : ' · Recording hidden'}
+        </div>
+        {!link.revoked_at && (
+          <button
+            type="button"
+            onClick={() => onRevoke(link.id)}
+            disabled={revoking}
+            className="text-[11.5px] font-medium text-[color:var(--color-rc-red)] hover:underline disabled:opacity-50 focus:outline-none focus-visible:underline"
+          >
+            {revoking ? 'Turning off…' : 'Turn off'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ShareModal({ open, onClose, stageId, candidateName }) {
+  const [links, setLinks] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [revokingId, setRevokingId] = useState(null)
+  const [error, setError] = useState('')
+  const [expiry, setExpiry] = useState(DEFAULT_EXPIRY)
+  const [includeVideo, setIncludeVideo] = useState(true)
+  const [label, setLabel] = useState('')
+
+  const load = useCallback(async () => {
+    if (!open || !stageId || !candidateName) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(
+        `/api/share-links?stageId=${encodeURIComponent(stageId)}&candidate=${encodeURIComponent(candidateName)}`,
+      )
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || 'Could not load your links.')
+      setLinks(json.links || [])
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [open, stageId, candidateName])
+
+  useEffect(() => { load() }, [load])
+
+  async function create() {
+    setCreating(true)
+    setError('')
+    try {
+      const res = await fetch('/api/share-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageId, candidate: candidateName, expiry, includeVideo, label: label.trim() || null,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || 'Could not create the link.')
+      setLinks((prev) => [json.link, ...prev])
+      setLabel('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function revoke(id) {
+    setRevokingId(id)
+    setError('')
+    try {
+      const res = await fetch('/api/share-links', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || 'Could not turn off the link.')
+      setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, revoked_at: new Date().toISOString() } : l)))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  const live = links.filter((l) => !l.revoked_at)
+  const off = links.filter((l) => l.revoked_at)
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Share ${candidateName || 'this result'}`}
+      description="Anyone with the link can read this one result. They cannot sign in, see other candidates, or change anything."
+      size="lg"
+      footer={<Button variant="secondary" onClick={onClose}>Done</Button>}
+    >
+      <div className="grid gap-5">
+
+        {/* New link */}
+        <div className="rounded-[12px] border border-[color:var(--color-rc-line)] bg-[color:var(--color-rc-soft)] p-4">
+          <SectionLabel>New link</SectionLabel>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="block text-[12px] text-[color:var(--color-rc-muted)] mb-1">Who is it for? (optional)</span>
+              <input
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="e.g. Ravi, hiring manager"
+                maxLength={120}
+                className="w-full bg-white text-[13.5px] border border-[color:var(--color-rc-line)] rounded px-3 py-2 focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="block text-[12px] text-[color:var(--color-rc-muted)] mb-1">Stops working after</span>
+              <select
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+                className="w-full bg-white text-[13.5px] border border-[color:var(--color-rc-line)] rounded px-3 py-2 focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)]"
+              >
+                {EXPIRY_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeVideo}
+              onChange={(e) => setIncludeVideo(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[color:var(--color-rc-ink)]"
+            />
+            <span className="text-[13px] text-[color:var(--color-rc-ink)]">
+              Include the recording
+              <span className="block text-[11.5px] text-[color:var(--color-rc-muted)]">
+                Untick to share the written assessment without the candidate&rsquo;s face.
+              </span>
+            </span>
+          </label>
+
+          <div className="mt-4">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={create}
+              disabled={creating}
+              iconLeft={<Link2 size={14} />}
+            >
+              {creating ? 'Creating…' : 'Create link'}
+            </Button>
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-[13px] text-[color:var(--color-rc-red)]">{error}</p>
+        )}
+
+        {/* Existing */}
+        <div>
+          <SectionLabel>Links you have made</SectionLabel>
+          {loading ? (
+            <p className="mt-3 text-[13px] text-[color:var(--color-rc-muted)]">Loading…</p>
+          ) : links.length === 0 ? (
+            <p className="mt-3 text-[13px] text-[color:var(--color-rc-muted)]">
+              None yet. Anyone you send one to can read this result without an account.
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-2.5">
+              {live.map((l) => (
+                <ShareLinkRow key={l.id} link={l} onRevoke={revoke} revoking={revokingId === l.id} />
+              ))}
+              {off.map((l) => (
+                <ShareLinkRow key={l.id} link={l} onRevoke={revoke} revoking={false} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 function ExportPdfModal({ open, onClose, onExport }) {
   const [includeTranscript, setIncludeTranscript] = useState(true)
@@ -1674,6 +2080,9 @@ export default function TranscriptPage() {
 
   const [reScoreOpen, setReScoreOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [exportOptions, setExportOptions] = useState(null)  // triggers print effect
 
   // Notes state — whole-candidate + per-question
@@ -1712,7 +2121,7 @@ export default function TranscriptPage() {
     setLines(linesData)
 
     // Approved questions for this stage
-    const qRes = await supabase.from('questions').select('id, text, approved').eq('stage_id', stageId).eq('approved', true)
+    const qRes = await supabase.from('questions').select('id, text, approved, covers, source').eq('stage_id', stageId).eq('approved', true)
     setQuestions(qRes.data || [])
 
     // Scores for this stage
@@ -1752,6 +2161,17 @@ export default function TranscriptPage() {
 
   /* ── Derived: per-candidate data ─────────── */
 
+  // The scorer returns question text, not question ids, so the
+  // requirement tag has to be matched back by wording.
+  const questionMeta = useMemo(() => {
+    const map = {}
+    for (const q of questions) {
+      const key = normaliseQuestionKey(q.text)
+      if (key) map[key] = { covers: q.covers || null, source: q.source || 'ai' }
+    }
+    return map
+  }, [questions])
+
   const candidateNames = useMemo(
     () => [...new Set(lines.map((l) => l.candidate_name).filter(Boolean))],
     [lines],
@@ -1761,104 +2181,28 @@ export default function TranscriptPage() {
   // casing between the transcript upload path and the video upload path
   // (e.g. "Priya" vs "priya").  Fall back to case-insensitive equality so
   // the video and transcript rows still bind to the same candidate.
-  const allLinesForCandidate = useMemo(() => {
-    const target = (selected || '').toLowerCase()
-    return lines.filter((l) => (l.candidate_name || '').toLowerCase() === target)
-  }, [lines, selected])
-
-  /* ── Split a candidate's lines into separate interview attempts ──
-     Every row in `interviews` gets its own `token`, because the column
-     defaults to gen_random_uuid() and the insert never supplies one. So the
-     token identifies a ROW, not a SESSION, and cannot be used to group.
-
-     The reliable delimiter is the `session_start` marker written when the
-     interview page opens. Without this split, every attempt a candidate ever
-     made was concatenated into one transcript — abandoned starts contributed
-     an orphaned opening question each, which is why the same question appeared
-     several times in a row with no answer between. */
-  const sessions = useMemo(() => {
-    // Preferred path: group by session_id, which the interview client now
-    // stamps on every row of an attempt.
-    if (allLinesForCandidate.some((l) => l.session_id)) {
-      const byId = new Map()
-      const ungrouped = []
-      for (const line of allLinesForCandidate) {
-        if (!line.session_id) { ungrouped.push(line); continue }
-        if (!byId.has(line.session_id)) byId.set(line.session_id, [])
-        byId.get(line.session_id).push(line)
-      }
-      const groups = [...byId.values()]
-      if (ungrouped.length) groups.push(ungrouped)
-      // Oldest attempt first, matching the marker-based path below.
-      groups.sort(
-        (a, b) => new Date(a[0]?.created_at || 0) - new Date(b[0]?.created_at || 0),
-      )
-      return groups
-    }
-
-    // Fallback for rows written before session_id existed and missed the
-    // backfill: split at each session_start marker.
-    const groups = []
-    let current = null
-    for (const line of allLinesForCandidate) {
-      if (line.speaker === 'session_start' || current === null) {
-        current = []
-        groups.push(current)
-      }
-      current.push(line)
-    }
-    return groups
-  }, [allLinesForCandidate])
-
-  /* The attempt to display: the most recent one the candidate actually spoke
-     in. Opening the link and walking away creates a session containing only a
-     marker and the first question; showing that instead of real answers would
-     be worse than the bug it replaces. */
-  const linesForSelected = useMemo(() => {
-    if (sessions.length === 0) return []
-    for (let i = sessions.length - 1; i >= 0; i--) {
-      if (sessions[i].some((l) => l.speaker === 'candidate')) return sessions[i]
-    }
-    return sessions[sessions.length - 1]
-  }, [sessions])
-
-  // How many earlier attempts exist, so the UI can say so rather than silently
-  // hiding them.
-  const attemptCount = sessions.length
-  const abandonedCount = useMemo(
-    () => sessions.filter((s) => !s.some((l) => l.speaker === 'candidate')).length,
-    [sessions],
+  /* ── One candidate's interview ────────────────────────────────
+     Derived by lib/transcript.js rather than here, because the share
+     page (/share/[token]) renders the same interview for somebody with
+     no account. Two independent derivations would drift, and the first
+     person to notice would be a client saying "that is not what you
+     sent me". */
+  const interview = useMemo(
+    () => readCandidateInterview(lines, selected || ''),
+    [lines, selected],
   )
 
-  const transcriptLines = useMemo(
-    () => linesForSelected.filter((l) =>
-      l.speaker !== 'video' && l.speaker !== 'invite' &&
-      l.speaker !== 'analysis' && l.speaker !== 'audio' &&
-      l.speaker !== 'session_start'
-    ),
-    [linesForSelected],
-  )
+  const linesForSelected   = interview.lines
+  const transcriptLines    = interview.transcript
+  const candidateQuestions = interview.candidateQuestions
+  const video              = interview.videoUrl
+  const analysis           = interview.analysis
+  const attemptCount       = interview.attemptCount
+  const abandonedCount     = interview.abandonedCount
+  const startedAt          = interview.startedAt
+  const finishedAt         = interview.finishedAt
+  const durationMs         = interview.durationMs
 
-  const video = useMemo(() => {
-    const v = linesForSelected.find((l) => l.speaker === 'video')
-    return v ? v.video_url : null
-  }, [linesForSelected])
-
-  const analysis = useMemo(() => {
-    const a = linesForSelected.find((l) => l.speaker === 'analysis')
-    if (!a) return null
-    try { return JSON.parse(a.content) } catch { return null }
-  }, [linesForSelected])
-
-  const startedAt = useMemo(() => {
-    const first = linesForSelected.find((l) => l.speaker === 'session_start') || transcriptLines[0]
-    return first?.created_at || null
-  }, [linesForSelected, transcriptLines])
-  const finishedAt = useMemo(() => transcriptLines[transcriptLines.length - 1]?.created_at || null, [transcriptLines])
-  const durationMs = useMemo(() => {
-    if (!startedAt || !finishedAt) return null
-    return new Date(finishedAt).getTime() - new Date(startedAt).getTime()
-  }, [startedAt, finishedAt])
 
   const avgResponseSec = useMemo(() => {
     // For candidate turns only: time between interviewer→candidate speaking.
@@ -2019,7 +2363,10 @@ export default function TranscriptPage() {
         // idempotency (see SCORE_TTL_MS in /api/score-interview)
         // makes this a no-op if the interview page's request just
         // finished writing.
-        const askedQuestions = questions.map((q) => q.text)
+        // Shared helper: every path that scores this candidate must send the
+        // exact same question list, or one interview yields two different
+        // verdicts depending on which path happened to run.
+        const askedQuestions = scoredQuestionTexts(questions)
         const payloadTranscript = transcriptLines.map((l) => ({ speaker: l.speaker, content: l.content }))
         fetch('/api/score-interview', {
           method: 'POST',
@@ -2171,12 +2518,47 @@ export default function TranscriptPage() {
     flashMessage(`Marked as ${target.replace('-', ' ')}.`)
   }
 
+  /**
+   * Erase this candidate's recording, transcript and score.
+   *
+   * The server does the ownership check and the Cloudinary delete; all
+   * this does is ask, then leave, because the page it is rendering no
+   * longer has anything behind it.
+   */
+  async function handleDeleteCandidate() {
+    if (!selected) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/delete-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId: String(stageId), candidate: selected }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        console.error('delete-candidate failed:', data.error)
+        flashError(data.error || 'Could not delete this candidate. Please try again.')
+        setDeleting(false)
+        return
+      }
+      setDeleteOpen(false)
+      router.push(stage?.role_id ? `/roles/${stage.role_id}` : '/candidates')
+    } catch (err) {
+      console.error('delete-candidate threw:', err)
+      flashError('Could not delete this candidate. Please try again.')
+      setDeleting(false)
+    }
+  }
+
   async function runScore() {
     if (!selected) return
     setRescoring(true)
     setReScoreOpen(false)
     try {
-      const askedQuestions = questions.map((q) => q.text)
+      // Shared helper: every path that scores this candidate must send the
+      // exact same question list, or one interview yields two different
+      // verdicts depending on which path happened to run.
+      const askedQuestions = scoredQuestionTexts(questions)
       const speechClarity = analysis?.avgPronunciationConfidence ?? null
       const payloadTranscript = transcriptLines.map((l) => ({ speaker: l.speaker, content: l.content }))
       const res = await fetch('/api/score-interview', {
@@ -2306,6 +2688,8 @@ export default function TranscriptPage() {
               updatingStatus={updatingStatus}
               onReScore={() => setReScoreOpen(true)}
               onExport={() => setExportOpen(true)}
+              onDelete={() => setDeleteOpen(true)}
+              onShare={() => setShareOpen(true)}
               rescoring={rescoring}
               canScore={transcriptLines.length > 0}
             />
@@ -2332,6 +2716,8 @@ export default function TranscriptPage() {
                   ? { id: 'section-concerns', label: 'Concerns' } : null,
                 (Array.isArray(currentScoreRow?.question_reviews) && currentScoreRow.question_reviews.length > 0)
                   ? { id: 'section-questions', label: `Questions (${currentScoreRow.question_reviews.length})` } : null,
+                candidateQuestions.length > 0
+                  ? { id: 'section-candidate-questions', label: 'They asked you' } : null,
                 transcriptLines.length > 0 ? { id: 'section-transcript', label: 'Full transcript' } : null,
               ].filter(Boolean)}
             />
@@ -2382,7 +2768,9 @@ export default function TranscriptPage() {
                       notesByQuestion={questionNotes}
                       onSaveNote={saveQuestionNote}
                       savingSet={qNoteSaving}
+                      questionMeta={questionMeta}
                     />
+                    <CandidateQuestionsSection items={candidateQuestions} />
                     <div className={hideTranscriptInPrint ? 'print:hidden' : ''}>
                       <FullTranscriptView lines={transcriptLines} candidateName={selected} />
                     </div>
@@ -2429,6 +2817,19 @@ export default function TranscriptPage() {
           open={exportOpen}
           onClose={() => setExportOpen(false)}
           onExport={handleExport}
+        />
+        <ShareModal
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          stageId={stageId}
+          candidateName={selected}
+        />
+        <DeleteCandidateModal
+          open={deleteOpen}
+          onClose={() => !deleting && setDeleteOpen(false)}
+          onConfirm={handleDeleteCandidate}
+          candidateName={selected}
+          deleting={deleting}
         />
 
         {/* Print styles (scoped) */}

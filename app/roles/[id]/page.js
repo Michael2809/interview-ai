@@ -3,13 +3,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { awaitingDecision } from '@/lib/decisions'
+import { groupQuestions, interviewShape, canAddCustomQuestion, customQuestionCount, CUSTOM_QUESTION_LIMIT } from '@/lib/questions'
+import CompareModal from '@/components/CompareModal'
+import { mergeCvRows, MAX_BATCH_BYTES } from '@/lib/resumes'
 import { warmTtsCache } from '@/lib/tts'
 import Link from 'next/link'
 import {
   ArrowLeft, Plus, ChevronRight, ChevronDown, MoreHorizontal, Search,
-  Sparkles, Upload, Send, Loader, FileUp, X, Trash2, Copy, PauseCircle,
+  Sparkles, Send, Loader, FileUp, X, Trash2, Copy, PauseCircle,
   Archive, ArchiveRestore, CheckCircle2, XCircle, Circle, GripVertical,
-  Download, Clock, Users, Mail, Pencil, ArrowUpRight, AlertTriangle,
+  Download, Clock, Users, Mail, Pencil, ArrowUpRight, AlertTriangle, Columns2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import { SkeletonLine } from '@/components/AppShell/Skeleton'
@@ -33,6 +37,9 @@ const COMPLEXITY_LABELS = {
 }
 
 const TABS = ['overview', 'candidates', 'interviews']
+
+/** Matches MAX_FILES in /api/parse-resumes. Kept in step by hand. */
+const MAX_CVS = 25
 
 const SESSION_TAB_KEY  = 'recrewt:role-detail:tab'
 const SESSION_CAND_KEY = 'recrewt:role-detail:candidates-filter'
@@ -73,9 +80,9 @@ function experienceLabel(v) {
 
 function suggestedFromScore(score) {
   if (score == null) return 'in-progress'
-  if (score >= 7) return 'shortlisted'
-  if (score >= 4) return 'on-hold'
-  return 'rejected'
+  if (score >= 7) return 'suggest-shortlist'
+  if (score >= 4) return 'suggest-review'
+  return 'suggest-below-bar'
 }
 
 function csvEscape(v) {
@@ -890,7 +897,7 @@ function CandidateFilterBar({ search, onSearch, stage, onStage, statusFilter, on
  * BulkActionBar — floats at bottom when ≥ 1 selected
  * ────────────────────────────────────────────────────────── */
 
-function BulkActionBar({ count, onClear, onShortlist, onReject, onExport, busy }) {
+function BulkActionBar({ count, onClear, onShortlist, onReject, onExport, onCompare, busy }) {
   if (count === 0) return null
   return (
     <div
@@ -921,6 +928,16 @@ function BulkActionBar({ count, onClear, onShortlist, onReject, onExport, busy }
       >
         <Download size={14} aria-hidden="true" /> Export
       </button>
+      {/* Exactly two. Three-way beauty contests are how a shortlist
+          becomes a shrug — the useful question is always between two
+          people. */}
+      <button
+        type="button" onClick={onCompare} disabled={busy || count !== 2}
+        title={count === 2 ? undefined : 'Select exactly two candidates to compare.'}
+        className="inline-flex items-center gap-1.5 h-8 px-3 rounded text-[13px] font-medium hover:bg-white/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+      >
+        <Columns2 size={14} aria-hidden="true" /> Compare
+      </button>
       <div className="h-4 w-px bg-white/25" aria-hidden="true" />
       <button
         type="button" onClick={onClear}
@@ -942,7 +959,7 @@ function CandidatesPanel({
   candidates, stages,
   search, onSearch, stage, onStage, statusFilter, onStatusFilter, sort, onSort,
   selected, onToggleSelect, onSelectAll, onClearSelection,
-  onSetStatus, onBulkShortlist, onBulkReject, onBulkExport, busyBulk,
+  onSetStatus, onBulkShortlist, onBulkReject, onBulkExport, onCompare, busyBulk,
   onOpenInvite,
 }) {
   const filtered = useMemo(() => {
@@ -1074,6 +1091,7 @@ function CandidatesPanel({
         onShortlist={onBulkShortlist}
         onReject={onBulkReject}
         onExport={onBulkExport}
+        onCompare={onCompare}
         busy={busyBulk}
       />
     </div>
@@ -1082,10 +1100,94 @@ function CandidatesPanel({
 
 
 /* ─────────────────────────────────────────────────────────────
- * QuestionRow — inside the Interviews tab
+ * The questions section of the Interviews tab.
+ *
+ * One card per requirement, TWO drafted questions inside it, the better
+ * one already selected. That shape is the whole argument. A single
+ * forced question per requirement takes the judgement away from the only
+ * person who knows the role; an open list of ten with checkboxes makes
+ * them do the sorting. Two, pre-picked, is a decision a recruiter can
+ * accept in three seconds or overrule in five.
  * ────────────────────────────────────────────────────────── */
 
-function QuestionRow({ q, onToggle, onDelete }) {
+/** A requirement string makes a poor HTML control name. */
+function radioName(groupKey) {
+  return 'req-' + String(groupKey).replace(/[^A-Za-z0-9_-]+/g, '-')
+}
+
+function QuestionChoice({ q, groupKey, chosen, onPick }) {
+  return (
+    <label
+      className={
+        'flex items-start gap-3 px-3.5 py-3 rounded-[10px] cursor-pointer border transition-colors ' +
+        (chosen
+          ? 'border-[color:var(--color-rc-ink)] bg-white'
+          : 'border-transparent hover:bg-[color:var(--color-rc-soft)]')
+      }
+    >
+      <input
+        type="radio"
+        name={radioName(groupKey)}
+        checked={chosen}
+        onChange={() => onPick(q)}
+        className="mt-1 h-3.5 w-3.5 shrink-0 accent-[color:var(--color-rc-ink)] focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+      />
+      <span className="text-[14px] leading-relaxed text-[color:var(--color-rc-ink)]">
+        {q.text}
+      </span>
+    </label>
+  )
+}
+
+function RequirementGroup({ group, index, onPick, onSkip }) {
+  const chosen = group.options.find((o) => o.approved)
+  return (
+    <div className="rounded-[14px] border border-[color:var(--color-rc-line)] bg-[color:var(--color-rc-soft)]/40 p-3 md:p-3.5">
+      <div className="flex items-baseline gap-2.5 px-1">
+        <span className="text-[11px] tabular-nums font-semibold text-[color:var(--color-rc-muted)]">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+        <span className="text-[12.5px] leading-snug text-[color:var(--color-rc-ink)]">
+          {group.covers}
+        </span>
+      </div>
+      {/* Without this line the block reads as a checklist somebody forgot
+          to finish. The unpicked options are alternatives, not unchecked
+          boxes, and nothing on screen said so. */}
+      <p className="mt-1 px-1 text-[11.5px] leading-snug text-[color:var(--color-rc-muted)]">
+        {group.options.length > 2
+          ? `Pick the one question to ask for this. ${group.options.length} drafts to choose from, and the ones you do not pick are never asked.`
+          : 'Pick the one question to ask for this. The other is not asked.'}
+      </p>
+      <div className="mt-2 grid gap-1">
+        {group.options.map((o) => (
+          <QuestionChoice
+            key={o.id}
+            q={o}
+            groupKey={group.key}
+            chosen={!!o.approved}
+            onPick={onPick}
+          />
+        ))}
+        <label className="flex items-center gap-3 px-3.5 py-2 rounded-[10px] cursor-pointer hover:bg-[color:var(--color-rc-soft)]">
+          <input
+            type="radio"
+            name={radioName(group.key)}
+            checked={!chosen}
+            onChange={() => onSkip(group)}
+            className="h-3.5 w-3.5 shrink-0 accent-[color:var(--color-rc-ink)] focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+          />
+          <span className="text-[12.5px] text-[color:var(--color-rc-muted)]">
+            Skip this one
+          </span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+/** A plain asked / not-asked row, for questions that have no pair. */
+function ToggleQuestionRow({ q, onToggle, onDelete }) {
   return (
     <div className="group grid grid-cols-[auto_1fr_auto] items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-[color:var(--color-rc-soft)]">
       <label className="mt-0.5 inline-flex items-center gap-2 cursor-pointer">
@@ -1165,11 +1267,230 @@ function StageListRail({ stages, activeStageId, onSelect, onAddStage, funnelById
  * StageEditPanel (Interviews tab right pane)
  * ────────────────────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────────────────────
+ * CalibrationPanel — what the recruiter knows that the JD doesn't say.
+ *
+ * Both questions are now ASKED in the create-role drawer, while the
+ * requirements are on screen and the questions have not been written
+ * yet. This panel is where they get CHANGED, which is not the same job:
+ * the honest answer to "what separates a great one" usually arrives
+ * after the third candidate, not before the first, and a recruiter who
+ * cannot revise it is stuck with a bar they guessed at.
+ *
+ * Collapsed by default, and it re-drafts the questions on save.
+ *
+ * Two prompts, not four. "Why is this role open?" changed nothing about
+ * the interview, and dealbreakers asked recruiters to predict rejection
+ * reasons before meeting anyone — the scorer still reads the column, it
+ * just is not worth a field. Both prompts here are about HIRING
+ * JUDGEMENT, never job trivia: Recrewt sells to agencies, where the
+ * recruiter was handed a JD by a client and had one call about it. Ask
+ * them internal operational detail and they genuinely do not know.
+ * ────────────────────────────────────────────────────────── */
+
+function CalibrationPanel({ role, stage, onCalibrated }) {
+  const musts = useMemo(
+    () => (Array.isArray(role?.must_haves) ? role.must_haves : [])
+      .map((m) => (typeof m === 'string' ? m : m?.label)).filter(Boolean),
+    [role],
+  )
+
+  const [open, setOpen] = useState(false)
+  const [flexible, setFlexible] = useState(() =>
+    Array.isArray(role?.flexible_criteria) ? role.flexible_criteria : [])
+  const [greatVsOkay, setGreatVsOkay] = useState(role?.great_vs_okay || '')
+  const [saving, setSaving] = useState(false)
+  const [revisions, setRevisions] = useState(null)
+  const [err, setErr] = useState('')
+
+  const done = !!role?.calibrated_at
+  const answered = flexible.length > 0 || !!greatVsOkay.trim()
+
+  // The panel opens edited, not blank: these are answers the recruiter
+  // already gave when creating the role.
+  useEffect(() => {
+    setFlexible(Array.isArray(role?.flexible_criteria) ? role.flexible_criteria : [])
+    setGreatVsOkay(role?.great_vs_okay || '')
+  }, [role?.id, role?.flexible_criteria, role?.great_vs_okay])
+
+  function toggleFlexible(label) {
+    setFlexible((list) => list.includes(label)
+      ? list.filter((l) => l !== label)
+      : [...list, label])
+  }
+
+  async function save() {
+    setSaving(true); setErr(''); setRevisions(null)
+    try {
+      const res = await fetch('/api/calibrate-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roleId: role.id,
+          stageId: stage?.id || null,
+          flexible,
+          greatVsOkay,
+          // Kept on the role, no longer asked for here.
+          dealbreakers: role?.dealbreakers || '',
+          openingReason: role?.opening_reason || '',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) { setErr(data.error || 'Could not save.'); return }
+      setRevisions(data.revisions || [])
+      await onCalibrated?.()
+    } catch (e) {
+      console.error('calibrate failed:', e)
+      setErr('Could not save. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-10 pt-6 border-t border-[color:var(--color-rc-line)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-start justify-between gap-4 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded"
+      >
+        <div className="min-w-0">
+          <SectionLabel>{done ? 'Your hiring bar' : 'Sharpen these'}</SectionLabel>
+          <p className="mt-2.5 text-[13.5px] leading-relaxed text-[color:var(--color-rc-muted)] max-w-[62ch]">
+            {done
+              ? 'What you told Recrewt when you created this role. Change it any time and the questions are redrafted to match.'
+              : 'You skipped these when you created the role. Two answers, and Recrewt judges candidates the way you would.'}
+          </p>
+        </div>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className={'shrink-0 mt-1 text-[color:var(--color-rc-muted)] transition-transform duration-200 ' + (open ? 'rotate-180' : '')}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-6 grid gap-7">
+          {musts.length > 0 && (
+            <div>
+              <p className="text-[13.5px] font-medium text-[color:var(--color-rc-ink)]">
+                Would you bend on any of them?
+              </p>
+              <p className="mt-1 text-[12.5px] text-[color:var(--color-rc-muted)]">
+                Tick the ones you would still hire someone without, and they count for half.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {musts.map((m) => {
+                  const on = flexible.includes(m)
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => toggleFlexible(m)}
+                      aria-pressed={on}
+                      className={
+                        'h-8 px-3 rounded-[8px] text-[13px] border transition-colors duration-150 ' +
+                        (on
+                          ? 'border-[color:var(--color-rc-yellow)] bg-[rgb(244_196_48_/_0.14)] text-[color:var(--color-rc-ink)]'
+                          : 'border-[color:var(--color-rc-line)] bg-white text-[color:var(--color-rc-muted)] hover:border-[color:var(--color-rc-ink)] hover:text-[color:var(--color-rc-ink)]')
+                      }
+                    >
+                      {m}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <CalField
+            label="What separates a great one from an okay one?"
+            hint="One sentence in your own words. Candidates never see this — it aims the questions at ground where the difference shows."
+            value={greatVsOkay}
+            onChange={setGreatVsOkay}
+            placeholder="e.g. the good ones can say what they'd do differently, not just what they did"
+          />
+
+          {err && (
+            <p className="text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
+              {err}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3">
+            <Button variant="primary" size="sm" onClick={save} loading={saving} disabled={!answered}>
+              {done ? 'Update' : 'Apply to these questions'}
+            </Button>
+            {!answered && (
+              <span className="text-[12.5px] text-[color:var(--color-rc-muted)]">
+                Answer whichever you know. Skip the rest.
+              </span>
+            )}
+          </div>
+
+          {/* The consequence. Without this the panel is busywork. */}
+          {revisions && (
+            revisions.length === 0 ? (
+              <p className="text-[13px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                Saved. The questions already covered this, so none needed rewriting.
+                Recrewt will use what you said when it scores the answers.
+              </p>
+            ) : (
+              <div className="grid gap-3">
+                <p className="text-[13px] text-[color:var(--color-rc-ink)]">
+                  {revisions.length} question{revisions.length === 1 ? '' : 's'} rewritten.
+                </p>
+                {revisions.map((r) => (
+                  <div key={r.id} className="rounded-[12px] border border-[color:var(--color-rc-line)] bg-white p-4">
+                    <p className="text-[13px] leading-relaxed text-[color:var(--color-rc-muted)] line-through decoration-[color:var(--color-rc-line)]">
+                      {r.before}
+                    </p>
+                    <p className="mt-2 text-[13.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+                      {r.after}
+                    </p>
+                    {r.why && (
+                      <p className="mt-2 text-[12px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)]">
+                        {r.why}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CalField({ label, hint, value, onChange, placeholder }) {
+  const id = 'cal-' + label.slice(0, 18).toLowerCase().replace(/[^a-z]+/g, '-')
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[13.5px] font-medium text-[color:var(--color-rc-ink)]">
+        {label}
+      </label>
+      {hint && <p className="mt-1 text-[12.5px] text-[color:var(--color-rc-muted)]">{hint}</p>}
+      <textarea
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={2}
+        placeholder={placeholder}
+        className="mt-2.5 w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] resize-none"
+      />
+    </div>
+  )
+}
+
 function StageEditPanel({
-  stage, questions, onEditStage, onDeleteStage,
-  onDraftAI, onDraftFromResume, onAddManual,
-  onToggleQuestion, onDeleteQuestion,
-  draftingId, uploadingId, fileInputRef,
+  stage, questions, role, onEditStage, onDeleteStage,
+  onDraftAI, onAddManual,
+  onPickQuestion, onSkipRequirement,
+  onToggleQuestion, onDeleteQuestion, onCalibrated,
+  draftingId,
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(stage.name || '')
@@ -1184,7 +1505,10 @@ function StageEditPanel({
   }, [stage.id])
 
   const isDrafting  = draftingId === stage.id
-  const isUploading = uploadingId === stage.id
+
+  const { groups, untagged, custom } = useMemo(() => groupQuestions(questions), [questions])
+  const shape = useMemo(() => interviewShape(questions.filter((q) => q.approved)), [questions])
+  const canAddOwn = canAddCustomQuestion(questions)
 
   return (
     <div className="rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-6 md:p-7 [box-shadow:0_1px_2px_rgba(17,17,17,0.02),0_24px_44px_-40px_rgba(17,17,17,0.06)]">
@@ -1246,46 +1570,131 @@ function StageEditPanel({
         )}
       </div>
 
-      {/* Questions header + draft actions */}
+      {/* Questions. Two per requirement, better one pre-selected. */}
       <div className="mt-8 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <SectionLabel>Questions</SectionLabel>
+        <div className="max-w-xl">
+          <SectionLabel>The interview</SectionLabel>
           <h4
-            className="mt-3 text-[16px] leading-tight font-semibold tracking-[-0.015em] text-[color:var(--color-rc-ink)]"
+            className="mt-3 text-[16px] leading-snug font-semibold tracking-[-0.015em] text-[color:var(--color-rc-ink)]"
             style={{ fontFamily: 'var(--font-editorial), inherit' }}
           >
-            {questions.length} question{questions.length === 1 ? '' : 's'}
+            {shape.picked === 0
+              ? 'No questions chosen yet.'
+              : `Every candidate answers the same ${shape.picked} question${shape.picked === 1 ? '' : 's'}, and is scored on those.`}
           </h4>
+          {shape.picked > 0 && (
+            <p className="mt-1.5 text-[13px] tabular-nums text-[color:var(--color-rc-muted)]">
+              About {shape.minutes} minutes · {shape.answers} recorded answers
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden" onChange={(e) => onDraftFromResume(stage, e.target.files?.[0])} />
-          <Button variant="secondary" size="sm" iconLeft={<Upload size={14} />} onClick={() => fileInputRef.current?.click()} loading={isUploading}>
-            From document
-          </Button>
+          {/* "From document" lived here and read a CANDIDATE'S CV.
+              Removed, not deleted: /api/generate-questions-from-resume is
+              untouched and still works. The problem was where it was
+              wired. Questions belong to the stage, and the stage is
+              shared by everyone, so one applicant's CV silently shaped
+              the questions every later candidate was asked and scored
+              on. It comes back once resumes are attached to candidates
+              instead, at which point it can personalise for the one
+              person it was read from. */}
           <Button variant="secondary" size="sm" iconLeft={<Sparkles size={14} />} onClick={() => onDraftAI(stage)} loading={isDrafting}>
-            Draft with AI
+            {groups.length ? 'Draft again' : 'Draft with AI'}
           </Button>
-          <Button variant="ghost" size="sm" iconLeft={<Plus size={14} />} onClick={() => onAddManual(stage)}>
-            Custom question
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Plus size={14} />}
+            onClick={() => onAddManual(stage)}
+            disabled={!canAddOwn}
+            title={canAddOwn ? undefined : `You can add up to ${CUSTOM_QUESTION_LIMIT} of your own.`}
+          >
+            Write your own
           </Button>
         </div>
       </div>
 
-      <p className="mt-2 text-[12.5px] text-[color:var(--color-rc-muted)]">
-        Check the questions you want to ask candidates in this stage.
-      </p>
+      {/* Three answers is not a ranking, it is a coin toss with extra
+          steps. Say so here rather than letting them find out after
+          twenty candidates have already sat the thing. */}
+      {shape.picked > 0 && shape.picked < 4 && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-[12px] border border-[color:var(--color-rc-line)] bg-white px-3.5 py-3">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[color:var(--color-rc-warm)]" aria-hidden="true" />
+          <p className="text-[12.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
+            Under four questions is thin ground for a score. Two candidates can come
+            out identical on three answers, and you end up watching every video anyway.
+          </p>
+        </div>
+      )}
 
-      <div className="mt-4 grid gap-0.5">
-        {questions.length === 0 ? (
+      <div className="mt-4 grid gap-2.5">
+        {groups.length === 0 && untagged.length === 0 && custom.length === 0 ? (
           <p className="text-[13.5px] text-[color:var(--color-rc-muted)] italic px-3 py-4">
-            No questions yet. Draft with AI, upload a job document, or add them manually.
+            No questions yet. Draft with AI, upload a job document, or write your own.
           </p>
         ) : (
-          questions.map((q) => (
-            <QuestionRow key={q.id} q={q} onToggle={onToggleQuestion} onDelete={onDeleteQuestion} />
+          groups.map((g, i) => (
+            <RequirementGroup
+              key={g.key}
+              group={g}
+              index={i}
+              onPick={onPickQuestion}
+              onSkip={onSkipRequirement}
+            />
           ))
         )}
       </div>
+
+      {untagged.length > 0 && (
+        <div className="mt-6">
+          <SectionLabel>Not tied to a requirement</SectionLabel>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+            Drafted before this role had confirmed requirements. They are still
+            asked and still scored, there is just nothing recorded about what
+            each one is testing, so the score cannot show its working. Draft
+            again to replace them with questions tied to what you are hiring for.
+          </p>
+          <div className="mt-2 grid gap-0.5">
+            {untagged.map((q) => (
+              <ToggleQuestionRow key={q.id} q={q} onToggle={onToggleQuestion} onDelete={onDeleteQuestion} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {custom.length > 0 && (
+        <div className="mt-6">
+          <SectionLabel>Your own questions</SectionLabel>
+          <p className="mt-2.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+            Scored exactly like the ones above. Nothing follows up on these — you
+            asked precisely what you meant to ask.{' '}
+            {canAddOwn
+              ? `${custom.length} of ${CUSTOM_QUESTION_LIMIT} used.`
+              : `That is both of your ${CUSTOM_QUESTION_LIMIT}. Delete one to write another.`}
+          </p>
+          <div className="mt-2 grid gap-0.5">
+            {custom.map((q) => (
+              <ToggleQuestionRow key={q.id} q={q} onToggle={onToggleQuestion} onDelete={onDeleteQuestion} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(groups.length > 0 || untagged.length > 0 || custom.length > 0) && (
+        <p className="mt-5 text-[12px] leading-relaxed text-[color:var(--color-rc-muted)]">
+          Candidates also get a practice question that is not recorded, three opening
+          questions about themselves and their background, and one follow-up on each
+          drafted question above. The openers are transcribed and shown to you, but
+          none of them move the score.
+        </p>
+      )}
+
+      {/* Calibration. Shown only once there are drafted questions: the
+          whole point is that answering visibly improves something the
+          recruiter is already looking at. */}
+      {questions.length > 0 && role && (
+        <CalibrationPanel role={role} stage={stage} onCalibrated={onCalibrated} />
+      )}
 
       {/* Danger zone */}
       <div className="mt-10 pt-6 border-t border-[color:var(--color-rc-line)]">
@@ -1309,12 +1718,13 @@ function StageEditPanel({
  * ────────────────────────────────────────────────────────── */
 
 function InterviewsPanel({
-  stages, questionsByStage, funnelById,
+  stages, questionsByStage, funnelById, role,
   activeStageId, onSelectStage,
   onAddStage, onEditStage, onDeleteStage,
-  onDraftAI, onDraftFromResume, onAddManual,
-  onToggleQuestion, onDeleteQuestion,
-  draftingId, uploadingId, fileInputRef,
+  onDraftAI, onAddManual,
+  onPickQuestion, onSkipRequirement,
+  onToggleQuestion, onDeleteQuestion, onCalibrated,
+  draftingId,
 }) {
   const activeStage = stages.find((s) => s.id === activeStageId) || stages[0]
   const questions = activeStage ? (questionsByStage[activeStage.id] || []) : []
@@ -1338,7 +1748,10 @@ function InterviewsPanel({
 
   return (
     <div role="tabpanel" id="panel-interviews" aria-labelledby="tab-interviews" className="pt-10 grid gap-6 md:grid-cols-[240px_1fr]">
-      <div className="min-w-0">
+      {/* Sticky: the rail is short and the panel beside it is long, so
+          without this the whole left column is blank white the moment you
+          scroll, which reads as a broken layout. */}
+      <div className="min-w-0 md:sticky md:top-24 md:self-start">
         <StageListRail
           stages={stages}
           activeStageId={activeStage?.id}
@@ -1352,16 +1765,17 @@ function InterviewsPanel({
           <StageEditPanel
             stage={activeStage}
             questions={questions}
+            role={role}
+            onCalibrated={onCalibrated}
             onEditStage={onEditStage}
             onDeleteStage={onDeleteStage}
             onDraftAI={onDraftAI}
-            onDraftFromResume={onDraftFromResume}
             onAddManual={onAddManual}
+            onPickQuestion={onPickQuestion}
+            onSkipRequirement={onSkipRequirement}
             onToggleQuestion={onToggleQuestion}
             onDeleteQuestion={onDeleteQuestion}
             draftingId={draftingId}
-            uploadingId={uploadingId}
-            fileInputRef={fileInputRef}
           />
         )}
       </div>
@@ -1373,8 +1787,184 @@ function InterviewsPanel({
  * InviteDrawer — unified invite surface
  * ────────────────────────────────────────────────────────── */
 
+/**
+ * One address, tested without side effects.
+ *
+ * Deliberately NOT the /g regex used for scraping addresses out of a
+ * pasted blob: `.test()` on a global regex advances lastIndex, so
+ * calling it twice on the same string returns true then false. Scraping
+ * and validating need different objects.
+ */
+function isEmail(value) {
+  return /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(String(value || '').trim())
+}
+
+/**
+ * One parsed CV, as a row the recruiter can correct.
+ *
+ * The match detail is collapsed by default. A recruiter scanning twenty
+ * of these wants the name, the score and whether the email looks right;
+ * the evidence matters only for the two or three they are unsure about,
+ * and showing it for everyone turns the list into a wall.
+ */
+/**
+ * Six little segments: filled where the CV proves it, outlined where it
+ * only claims it, empty where it never comes up.
+ *
+ * A percentage was the obvious thing here and the wrong one. Real CVs are
+ * lists of responsibilities, so honest scoring puts almost everybody in
+ * the teens, and "17%" reads like a grade the candidate failed rather
+ * than "this document does not contain evidence". Counts of a known total
+ * cannot be misread that way.
+ */
+function EvidenceBar({ matches }) {
+  if (!matches?.length) return null
+  return (
+    <span className="inline-flex items-center gap-[3px] shrink-0" aria-hidden="true">
+      {matches.map((m, i) => (
+        <span
+          key={i}
+          className={
+            'block h-[14px] w-[5px] rounded-[1px] ' +
+            (m.status === 'shown'
+              ? 'bg-[color:var(--color-rc-ink)]'
+              : m.status === 'claimed'
+                ? 'border border-[color:var(--color-rc-line-hover)] bg-transparent'
+                : 'bg-[color:var(--color-rc-line)]')
+          }
+        />
+      ))}
+    </span>
+  )
+}
+
+function CvRow({ row, onToggle, onEmailChange, onRemove }) {
+  const [open, setOpen] = useState(false)
+  const total = row.total ?? row.matches?.length ?? 0
+  const shown = row.shown ?? 0
+  const claimed = row.claimed ?? 0
+  const emailOk = isEmail(row.email)
+
+  if (!row.ok) {
+    return (
+      <div className="group min-w-0 flex items-start gap-3 px-3 py-2.5 rounded-[10px] bg-[color:var(--color-rc-soft)]">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[color:var(--color-rc-warm)]" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13.5px] text-[color:var(--color-rc-ink)] truncate">{row.fileName}</p>
+          <p className="text-[12.5px] text-[color:var(--color-rc-muted)]">
+            {row.error || 'Could not read this file.'} Add them by email instead.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRemove(row.key)}
+          aria-label={`Remove ${row.fileName}`}
+          className="shrink-0 h-6 w-6 grid place-items-center rounded text-[color:var(--color-rc-muted)] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[color:var(--color-rc-red)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="group min-w-0 rounded-[12px] border border-[color:var(--color-rc-line)] px-3 py-2.5">
+      <div className="flex items-start gap-3 min-w-0">
+        <input
+          type="checkbox"
+          checked={!!row.include}
+          disabled={!emailOk}
+          onChange={() => onToggle(row.key)}
+          aria-label={`Invite ${row.name || row.fileName}`}
+          className="mt-1 h-4 w-4 shrink-0 rounded border border-[color:var(--color-rc-line-hover)] accent-[color:var(--color-rc-ink)] focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] disabled:opacity-40"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+            <span className="text-[14px] font-medium text-[color:var(--color-rc-ink)]">
+              {row.name || row.fileName}
+            </span>
+            {total > 0 && (
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                className="text-[12px] text-[color:var(--color-rc-muted)] underline decoration-dotted underline-offset-4 hover:text-[color:var(--color-rc-ink)]"
+              >
+                Shows {shown} of {total}
+                {claimed > 0 ? `, claims ${claimed} more` : ''}
+              </button>
+            )}
+          </div>
+          {row.headline && (
+            <p className="mt-0.5 text-[12.5px] text-[color:var(--color-rc-muted)] truncate">{row.headline}</p>
+          )}
+
+          <input
+            type="email"
+            value={row.email}
+            onChange={(e) => onEmailChange(row.key, e.target.value)}
+            placeholder="No email found — type theirs"
+            aria-label={`Email for ${row.name || row.fileName}`}
+            className={
+              'mt-1.5 w-full bg-white text-[13px] rounded px-2.5 py-1.5 border transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] ' +
+              (emailOk
+                ? 'border-[color:var(--color-rc-line)] text-[color:var(--color-rc-ink)]'
+                : 'border-[color:var(--color-rc-warm)] text-[color:var(--color-rc-ink)]')
+            }
+          />
+          {!emailOk && (
+            <p className="mt-1 text-[12px] text-[color:var(--color-rc-warm)]">
+              {row.email ? 'That does not look like an address.' : 'No address found in this CV.'} Fix it to invite them.
+            </p>
+          )}
+          {emailOk && row.needsCheck && (
+            <p className="mt-1 text-[12px] text-[color:var(--color-rc-muted)]">
+              Worth checking. This CV had more than one address, or the text around it was unclear.
+            </p>
+          )}
+
+          {open && total > 0 && (
+            <ul className="mt-2.5 grid gap-1.5 border-t border-[color:var(--color-rc-line)] pt-2.5">
+              {row.matches.map((m, i) => (
+                <li key={i} className="text-[12.5px] leading-relaxed break-words">
+                  <span className={m.status === 'absent'
+                    ? 'text-[color:var(--color-rc-muted)]'
+                    : 'text-[color:var(--color-rc-ink)]'}>
+                    {m.status === 'shown' ? '✓' : m.status === 'claimed' ? '~' : '—'} {m.requirement}
+                  </span>
+                  {m.status === 'shown' && m.evidence && (
+                    <span className="block pl-3.5 text-[color:var(--color-rc-muted)] italic break-words">
+                      &ldquo;{m.evidence}&rdquo;
+                    </span>
+                  )}
+                  {m.status === 'claimed' && (
+                    <span className="block pl-3.5 text-[color:var(--color-rc-muted)]">
+                      Says so, nothing to quote. Worth asking about.
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <EvidenceBar matches={row.matches} />
+          <button
+            type="button"
+            onClick={() => onRemove(row.key)}
+            aria-label={`Remove ${row.name || row.fileName}`}
+            className="h-6 w-6 grid place-items-center rounded text-[color:var(--color-rc-muted)] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[color:var(--color-rc-red)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InviteDrawer({
-  open, onClose, stages, roleTitle, roleStatus,
+  open, onClose, stages, roleId, roleTitle, roleStatus,
   origin, recruiterName, companyName, defaultStageId,
   onSent, inviteHistory,
 }) {
@@ -1386,10 +1976,34 @@ function InviteDrawer({
   const [result, setResult] = useState(null)  // { sent, failed[] }
   const csvInputRef = useRef(null)
 
+  // ── CVs ────────────────────────────────────────────────────────
+  // Read, ranked, and handed back for a human to check. Nothing is sent
+  // from the parse itself: CV parsing gets addresses wrong often enough
+  // that auto-sending would eventually fire interview invites at the
+  // wrong people, from the customer's own domain.
+  const [cvRows, setCvRows] = useState([])
+  const [cvBusy, setCvBusy] = useState(false)
+  const [cvError, setCvError] = useState('')
+  // The role's requirements, which are the same for every batch. The
+  // per-batch counts that used to live alongside them are derived from
+  // cvRows now: kept as state, a second upload reported the second
+  // batch's numbers as if they described the whole list.
+  const [cvCriteria, setCvCriteria] = useState(null)
+  const cvInputRef = useRef(null)
+  // Row keys must be unique across batches. Keying on position restarted
+  // at zero every upload, so batch two collided with batch one and React
+  // reused the wrong rows.
+  const cvKeySeq = useRef(0)
+  const [listNote, setListNote] = useState('')
+  const [listBusy, setListBusy] = useState(false)
+
   useEffect(() => {
     if (open) {
       setStageId(defaultStageId || (stages[0]?.id ? String(stages[0].id) : ''))
       setEmailsText(''); setMessage(''); setResult(null); setProgress({ sent: 0, total: 0 })
+      setCvRows([]); setCvBusy(false); setCvError(''); setCvCriteria(null)
+      cvKeySeq.current = 0
+      setListNote('')
     }
   }, [open, defaultStageId, stages])
 
@@ -1408,40 +2022,206 @@ function InviteDrawer({
     })
     return Array.from(found)
   }, [rawTokens])
-  const invalid = useMemo(() => rawTokens.filter((t) => !EMAIL_RE.test(t)), [rawTokens])
+  // isEmail(), not EMAIL_RE.test(): the /g flag makes .test() stateful,
+  // so the same address alternated between valid and invalid here.
+  const invalid = useMemo(() => rawTokens.filter((t) => !isEmail(t)), [rawTokens])
 
-  function handleCsvUpload(file) {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const text = e.target.result || ''
-      const found = String(text).match(EMAIL_RE) || []
-      const unique = [...new Set(found.map((v) => v.toLowerCase()))]
-      const existing = new Set(
-        emailsText.split(/[\n,;]+/).map((t) => t.trim().toLowerCase()).filter(Boolean)
-      )
-      const merged = [...new Set([...unique, ...existing])]
-      setEmailsText(merged.join('\n'))
+  /** Fold harvested addresses into the box and say what happened. */
+  function absorbAddresses(found, fileName, extra = '') {
+    const unique = [...new Set(found.map((v) => String(v).trim().toLowerCase()).filter(Boolean))]
+    if (!unique.length) {
+      setListNote(`No email addresses in ${fileName}.`)
+      return
     }
-    reader.readAsText(file)
+    const existing = new Set(
+      emailsText.split(/[\n,;]+/).map((t) => t.trim().toLowerCase()).filter(Boolean),
+    )
+    const added = unique.filter((u) => !existing.has(u)).length
+    setEmailsText([...new Set([...unique, ...existing])].join('\n'))
+    setListNote(
+      (added === 0
+        ? `Every address in ${fileName} was already in the list.`
+        : `Added ${added} address${added === 1 ? '' : 'es'} from ${fileName}.`) + extra,
+    )
   }
+
+  /**
+   * Take a LIST of people in whatever form it arrived.
+   *
+   * Spreadsheets and text files are scraped in the browser: it is instant,
+   * it costs nothing, and a regex over the real characters is more
+   * faithful than asking a model to retype addresses it might tidy up.
+   *
+   * PDFs cannot be read that way — as text they are binary noise — so they
+   * go to the server. That is worth the round trip, because a shortlist
+   * arriving as a PDF from a client is a normal Tuesday and the previous
+   * answer was "no, convert it yourself first".
+   */
+  async function handleListUpload(file) {
+    if (!file) return
+    const name = file.name || 'that file'
+    const plainText = /\.(csv|txt|tsv)$/i.test(name)
+
+    if (plainText) {
+      const reader = new FileReader()
+      reader.onerror = () => setListNote(`Could not read ${name}.`)
+      reader.onload = (e) => absorbAddresses(String(e.target.result || '').match(EMAIL_RE) || [], name)
+      reader.readAsText(file)
+      return
+    }
+
+    setListBusy(true)
+    setListNote('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/extract-emails', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        setListNote(data.error || `Could not read ${name}.`)
+        return
+      }
+      // One address in a whole document is one person's CV in the wrong
+      // control. Take the address, but say what the better route was, or
+      // they lose everything else the CV would have told them.
+      absorbAddresses(
+        data.emails || [],
+        name,
+        data.looksLikeOneCv
+          ? ' That looks like one person\u2019s CV. Upload it above instead and Recrewt will rank them too.'
+          : '',
+      )
+    } catch (err) {
+      console.error('extract-emails threw:', err)
+      setListNote(`Could not read ${name}.`)
+    } finally {
+      setListBusy(false)
+    }
+  }
+
+  async function handleCvUpload(picked) {
+    const files = Array.from(picked || [])
+    if (!files.length) return
+
+    // Caught here rather than server-side, where the whole batch was
+    // rejected and the recruiter lost the ones that would have been fine.
+    const room = MAX_CVS - cvRows.length
+    if (room <= 0) {
+      setCvError(`That is the ${MAX_CVS} limit. Send these, then upload the rest.`)
+      return
+    }
+    if (files.length > room) {
+      setCvError(`Only ${room} more will fit. Reading the first ${room}.`)
+    } else {
+      setCvError('')
+    }
+    const batch = files.slice(0, room)
+
+    // A single request carrying 25 multi-page PDFs is rejected by the
+    // server before any of our code runs, which surfaced as a bare
+    // "could not read those files" with no hint that size was the issue.
+    const bytes = batch.reduce((n, f) => n + (f.size || 0), 0)
+    if (bytes > MAX_BATCH_BYTES) {
+      setCvError(
+        `That is ${Math.round(bytes / 1024 / 1024)}MB in one go, which is too much. ` +
+        'Upload them in two or three smaller batches.',
+      )
+      return
+    }
+
+    setCvBusy(true)
+    try {
+      const fd = new FormData()
+      batch.forEach((f) => fd.append('resumes', f))
+      if (roleId) fd.append('roleId', String(roleId))
+      const res = await fetch('/api/parse-resumes', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        setCvError(data.error || 'Could not read those files. Please try again.')
+        return
+      }
+      // Pre-ticked only where we are confident. Anything flagged, or with
+      // no address at all, starts unticked so it has to be looked at.
+      const incoming = (data.candidates || []).map((c) => ({
+        ...c,
+        key: `cv-${cvKeySeq.current++}`,
+        email: c.email || '',
+        include: !!(c.ok && isEmail(c.email) && !c.needsCheck),
+      }))
+      setCvRows((rows) => mergeCvRows(rows, incoming))
+      setCvCriteria(Array.isArray(data.criteria) ? data.criteria : [])
+    } catch (err) {
+      console.error('parse-resumes threw:', err)
+      setCvError('Could not read those files. Please try again.')
+    } finally {
+      setCvBusy(false)
+    }
+  }
+
+  function removeCvRow(key) {
+    setCvRows((rows) => rows.filter((r) => r.key !== key))
+  }
+
+  function toggleCvRow(key) {
+    setCvRows((rows) => rows.map((r) => r.key === key ? { ...r, include: !r.include } : r))
+  }
+
+  function setCvEmail(key, email) {
+    setCvRows((rows) => rows.map((r) => {
+      if (r.key !== key) return r
+      // Correcting a flagged address clears the flag: the human just
+      // checked it, which is the only check that was ever wanted.
+      return { ...r, email, needsCheck: r.needsCheck && email === r.email }
+    }))
+  }
+
+  const cvCounts = useMemo(() => ({
+    needsCheck: cvRows.filter((r) => r.ok && r.needsCheck).length,
+    unreadable: cvRows.filter((r) => !r.ok).length,
+  }), [cvRows])
+
+  const cvEmails = useMemo(
+    () => cvRows
+      .filter((r) => r.ok && r.include && isEmail(r.email))
+      .map((r) => r.email.trim().toLowerCase()),
+    [cvRows],
+  )
+
+  /** Typed addresses and ticked CVs, deduped. */
+  const recipients = useMemo(
+    () => Array.from(new Set([...valid, ...cvEmails])),
+    [valid, cvEmails],
+  )
+
+  /**
+   * The split, counted against the deduped list rather than subtracted
+   * from it. Someone who appears in a CV and is also typed into the box
+   * gets one invitation, and "6 from CVs and 2 typed in" has to still add
+   * up to the 7 on the button.
+   */
+  const recipientSplit = useMemo(() => {
+    const fromCvs = new Set(cvEmails)
+    const cv = recipients.filter((e) => fromCvs.has(e)).length
+    return { cv, typed: recipients.length - cv }
+  }, [recipients, cvEmails])
 
   const canSend =
     !sending &&
+    !cvBusy &&
     (roleStatus === 'active') &&
     !!stageId &&
-    valid.length > 0
+    recipients.length > 0
 
   async function send() {
     if (!canSend) return
     setResult(null)
     setSending(true)
-    setProgress({ sent: 0, total: valid.length })
+    setProgress({ sent: 0, total: recipients.length })
     const BATCH = 10
     let sent = 0
     const failed = []
-    for (let i = 0; i < valid.length; i += BATCH) {
-      const batch = valid.slice(i, i + BATCH)
+    for (let i = 0; i < recipients.length; i += BATCH) {
+      const batch = recipients.slice(i, i + BATCH)
       const results = await Promise.all(batch.map((email) =>
         fetch('/api/send-invite', {
           method: 'POST',
@@ -1457,7 +2237,7 @@ function InviteDrawer({
       results.forEach(({ email, error }) => {
         if (error) failed.push({ email, error }); else sent++
       })
-      setProgress({ sent, total: valid.length })
+      setProgress({ sent, total: recipients.length })
     }
     setSending(false)
     setResult({ sent, failed })
@@ -1466,6 +2246,9 @@ function InviteDrawer({
 
   function reset() {
     setEmailsText(''); setMessage(''); setResult(null); setProgress({ sent: 0, total: 0 })
+    setCvRows([]); setCvError(''); setCvCriteria(null)
+    cvKeySeq.current = 0
+    setListNote('')
   }
 
   const isPaused = roleStatus !== 'active'
@@ -1489,7 +2272,7 @@ function InviteDrawer({
           <>
             <Button variant="ghost" onClick={onClose} disabled={sending}>Cancel</Button>
             <Button variant="primary" onClick={send} loading={sending} disabled={!canSend}>
-              {valid.length > 0 ? `Send ${valid.length}` : 'Send'}
+              {recipients.length > 0 ? `Send ${recipients.length}` : 'Send'}
             </Button>
           </>
         )
@@ -1542,21 +2325,139 @@ function InviteDrawer({
             options={stages.map((s) => ({ value: String(s.id), label: `${s.position}. ${s.name}` }))}
           />
 
+          {/* CVs first: it is the path that does the most work for them,
+              and the emails box below is the fallback for anyone the CVs
+              did not cover. */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-[13px] font-medium text-[color:var(--color-rc-ink)] tracking-[-0.005em]">
-                Emails <span className="text-[color:var(--color-rc-ink)]">•</span>
+                From CVs
               </label>
-              <input ref={csvInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={(e) => handleCsvUpload(e.target.files?.[0])} />
+              <input
+                ref={cvInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.doc,.txt"
+                className="hidden"
+                onChange={(e) => {
+                  // Copy the FileList into a real array BEFORE clearing the
+                  // input. `input.files` is live: resetting value empties the
+                  // same object we are holding, so the handler received zero
+                  // files and returned without a sound.
+                  const picked = Array.from(e.target.files || [])
+                  e.target.value = ''
+                  handleCvUpload(picked)
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => cvInputRef.current?.click()}
+                disabled={isPaused || cvBusy}
+                className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[color:var(--color-rc-ink)] underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 hover:decoration-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded disabled:opacity-50 disabled:no-underline"
+              >
+                <FileUp size={13} /> {cvRows.length ? `Add more (${cvRows.length}/${MAX_CVS})` : 'Upload CVs'}
+              </button>
+            </div>
+
+            {cvRows.length === 0 && !cvBusy && (
+              <p className="text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                Drop in up to 25 at once. Recrewt pulls out the name and email,
+                and ranks them against what you said this role needs. Nobody is
+                rejected and nothing is sent until you press send.
+              </p>
+            )}
+
+            {cvBusy && (
+              <div className="flex items-center gap-2.5 py-3">
+                <Spinner />
+                <span className="text-[13px] text-[color:var(--color-rc-muted)]">
+                  Reading the CVs. About five seconds each.
+                </span>
+              </div>
+            )}
+
+            {cvError && (
+              <p className="mt-1 text-[13px] text-[color:var(--color-rc-red)] bg-[rgb(199_75_58_/_0.06)] rounded px-3 py-2">
+                {cvError}
+              </p>
+            )}
+
+            {cvRows.length > 0 && (
+              <>
+                {cvCriteria?.length === 0 && (
+                  <p className="mb-2 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                    This role has no confirmed requirements, so these are not
+                    ranked. Names and emails only.
+                  </p>
+                )}
+                {cvCriteria?.length > 0 && (
+                  <p className="mb-2 text-[12px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                    Most CVs list responsibilities rather than results, so a low
+                    count means the document does not prove it, not that the
+                    person cannot do it. <strong className="font-medium text-[color:var(--color-rc-ink)]">Shows</strong> is
+                    something they did, quoted. <strong className="font-medium text-[color:var(--color-rc-ink)]">Claims</strong> is
+                    said but not evidenced. The interview is what settles it.
+                  </p>
+                )}
+                <div className="grid gap-1.5 min-w-0">
+                  {cvRows.map((row) => (
+                    <CvRow
+                      key={row.key}
+                      row={row}
+                      onToggle={toggleCvRow}
+                      onEmailChange={setCvEmail}
+                      onRemove={removeCvRow}
+                    />
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-3 flex-wrap text-[12.5px]" aria-live="polite">
+                  <span className="text-[color:var(--color-rc-muted)]">
+                    <strong className="text-[color:var(--color-rc-ink)] tabular-nums">{cvEmails.length}</strong> of {cvRows.length} ticked
+                  </span>
+                  {cvCounts.needsCheck > 0 && (
+                    <span className="text-[color:var(--color-rc-warm)] tabular-nums">
+                      {cvCounts.needsCheck} address{cvCounts.needsCheck === 1 ? '' : 'es'} worth checking
+                    </span>
+                  )}
+                  {cvCounts.unreadable > 0 && (
+                    <span className="text-[color:var(--color-rc-muted)] tabular-nums">
+                      {cvCounts.unreadable} unreadable
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[13px] font-medium text-[color:var(--color-rc-ink)] tracking-[-0.005em]">
+                {cvRows.length ? 'Anyone else' : 'Emails'} <span className="text-[color:var(--color-rc-ink)]">•</span>
+              </label>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,.txt,.tsv,.pdf,.docx,.doc"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleListUpload(f) }}
+              />
               <button
                 type="button"
                 onClick={() => csvInputRef.current?.click()}
-                disabled={isPaused}
-                className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[color:var(--color-rc-ink)] underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 hover:decoration-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded"
+                disabled={isPaused || listBusy}
+                className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[color:var(--color-rc-ink)] underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4 hover:decoration-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded disabled:opacity-50 disabled:no-underline"
               >
-                <FileUp size={13} /> Upload CSV
+                <FileUp size={13} /> {listBusy ? 'Reading…' : 'Add from a list'}
               </button>
             </div>
+            {cvRows.length > 0 && (
+              <p className="mb-1.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                For people with no CV in the list above: a referral, someone who
+                emailed you, a name off LinkedIn. They get the same invite. A
+                shortlist from a client works here too, as a spreadsheet, a PDF
+                or a Word file.
+              </p>
+            )}
             <textarea
               value={emailsText}
               onChange={(e) => setEmailsText(e.target.value)}
@@ -1565,10 +2466,22 @@ function InviteDrawer({
               placeholder="One email per line, or comma / semicolon separated"
               className="w-full block bg-white text-[14.5px] text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0 resize-none disabled:opacity-60"
             />
-            <div className="mt-2 flex items-center gap-3 text-[12.5px]" aria-live="polite">
-              <span className="text-[color:var(--color-rc-muted)]"><strong className="text-[color:var(--color-rc-ink)] tabular-nums">{valid.length}</strong> valid</span>
+            {/* Only ever says something it has something to say. An empty
+                box reporting "0 valid" beside "3 going out in total" reads
+                as a contradiction, or as a failure. */}
+            <div className="mt-2 flex items-center gap-3 flex-wrap text-[12.5px] empty:mt-0" aria-live="polite">
+              {listNote && (
+                <span className="text-[color:var(--color-rc-muted)]">{listNote}</span>
+              )}
+              {valid.length > 0 && (
+                <span className="text-[color:var(--color-rc-muted)]">
+                  <strong className="text-[color:var(--color-rc-ink)] tabular-nums">{valid.length}</strong> typed in
+                </span>
+              )}
               {invalid.length > 0 && (
-                <span className="text-[color:var(--color-rc-red)]"><strong className="tabular-nums">{invalid.length}</strong> invalid</span>
+                <span className="text-[color:var(--color-rc-red)]">
+                  <strong className="tabular-nums">{invalid.length}</strong> not an address
+                </span>
               )}
               {invalid.length > 0 && (
                 <span className="text-[color:var(--color-rc-muted)] truncate max-w-[180px]" title={invalid.join(', ')}>
@@ -1576,6 +2489,17 @@ function InviteDrawer({
                 </span>
               )}
             </div>
+
+            {/* The only total that matters, said once, where the eye lands
+                before the Send button. */}
+            {recipients.length > 0 && (
+              <p className="mt-3 text-[13px] text-[color:var(--color-rc-ink)]">
+                <strong className="tabular-nums">{recipients.length}</strong> invitation{recipients.length === 1 ? '' : 's'} will go out
+                {recipientSplit.cv > 0 && recipientSplit.typed > 0
+                  ? `, ${recipientSplit.cv} from CVs and ${recipientSplit.typed} typed in.`
+                  : '.'}
+              </p>
+            )}
           </div>
 
           <div>
@@ -1923,7 +2847,15 @@ export default function RoleDetailPage() {
   const [hasStatusColumn, setHasStatusColumn] = useState(true)
 
   // Tab (URL + session-remembered)
+  //
+  // The query comes from useSearchParams(), NOT window.location. During a
+  // client-side push — which is how creating a role lands you here on
+  // ?tab=interviews — window.location has not caught up by the time this
+  // initialiser runs, so reading it silently dropped the tab and left
+  // people on Overview hunting for the questions we just drafted.
+  const initialTabQuery = searchParams?.get('tab')
   const [tab, setTab] = useState(() => {
+    if (initialTabQuery && TABS.includes(initialTabQuery)) return initialTabQuery
     if (typeof window === 'undefined') return 'overview'
     const q = new URLSearchParams(window.location.search).get('tab')
     if (q && TABS.includes(q)) return q
@@ -1935,6 +2867,14 @@ export default function RoleDetailPage() {
     } catch {}
     return 'overview'
   })
+
+  // Belt and braces: if the query says a tab and we somehow rendered
+  // another one (hydration, a back/forward, a push that beat the state),
+  // the URL wins. Runs once per distinct query value, so it cannot fight
+  // the recruiter clicking a tab.
+  useEffect(() => {
+    if (initialTabQuery && TABS.includes(initialTabQuery)) setTab(initialTabQuery)
+  }, [initialTabQuery])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1984,6 +2924,7 @@ export default function RoleDetailPage() {
 
   // Selection (Candidates tab)
   const [selected, setSelected] = useState(new Set())
+  const [comparePair, setComparePair] = useState(null)
   const [busyBulk, setBusyBulk] = useState(false)
 
   // Stage focus (Interviews tab)
@@ -2001,7 +2942,7 @@ export default function RoleDetailPage() {
   // the design system and can surface real error handling.
   const [pendingDeleteQuestion, setPendingDeleteQuestion] = useState(null)
   const [deletingQuestion, setDeletingQuestion] = useState(false)
-  const [confirmReplace, setConfirmReplace] = useState(null)  // { stage, mode: 'ai' | 'resume', file? }
+  const [confirmReplace, setConfirmReplace] = useState(null)  // { stage }
   const [editRoleOpen, setEditRoleOpen] = useState(false)
 
   // Question drafting state
@@ -2009,8 +2950,6 @@ export default function RoleDetailPage() {
   const [customQuestionStage, setCustomQuestionStage] = useState(null)
   const [savingCustomQuestion, setSavingCustomQuestion] = useState(false)
   const [customQuestionError, setCustomQuestionError] = useState('')
-  const [uploadingId, setUploadingId] = useState(null)
-  const fileInputRef = useRef(null)
 
   function flashMessage(msg) { setErrorMsg(''); setMessage(msg); setTimeout(() => setMessage(''), 3400) }
   function flashError(msg)   { setMessage(''); setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4400) }
@@ -2033,7 +2972,7 @@ export default function RoleDetailPage() {
 
     const [stagesRes, questionsRes, settingsRes] = await Promise.all([
       supabase.from('stages').select().eq('role_id', roleId).order('position', { ascending: true }),
-      supabase.from('questions').select(),
+      supabase.from('questions').select().order('id', { ascending: true }),
       supabase.from('settings').select('full_name, company_name').single(),
     ])
     setStages(stagesRes.data || [])
@@ -2058,7 +2997,10 @@ export default function RoleDetailPage() {
 
   // Question refresh convenience
   async function refreshQuestions() {
-    const { data } = await supabase.from('questions').select()
+    // Ordered by id so the two options written for one requirement stay
+    // side by side, and the requirements stay in the order the JD listed
+    // them. PostgREST does not promise insertion order without this.
+    const { data } = await supabase.from('questions').select().order('id', { ascending: true })
     if (data) setQuestions(data)
   }
 
@@ -2224,7 +3166,7 @@ export default function RoleDetailPage() {
       if (latestStatus === 'shortlisted') derivedStatus = 'shortlisted'
       else if (latestStatus === 'on-hold') derivedStatus = 'on-hold'
       else if (latestStatus === 'rejected') derivedStatus = 'rejected'
-      else if (completedCount > 0 && !latestStatus) derivedStatus = 'waiting'
+      else if (completedCount > 0 && awaitingDecision(latestStatus)) derivedStatus = 'waiting'
       else if (completedCount === 0) derivedStatus = 'in-progress'
 
       const currentStageName = currentStageId ? (stageById[currentStageId]?.name || 'Unknown') : '—'
@@ -2310,6 +3252,11 @@ export default function RoleDetailPage() {
     })
   }
   function selectAll(emails) { setSelected(new Set(emails)) }
+  function openCompare() {
+    const picked = candidates.filter((c) => selected.has(c.email))
+    if (picked.length !== 2) return
+    setComparePair(picked)
+  }
   function clearSelection() { setSelected(new Set()) }
 
   async function upsertVerdicts(cands, status) {
@@ -2427,11 +3374,27 @@ export default function RoleDetailPage() {
   async function actuallyDraftAI(stage) {
     setDraftingId(stage.id)
     flashMessage(`Drafting questions for ${stage.name}…`)
-    await supabase.from('questions').delete().eq('stage_id', stage.id).eq('approved', false)
+    // Every drafted question goes, picked or not. Keeping the old picks
+    // would leave the recruiter choosing between two sets written
+    // against different criteria, which is worse than starting clean.
+    // Their own written questions are never touched.
+    await supabase.from('questions').delete().eq('stage_id', stage.id).neq('source', 'custom')
     const res = await fetch('/api/generate-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stageName: stage.name, level: stage.level, topics: stage.topics }),
+      body: JSON.stringify({
+        stageName: stage.name,
+        // Seniority and skill focus still shape the questions. The JD
+        // criteria say WHAT to ask about; these say how hard to pitch it.
+        level: stage.level,
+        topics: stage.topics,
+        roleTitle: role?.title || null,
+        // Confirmed on the JD intake screen. Absent on hand-typed roles,
+        // in which case the API falls back to topic-based generation.
+        mustHaves: role?.must_haves || [],
+        flexible: role?.flexible_criteria || [],
+        greatVsOkay: role?.great_vs_okay || null,
+      }),
     })
     const result = await res.json()
     setDraftingId(null)
@@ -2439,56 +3402,52 @@ export default function RoleDetailPage() {
       console.error('AI question generation error:', result.error)
       return flashError('Unable to draft AI questions. Please try again.')
     }
-    const rows = (result.questions || []).map((q) => ({ stage_id: stage.id, text: q, approved: false }))
+    // The first option of each pair arrives already selected. A recruiter
+    // who reads them, agrees, and sends the invite gets a complete
+    // interview without touching a single control.
+    const rows = []
+    for (const g of result.groups || []) {
+      ;(g.options || []).forEach((o, i) => {
+        if (!o?.text) return
+        rows.push({
+          stage_id: stage.id,
+          text: o.text,
+          covers: o.covers || g.covers || null,
+          approved: i === 0,
+          source: 'ai',
+        })
+      })
+    }
+    if (!rows.length) {
+      console.error('AI question generation returned no usable groups:', result)
+      return flashError('Unable to draft AI questions. Please try again.')
+    }
     const { error } = await supabase.from('questions').insert(rows)
     if (error) {
       console.error('Question save failed:', error)
       return flashError('Unable to save the drafted questions. Please try again.')
     }
     await refreshQuestions()
+    // Pre-selected questions WILL be asked, so synthesize their audio now
+    // rather than making the first candidate wait on a cold GPU.
+    warmTtsCache(rows.filter((r) => r.approved).map((r) => r.text))
     flashMessage(`Fresh questions drafted for ${stage.name}.`)
   }
 
-  async function actuallyDraftFromResume(stage, file) {
-    if (!file) return
-    setUploadingId(stage.id)
-    flashMessage(`Reading document for ${stage.name}…`)
-    await supabase.from('questions').delete().eq('stage_id', stage.id).eq('approved', false)
-    const formData = new FormData()
-    formData.append('resume', file)
-    formData.append('stageName', stage.name)
-    formData.append('level', stage.level)
-    formData.append('topics', stage.topics || '')
-    const res = await fetch('/api/generate-questions-from-resume', { method: 'POST', body: formData })
-    const result = await res.json()
-    setUploadingId(null)
-    if (result.error) {
-      console.error('Resume question generation error:', result.error)
-      return flashError('Unable to draft questions from that document. Please try again.')
-    }
-    const rows = (result.questions || []).map((q) => ({ stage_id: stage.id, text: q, approved: false }))
-    const { error } = await supabase.from('questions').insert(rows)
-    if (error) {
-      console.error('Question save failed (from resume):', error)
-      return flashError('Unable to save the drafted questions. Please try again.')
-    }
-    await refreshQuestions()
-    flashMessage(`Personalised questions drafted for ${stage.name}.`)
-  }
-
   function handleDraftAI(stage) {
-    const existing = (questionsByStage[stage.id] || []).filter((q) => !q.approved).length
-    if (existing > 0) { setConfirmReplace({ stage, mode: 'ai' }); return }
+    // Any drafted question at all, picked or not — a redraft replaces the
+    // lot, so the confirmation has to fire even when they have chosen one.
+    const existing = (questionsByStage[stage.id] || []).filter((q) => q.source !== 'custom').length
+    if (existing > 0) { setConfirmReplace({ stage }); return }
     actuallyDraftAI(stage)
   }
-  function handleDraftFromResume(stage, file) {
-    if (!file) return
-    const existing = (questionsByStage[stage.id] || []).filter((q) => !q.approved).length
-    if (existing > 0) { setConfirmReplace({ stage, mode: 'resume', file }); return }
-    actuallyDraftFromResume(stage, file)
-  }
-
   async function handleAddManual(stage) {
+    // The disabled button is the polite guard; this is the real one. A
+    // stale click, a keyboard activation on a just-disabled control, or a
+    // second tab all reach here, and the limit has to hold in every case.
+    if (!canAddCustomQuestion(questionsByStage[stage.id] || [])) {
+      return flashError(`You can add up to ${CUSTOM_QUESTION_LIMIT} of your own questions. Delete one to write another.`)
+    }
     // Open the CustomQuestionModal — the actual DB write happens inside
     // the modal's Save handler so we can show validation + loading state.
     setCustomQuestionError('')
@@ -2499,9 +3458,18 @@ export default function RoleDetailPage() {
     const stage = customQuestionStage
     if (!stage || !text.trim()) return
     setCustomQuestionError('')
+    // Re-checked at write time: the modal can sit open while another tab
+    // adds one, and the count it was opened with is stale by then.
+    if (!canAddCustomQuestion(questionsByStage[stage.id] || [])) {
+      setCustomQuestionError(`You can add up to ${CUSTOM_QUESTION_LIMIT} of your own questions.`)
+      return
+    }
     setSavingCustomQuestion(true)
     try {
-      const payload = { stage_id: stage.id, text: text.trim(), approved: true }
+      // source: 'custom' is what stops the interview page chasing this
+      // with a generated follow-up, and what labels it "your question"
+      // on the transcript instead of a JD requirement.
+      const payload = { stage_id: stage.id, text: text.trim(), approved: true, covers: null, source: 'custom' }
       const { data, error } = await supabase
         .from('questions')
         .insert(payload)
@@ -2528,6 +3496,51 @@ export default function RoleDetailPage() {
       setCustomQuestionError('Unable to add this question. Please try again.')
     } finally {
       setSavingCustomQuestion(false)
+    }
+  }
+
+  /**
+   * Choosing one question for a requirement un-chooses its sibling.
+   *
+   * Both writes are fired even though only one of them changes what the
+   * candidate sees: leaving the loser approved would quietly double the
+   * interview, and the recruiter would have no way to tell from this
+   * screen because the radio only shows one of them selected.
+   */
+  async function handlePickQuestion(q) {
+    const siblings = q.covers
+      ? (questionsByStage[q.stage_id] || []).filter(
+          (row) => row.id !== q.id && row.source !== 'custom' && row.covers === q.covers,
+        )
+      : []
+    const siblingIds = siblings.map((s) => s.id)
+    setQuestions((prev) => prev.map((row) => {
+      if (row.id === q.id) return { ...row, approved: true }
+      if (siblingIds.includes(row.id)) return { ...row, approved: false }
+      return row
+    }))
+    if (siblingIds.length) {
+      await supabase.from('questions').update({ approved: false }).in('id', siblingIds)
+    }
+    const { error } = await supabase.from('questions').update({ approved: true }).eq('id', q.id)
+    if (error) {
+      console.error('Question pick failed:', error)
+      flashError('Unable to save that choice. Please try again.')
+      await refreshQuestions()
+      return
+    }
+    warmTtsCache([q.text])
+  }
+
+  async function handleSkipRequirement(group) {
+    const ids = group.options.filter((o) => o.approved).map((o) => o.id)
+    if (!ids.length) return
+    setQuestions((prev) => prev.map((row) => ids.includes(row.id) ? { ...row, approved: false } : row))
+    const { error } = await supabase.from('questions').update({ approved: false }).in('id', ids)
+    if (error) {
+      console.error('Question skip failed:', error)
+      flashError('Unable to save that choice. Please try again.')
+      await refreshQuestions()
     }
   }
 
@@ -2694,6 +3707,7 @@ export default function RoleDetailPage() {
                 onBulkShortlist={handleBulkShortlist}
                 onBulkReject={handleBulkReject}
                 onBulkExport={handleBulkExport}
+                onCompare={openCompare}
                 busyBulk={busyBulk}
                 onOpenInvite={() => setInviteOpen(true)}
               />
@@ -2704,28 +3718,37 @@ export default function RoleDetailPage() {
                 stages={stages}
                 questionsByStage={questionsByStage}
                 funnelById={funnelById}
+                role={role}
+                onCalibrated={loadEverything}
                 activeStageId={activeStageId}
                 onSelectStage={setActiveStageId}
                 onAddStage={handleAddStage}
                 onEditStage={handleEditStage}
                 onDeleteStage={(stage) => setConfirmDeleteStage(stage)}
                 onDraftAI={handleDraftAI}
-                onDraftFromResume={handleDraftFromResume}
                 onAddManual={handleAddManual}
+                onPickQuestion={handlePickQuestion}
+                onSkipRequirement={handleSkipRequirement}
                 onToggleQuestion={handleToggleQuestion}
                 onDeleteQuestion={handleDeleteQuestion}
                 draftingId={draftingId}
-                uploadingId={uploadingId}
-                fileInputRef={fileInputRef}
               />
             )}
           </>
         )}
 
+        <CompareModal
+          open={!!comparePair}
+          onClose={() => setComparePair(null)}
+          pair={comparePair}
+          stages={stages}
+        />
+
         <InviteDrawer
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
           stages={stages}
+          roleId={roleId}
           roleTitle={role?.title || 'this role'}
           roleStatus={status}
           origin={origin}
@@ -2793,8 +3816,8 @@ export default function RoleDetailPage() {
         <Modal
           open={!!confirmReplace}
           onClose={() => setConfirmReplace(null)}
-          title="Replace existing drafts?"
-          description={confirmReplace ? `${confirmReplace.stage.name} already has unapproved draft questions.` : ''}
+          title="Draft a new set?"
+          description={confirmReplace ? `${confirmReplace.stage.name} already has drafted questions.` : ''}
           size="sm"
           footer={
             <>
@@ -2804,16 +3827,16 @@ export default function RoleDetailPage() {
                 onClick={() => {
                   const c = confirmReplace
                   setConfirmReplace(null)
-                  if (c.mode === 'ai') actuallyDraftAI(c.stage)
-                  else actuallyDraftFromResume(c.stage, c.file)
+                  actuallyDraftAI(c.stage)
                 }}
               >
-                Replace drafts
+                Draft a new set
               </Button>
             </>
           }
         >
-          Approved questions are kept. Unapproved drafts will be replaced with a new set.
+          Every drafted question is replaced, including the ones you picked. Questions
+          you wrote yourself are kept.
         </Modal>
       </div>
     </AppShell>

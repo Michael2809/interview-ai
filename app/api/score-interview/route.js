@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { hasDecision } from '@/lib/decisions'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
@@ -17,11 +18,11 @@ function recommendationFromScore(score) {
   return 'reject'
 }
 
-function statusFromRecommendation(rec) {
-  if (rec === 'strong-hire' || rec === 'hire') return 'shortlisted'
-  if (rec === 'hold') return 'on-hold'
-  return 'rejected'
-}
+// The AI does NOT decide. `recommendation` carries its view; `status` is the
+// recruiter's decision, and only a human may move it off 'pending'.
+// Auto-rejection is the failure you never see: a good candidate is dropped
+// silently and the counterfactual never shows up in any metric.
+// (see lib/decisions.js for DECISION_STATUSES and hasDecision)
 
 // ─── Confidence (server-side, deterministic) ────────
 function median(nums) {
@@ -108,8 +109,93 @@ function confidenceBand(pct) {
     copy: 'The AI is not confident. Watch the interview yourself before deciding.' }
 }
 
+/**
+ * What the recruiter told us that the job description did not say.
+ *
+ * Read here rather than passed in by the caller, for two reasons: the
+ * candidate's browser fires one of the two scoring calls and must never
+ * hold the hiring bar or the dealbreakers, and a score should not change
+ * depending on which surface happened to trigger it.
+ */
+async function loadCalibration(stageId) {
+  if (!stageId) return null
+  try {
+    const { data: stage } = await supabase
+      .from('stages').select('role_id').eq('id', stageId).maybeSingle()
+    if (!stage?.role_id) return null
+
+    const { data: role } = await supabase
+      .from('roles')
+      .select('title, must_haves, flexible_criteria, great_vs_okay, dealbreakers')
+      .eq('id', stage.role_id).maybeSingle()
+    if (!role) return null
+
+    const labels = (list) => (Array.isArray(list) ? list : [])
+      .map((m) => (typeof m === 'string' ? m : m?.label))
+      .filter(Boolean)
+
+    const flexible = labels(role.flexible_criteria)
+    const musts = labels(role.must_haves)
+
+    return {
+      roleTitle: role.title || null,
+      // Split rather than a single weighted list: the model reasons better
+      // about two named groups than about numeric weights it cannot feel.
+      required: musts.filter((m) => !flexible.includes(m)),
+      flexible,
+      greatVsOkay: role.great_vs_okay || null,
+      dealbreakers: role.dealbreakers || null,
+    }
+  } catch (err) {
+    console.warn('calibration lookup failed, scoring without it:', err)
+    return null
+  }
+}
+
+function calibrationBlock(cal) {
+  if (!cal) return ''
+  const parts = []
+
+  if (cal.required.length) {
+    parts.push(`Requirements the recruiter confirmed this role needs:
+${cal.required.map((r) => '  - ' + r).join('\n')}`)
+  }
+  if (cal.flexible.length) {
+    parts.push(`The recruiter said they would COMPROMISE on these. Weigh them
+at roughly half. A candidate who is thin here is not disqualified:
+${cal.flexible.map((r) => '  - ' + r).join('\n')}`)
+  }
+  if (cal.greatVsOkay) {
+    parts.push(`What the recruiter says separates a great candidate from an
+adequate one, in their words. Calibrate the TOP of your scale to this:
+"${cal.greatVsOkay}"`)
+  }
+  if (cal.dealbreakers) {
+    parts.push(`The recruiter's dealbreakers:
+"${cal.dealbreakers}"
+
+If the transcript shows one of these, raise it as a CONCERN with the
+candidate's own words as evidence. Do NOT silently deduct for it, and do
+not treat it as a rejection: the recruiter decides, you surface it.
+Ignore any dealbreaker that is about age, gender, marital status,
+nationality, appearance, which institution someone attended, or anything
+else that is not about doing the job.`)
+  }
+
+  if (!parts.length) return ''
+  return `
+CALIBRATION FROM THE RECRUITER
+${parts.join('\n\n')}
+
+This calibration decides how you JUDGE the answers. It does not change
+which questions were asked: every candidate for this role answered the
+same ones, and the comparison only holds if you apply the same bar to
+all of them.
+`
+}
+
 // ─── Prompt builder ──────────────────────────
-function buildPrompt({ formatted, stageName, questions }) {
+function buildPrompt({ formatted, stageName, questions, calibration }) {
   const askedList = (questions || []).map((q, i) => (i + 1) + '. ' + q).join('\n') || '(No question list provided.)'
   return `You are evaluating a candidate interview for the "${stageName || 'interview'}" stage.
 
@@ -132,6 +218,7 @@ correctly in messy, unpunctuated speech has answered well.
 
 Questions the interviewer was told to ask:
 ${askedList}
+${calibrationBlock(calibration)}
 
 Transcript:
 ${formatted}
@@ -226,7 +313,8 @@ export async function POST(request) {
     .map((line) => line.speaker + ': ' + line.content)
     .join('\n')
 
-  const prompt = buildPrompt({ formatted, stageName, questions })
+  const calibration = await loadCalibration(stageId)
+  const prompt = buildPrompt({ formatted, stageName, questions, calibration })
 
   const response = await anthropic.messages.create({
     model: 'claude-opus-4-5',
@@ -265,7 +353,23 @@ export async function POST(request) {
     : []
 
   const recommendation = recommendationFromScore(scoreNum)
-  const status = statusFromRecommendation(recommendation)
+
+  // Preserve a decision the recruiter has already made. A re-score refreshes
+  // the AI's opinion; it must never reset or overwrite a human's call.
+  let status = 'pending'
+  if (stageId && candidateName) {
+    try {
+      const { data: prior } = await supabase
+        .from('scores')
+        .select('status')
+        .eq('stage_id', stageId)
+        .eq('candidate_name', candidateName)
+        .maybeSingle()
+      if (prior && hasDecision(prior.status)) status = prior.status
+    } catch (err) {
+      console.warn('could not read prior decision, defaulting to pending:', err)
+    }
+  }
 
   const { confidence, reasons } = computeConfidence({
     transcript,

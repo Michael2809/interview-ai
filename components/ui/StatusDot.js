@@ -46,6 +46,14 @@ const STATUS_MAP = {
   // Purple — moved forward on the pipeline.
   shortlisted: { color: 'var(--color-rc-purple)', label: 'Shortlisted' },
 
+  // AI SUGGESTIONS — the model's view, not a decision anyone made.
+  // These exist so a score-derived label can never be mistaken for a
+  // recruiter's call. 'shortlisted' / 'rejected' / 'on-hold' below stay
+  // reserved for statuses a human actually clicked.
+  'suggest-shortlist':  { color: 'var(--color-rc-purple)', label: 'AI: shortlist' },
+  'suggest-review':     { color: 'var(--color-rc-yellow)', label: 'AI: review' },
+  'suggest-below-bar':  { color: 'var(--color-rc-muted)',  label: 'AI: below bar' },
+
   // Red — decision-blocking action required.
   'action-required':  { color: 'var(--color-rc-red)', label: 'Action required' },
   'needs-reschedule': { color: 'var(--color-rc-red)', label: 'Needs reschedule' },

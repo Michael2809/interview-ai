@@ -94,9 +94,9 @@ function relativeTime(date) {
  */
 function suggestedFromScore(score) {
   if (score == null) return 'in-progress'
-  if (score >= 7) return 'shortlisted'
-  if (score >= 4) return 'on-hold'
-  return 'rejected'
+  if (score >= 7) return 'suggest-shortlist'
+  if (score >= 4) return 'suggest-review'
+  return 'suggest-below-bar'
 }
 
 /**
@@ -764,7 +764,7 @@ function RecentActivityTimeline({ items }) {
                 >
                   <StatusDot
                     status={it.kind === 'completed'
-                      ? (typeof it.score === 'number' && it.score >= 7 ? 'shortlisted' : 'complete')
+                      ? (typeof it.score === 'number' && it.score >= 7 ? 'suggest-shortlist' : 'complete')
                       : 'in-progress'}
                   />
                   <span className="text-[12px] tabular-nums text-[color:var(--color-rc-muted)]">

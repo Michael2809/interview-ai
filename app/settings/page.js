@@ -48,6 +48,33 @@ function Section({ title, description, children, tone = 'default', divider = tru
   )
 }
 
+/**
+ * Multi-line field for the company profile. Not a TextField because these
+ * answers are sentences the AI reads out to a candidate, not form values —
+ * and the recruiter should see them in the shape they will be heard.
+ */
+function LongField({ label, description, value, onChange, placeholder, rows = 2 }) {
+  const id = 'lf-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return (
+    <div>
+      <label htmlFor={id} className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)] tracking-[-0.005em]">
+        {label}
+      </label>
+      <textarea
+        id={id}
+        value={value}
+        onChange={onChange}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full block bg-white text-[color:var(--color-rc-ink)] leading-relaxed border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 px-3.5 py-2.5 text-[14.5px] transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] resize-none"
+      />
+      {description && (
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">{description}</p>
+      )}
+    </div>
+  )
+}
+
 function FieldGrid({ children }) {
   return <div className="grid gap-5 md:grid-cols-2">{children}</div>
 }
@@ -302,8 +329,21 @@ export default function SettingsPage() {
   const [companyWebsite, setCompanyWebsite] = useState('')
   const [notifyOnCompletion, setNotifyOnCompletion] = useState(true)
 
+  // Company profile — the ONLY facts the AI may use when a candidate asks
+  // it something at the end of their interview. Anything left blank is
+  // simply a question it answers with "I don't have that, I've noted it
+  // for the recruiter", which is the correct behaviour: it never guesses.
+  const [companyAbout, setCompanyAbout] = useState('')
+  const [companyHeadcount, setCompanyHeadcount] = useState('')
+  const [workModel, setWorkModel] = useState('')
+  const [workingHours, setWorkingHours] = useState('')
+  const [hiringProcess, setHiringProcess] = useState('')
+  const [benefits, setBenefits] = useState('')
+
   const baselineRef = useRef({
     firstName: '', fullName: '', companyName: '', companyWebsite: '', notifyOnCompletion: true,
+    companyAbout: '', companyHeadcount: '', workModel: '', workingHours: '',
+    hiringProcess: '', benefits: '',
   })
 
   useEffect(() => {
@@ -326,8 +366,22 @@ export default function SettingsPage() {
       const cname  = data?.company_name     || ''
       const cweb   = data?.company_website  || ''
       const notify = data?.notify_on_completion ?? true
+      const profile = {
+        companyAbout:     data?.company_about     || '',
+        companyHeadcount: data?.company_headcount || '',
+        workModel:        data?.work_model        || '',
+        workingHours:     data?.working_hours     || '',
+        hiringProcess:    data?.hiring_process    || '',
+        benefits:         data?.benefits          || '',
+      }
 
       if (cancelled) return
+      setCompanyAbout(profile.companyAbout)
+      setCompanyHeadcount(profile.companyHeadcount)
+      setWorkModel(profile.workModel)
+      setWorkingHours(profile.workingHours)
+      setHiringProcess(profile.hiringProcess)
+      setBenefits(profile.benefits)
       setFirstName(first)
       setFullName(full)
       setCompanyName(cname)
@@ -335,7 +389,8 @@ export default function SettingsPage() {
       setNotifyOnCompletion(notify)
 
       baselineRef.current = {
-        firstName: first, fullName: full, companyName: cname, companyWebsite: cweb, notifyOnCompletion: notify,
+        firstName: first, fullName: full, companyName: cname, companyWebsite: cweb,
+        notifyOnCompletion: notify, ...profile,
       }
       setLoading(false)
     }
@@ -351,9 +406,16 @@ export default function SettingsPage() {
       fullName !== b.fullName ||
       companyName !== b.companyName ||
       companyWebsite !== b.companyWebsite ||
-      notifyOnCompletion !== b.notifyOnCompletion
+      notifyOnCompletion !== b.notifyOnCompletion ||
+      companyAbout !== b.companyAbout ||
+      companyHeadcount !== b.companyHeadcount ||
+      workModel !== b.workModel ||
+      workingHours !== b.workingHours ||
+      hiringProcess !== b.hiringProcess ||
+      benefits !== b.benefits
     )
-  }, [firstName, fullName, companyName, companyWebsite, notifyOnCompletion])
+  }, [firstName, fullName, companyName, companyWebsite, notifyOnCompletion,
+      companyAbout, companyHeadcount, workModel, workingHours, hiringProcess, benefits])
 
   // Shared <Toast> doesn't auto-dismiss (caller owns timing), so
   // we schedule the fade-out here. 3.2s matches the other recruiter
@@ -386,15 +448,24 @@ export default function SettingsPage() {
       company_name: companyName || null,
       company_website: companyWebsite || null,
       notify_on_completion: notifyOnCompletion,
+      company_about:     companyAbout || null,
+      company_headcount: companyHeadcount || null,
+      work_model:        workModel || null,
+      working_hours:     workingHours || null,
+      hiring_process:    hiringProcess || null,
+      benefits:          benefits || null,
     }, { onConflict: 'user_id' })
     setSaving(false)
     if (err) return flashError('Could not save: ' + err.message)
 
     baselineRef.current = {
       firstName: trimmedFirst, fullName, companyName, companyWebsite, notifyOnCompletion,
+      companyAbout, companyHeadcount, workModel, workingHours, hiringProcess, benefits,
     }
     flashMessage('Settings saved.')
-  }, [isDirty, saving, firstName, fullName, companyName, companyWebsite, notifyOnCompletion, supabase, userId, flashMessage, flashError])
+  }, [isDirty, saving, firstName, fullName, companyName, companyWebsite, notifyOnCompletion,
+      companyAbout, companyHeadcount, workModel, workingHours, hiringProcess, benefits,
+      supabase, userId, flashMessage, flashError])
 
   // ⌘S save shortcut
   useEffect(() => {
@@ -497,6 +568,62 @@ export default function SettingsPage() {
                   onChange={(e) => setCompanyWebsite(e.target.value)}
                 />
               </FieldGrid>
+            </Section>
+
+            <Section
+              title="What candidates are told"
+              description="At the end of an interview Recrewt asks the candidate if they have any questions, and answers from what you write here. It never invents an answer — anything you leave blank it passes to you instead."
+            >
+              <div className="grid gap-5">
+                <LongField
+                  label="What the company does"
+                  placeholder="e.g. We build payment infrastructure for Indian SMBs — invoicing, reconciliation and settlement."
+                  value={companyAbout}
+                  onChange={(e) => setCompanyAbout(e.target.value)}
+                  rows={2}
+                />
+                <FieldGrid>
+                  <TextField
+                    label="Company size"
+                    placeholder="e.g. Around 40 people"
+                    value={companyHeadcount}
+                    onChange={(e) => setCompanyHeadcount(e.target.value)}
+                  />
+                  <TextField
+                    label="Where people work"
+                    placeholder="e.g. Hybrid, 3 days in the Mumbai office"
+                    value={workModel}
+                    onChange={(e) => setWorkModel(e.target.value)}
+                  />
+                </FieldGrid>
+                <FieldGrid>
+                  <TextField
+                    label="Working hours"
+                    placeholder="e.g. 10am to 7pm IST, flexible"
+                    value={workingHours}
+                    onChange={(e) => setWorkingHours(e.target.value)}
+                  />
+                  <TextField
+                    label="Benefits"
+                    placeholder="e.g. Health cover, learning budget, 25 days leave"
+                    value={benefits}
+                    onChange={(e) => setBenefits(e.target.value)}
+                  />
+                </FieldGrid>
+                <LongField
+                  label="What happens after this interview"
+                  description="The single most common thing candidates ask, and the one nobody ever tells them."
+                  placeholder="e.g. A technical round with the team, then a conversation with the founder. Usually about two weeks end to end."
+                  value={hiringProcess}
+                  onChange={(e) => setHiringProcess(e.target.value)}
+                  rows={2}
+                />
+                <p className="text-[12.5px] leading-relaxed text-[color:var(--color-rc-muted)]">
+                  Pay is not here on purpose. It belongs to the role, and whether
+                  to tell a candidate the range is a choice you make per role when
+                  you create it.
+                </p>
+              </div>
             </Section>
 
             <Section

@@ -64,8 +64,14 @@ export default function Modal({
     if (!open) return;
 
     returnFocusRef.current = document.activeElement;
+    // Lock both: which element scrolls the document varies with the
+    // layout, and locking only <body> lets the page slide away behind
+    // the dialog.
+    const html = document.documentElement;
     const prevOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = html.style.overflow;
     document.body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
 
     // Focus the dialog on next paint so the reveal completes first
     const id = requestAnimationFrame(() => dialogRef.current?.focus());
@@ -78,6 +84,7 @@ export default function Modal({
     return () => {
       cancelAnimationFrame(id);
       document.body.style.overflow = prevOverflow;
+      html.style.overflow = prevHtmlOverflow;
       window.removeEventListener('keydown', onKey);
       if (returnFocusRef.current instanceof HTMLElement) {
         returnFocusRef.current.focus?.();

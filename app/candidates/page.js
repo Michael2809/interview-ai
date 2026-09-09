@@ -3,12 +3,14 @@
 import { memo, useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
+import { awaitingDecision } from '@/lib/decisions'
 import Link from 'next/link'
 import {
   Search, X, ChevronRight, ChevronDown, Sparkles, MessageSquare, Calendar,
   MoreHorizontal, ArrowRight, Users, Briefcase, AlertTriangle, RefreshCw, CheckCircle2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import CompareModal from '@/components/CompareModal'
 import { writeReviewQueue, clearReviewQueue } from '@/components/AppShell/ReviewQueue'
 import { SkeletonRow as SharedSkeletonRow } from '@/components/AppShell/Skeleton'
 import {
@@ -788,7 +790,7 @@ const CandidateRow = memo(CandidateRowImpl, (prev, next) => {
  * text buttons; danger actions live at the far right past a divider
  * so recruiters never fat-finger them.
  */
-function BulkActionBar({ count, onClear, onAction, disabled }) {
+function BulkActionBar({ count, onClear, onAction, onCompare, disabled }) {
   if (count <= 0) return null
   return (
     <div
@@ -813,10 +815,18 @@ function BulkActionBar({ count, onClear, onAction, disabled }) {
         </span>
       </span>
 
-      {/* Only actions with real end-to-end implementations. Delete and
-          Archive route through per-row logic scaled across the whole
-          selection. Move / Reject / Schedule / Compare / Export ship
-          when their per-row versions exist. */}
+      {/* Only actions with real end-to-end implementations. Move /
+          Reject / Schedule / Export ship when their per-row versions
+          exist. Compare is live and deliberately dead below two and
+          above two: the useful question is always between two people. */}
+      <BulkBtn
+        onClick={onCompare}
+        muted={count !== 2}
+        title={count === 2 ? 'Compare these two' : 'Select exactly two to compare'}
+      >
+        Compare
+      </BulkBtn>
+      <span aria-hidden="true" className="mx-1 h-5 w-px bg-white/15" />
       <BulkBtn primary onClick={() => onAction('archive')}>Archive</BulkBtn>
       <span aria-hidden="true" className="mx-1 h-5 w-px bg-white/15" />
       <BulkBtn onClick={() => onAction('delete')} danger>Delete</BulkBtn>
@@ -833,7 +843,7 @@ function BulkActionBar({ count, onClear, onAction, disabled }) {
   )
 }
 
-function BulkBtn({ children, onClick, primary, danger }) {
+function BulkBtn({ children, onClick, primary, danger, muted, title }) {
   const base =
     'inline-flex items-center h-8 px-3 rounded-[10px] text-[12.5px] font-medium ' +
     'transition-colors duration-150 ' +
@@ -844,7 +854,13 @@ function BulkBtn({ children, onClick, primary, danger }) {
     ? ' text-[color:#FFB4A6] hover:text-white hover:bg-white/10'
     : ' text-white/85 hover:text-white hover:bg-white/10'
   return (
-    <button type="button" onClick={onClick} className={base + tone}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={muted}
+      title={title}
+      className={base + tone + (muted ? ' opacity-40 cursor-not-allowed' : '')}
+    >
       {children}
     </button>
   )
@@ -881,6 +897,7 @@ export default function CandidatesPage() {
   const [quick, setQuick] = useState(initial.quick)
   const [sort, setSort] = useState(initial.sort)
   const [selected, setSelected] = useState(() => new Set())
+  const [comparePair, setComparePair] = useState(null)
 
   const [rows, setRows] = useState([])         // unified row list
   const [roleList, setRoleList] = useState([])
@@ -1038,7 +1055,9 @@ export default function CandidatesPage() {
     for (const c of compMap.values()) {
       const key = `${c.stage_id}|${(c.candidate_name || '').toLowerCase()}`
       const s = scoresByKey[key] || {}
-      const awaiting = s.score != null && (!s.status || s.status === '')
+      // Scored but no human decision yet. 'pending' is what the scorer now
+      // writes, so it must count as awaiting review alongside null/''.
+      const awaiting = s.score != null && awaitingDecision(s.status)
       unified.push({
         id: 'c:' + key,
         kind: 'completed',
@@ -1657,7 +1676,29 @@ export default function CandidatesPage() {
           count={selected.size}
           onClear={clearSelection}
           onAction={handleBulk}
+          onCompare={() => {
+            /* CompareModal speaks the role page's candidate shape.
+               Translate rather than teach it two shapes. */
+            const picked = filtered.filter((r) => selected.has(r.id))
+            if (picked.length !== 2) return
+            setComparePair(picked.map((r) => ({
+              name: r.name,
+              email: r.id,
+              latestStageId: r.stageId,
+            })))
+          }}
           disabled={bulkRunning}
+        />
+
+        <CompareModal
+          open={!!comparePair}
+          onClose={() => setComparePair(null)}
+          pair={comparePair}
+          /* The modal only needs id -> name, to say which two stages
+             differ. The rows already carry both. */
+          stages={comparePair
+            ? [...new Map(rows.map((r) => [String(r.stageId), { id: r.stageId, name: r.stageName }])).values()]
+            : []}
         />
 
         {/* Bulk confirm — same modal shape as single-row Delete but

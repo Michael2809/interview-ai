@@ -1,0 +1,23 @@
+-- The recordings bucket was readable by the public key.
+--
+--   allow downloads 1f6065g_0 : SELECT on bucket 'interview-videos' TO public
+--
+-- `public` includes anon, and the anon key ships inside the browser
+-- bundle. That policy let anyone list the bucket and download every
+-- interview recording it held - every candidate, every customer. Storage
+-- SELECT is also what `createSignedUrl` needs, which is why it was
+-- there: the candidate's browser signed its own upload.
+--
+-- Signing moved to /api/interview-media and /api/analyze-audio, which
+-- use the service key and never return the URL to the caller. The signed
+-- URL is written straight onto the `interviews` row instead.
+--
+-- Nothing legitimate needs a SELECT policy here any more:
+--   * signed URLs are validated by their signature, not by RLS, so
+--     recruiters and share-link holders keep playing existing recordings
+--   * every server path uses the service key, which bypasses RLS
+--
+-- The upload policy stays: candidates are anonymous and must be able to
+-- put their own recording into the bucket.
+
+drop policy if exists "allow downloads 1f6065g_0" on storage.objects;

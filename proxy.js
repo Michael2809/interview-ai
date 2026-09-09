@@ -39,15 +39,29 @@ export async function proxy(request) {
   // with '/login'.
   const publicPaths = [
     '/login',
-    '/interview',      // candidates open these by emailed link, no account
+    '/share',          // read-only result links, no account
     '/upgrade',
     '/privacy',
     '/terms',
     '/reset-password',
   ]
   const { pathname } = request.nextUrl
+
+  /*
+   * '/interview' is NOT in the list above, and must not go back into it.
+   *
+   * It used to be, tested with startsWith('/interview/'), which made
+   * EVERY path under it public — including '/interview/61/transcript',
+   * the recruiter's own review page. Anyone with a stage number could
+   * read a candidate's full transcript, score and recording without
+   * logging in. Only the interview itself is public, and it is exactly
+   * one segment deep: '/interview/<stageId>' and nothing below it.
+   */
+  const isCandidateInterview = /^\/interview\/[^/]+$/.test(pathname)
+
   const isPublicPage =
     pathname === '/' ||
+    isCandidateInterview ||
     publicPaths.some(path => pathname === path || pathname.startsWith(path + '/'))
 
   if (!user && !isPublicPage) {
