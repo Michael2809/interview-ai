@@ -1156,6 +1156,39 @@ export default function InterviewPage() {
     ttsWarmedRef.current = true
     warmTtsCache([WARMUP_QUESTION, ...questions.map((q) => q?.text)])
   }, [questions])
+
+  /* Keep the speech GPU awake for the whole interview.
+
+     Modal scales the voice container to zero after 60s idle and a cold
+     start takes well over a minute. Scripted questions are cached, but
+     follow-ups are written live from the candidate's answer, so they
+     reached a sleeping container, hit the 12s client timeout and dropped
+     to the browser voice after 12s of silence.
+
+     One tiny ping, then wait 40s after it returns, then the next: never
+     two in flight (parallel requests to a cold app can boot extra GPUs).
+     Runs from the device check until the interview ends, so the
+     container sleeps again between interviews. Roughly 10-15 cents of
+     GPU time per interview. */
+  const keepTtsAwake = ['device', 'howto', 'warmup', 'live', 'transition'].includes(step)
+  useEffect(() => {
+    if (!keepTtsAwake) return
+    let cancelled = false
+    let timer = null
+    const ping = async () => {
+      if (cancelled) return
+      try {
+        await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ warm: true }),
+        })
+      } catch {}
+      if (!cancelled) timer = setTimeout(ping, 40000)
+    }
+    ping()
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
+  }, [keepTtsAwake])
   const [candidateName, setCandidateName] = useState('')
 
   const [permissionState, setPermissionState] = useState('idle')    // idle | requesting | granted | denied
@@ -1618,6 +1651,9 @@ export default function InterviewPage() {
     // a network blip, Chrome's own time limit) is worth restarting after.
     let fatal = false
     rec.onerror = (e) => {
+      // Logged so a dead transcript can be diagnosed from the console
+      // (filter by "[stt]") instead of guessed at.
+      console.warn('[stt] recognition error:', e?.error, e?.message || '')
       if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e?.error)) fatal = true
     }
     rec.onend = () => {
@@ -1633,6 +1669,7 @@ export default function InterviewPage() {
       // ran), so it was always false and the restart never happened. Every
       // word after the candidate's first pause was lost.
       if (persistLive && !fatal) {
+        console.info('[stt] recognition ended, restarting')
         setTimeout(() => {
           if (recognitionRef.current !== rec) return
           try { rec.start() } catch {}
@@ -1641,7 +1678,8 @@ export default function InterviewPage() {
         setListening(false)
       }
     }
-    try { rec.start(); setListening(true) } catch {}
+    console.info('[stt] listening, lang =', rec.lang)
+    try { rec.start(); setListening(true) } catch (err) { console.warn('[stt] could not start:', err?.message) }
     recognitionRef.current = rec
   }
 
