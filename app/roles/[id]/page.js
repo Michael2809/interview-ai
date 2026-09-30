@@ -1683,7 +1683,7 @@ function StageEditPanel({
         <p className="mt-5 text-[12px] leading-relaxed text-[color:var(--color-rc-muted)]">
           Candidates also get a practice question that is not recorded, three opening
           questions about themselves and their background, and a real back-and-forth
-          on each question above: the AI reacts to what they say with one to three
+          on each question above: the AI reacts to what they say with one or two
           follow-ups. The openers are transcribed and shown to you, but
           none of them move the score.
         </p>

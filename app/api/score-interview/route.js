@@ -272,16 +272,30 @@ Rules:
 - A concern must be about substance. Never raise a concern about grammar,
   fluency, filler words, punctuation or transcription quality.
 - The interview is a conversation. After each main question the interviewer
-  may react: follow-ups, a gentle "can I ask why?", a clarification, or a
-  nudge back on topic. Everything between one main question and the next
-  belongs to that main question. Judge it on the WHOLE exchange: a thin first
-  answer that becomes specific under follow-up earns credit for what it
-  became.
-- If the candidate declined to answer: a plain refusal with no reason and
-  nothing offered instead counts as not answered (0.0-3.9) and lowers
-  coverage_percent, and list it as a concern with their words. If they gave a
-  legitimate reason (confidentiality, an NDA) and answered in general terms or
-  with another example, judge that answer and do not penalise the refusal.
+  may react: follow-ups, a harder version of the candidate's own example, a
+  rephrase, a nudge back on topic, or "I couldn't hear that". Everything
+  between one main question and the next belongs to that main question.
+  Judge it on the WHOLE exchange: a thin first answer that becomes specific
+  under follow-up earns credit for what it became.
+- Do NOT give credit for the number of turns. Some candidates get one more
+  follow-up than others. Judge the substance of what was said, never how
+  long the exchange was or how confident or fluent it sounded.
+- If the candidate declined to answer: a plain refusal with nothing offered
+  instead counts as not answered (0.0-3.9) and lowers coverage_percent, and
+  list it as a concern with their words. If they gave a work reason
+  (confidentiality, an NDA) and answered in general terms or with another
+  example, judge that answer and do not penalise the refusal.
+- AUDIO PROBLEMS ARE NOT ANSWERS. If the interviewer said it could not hear
+  the candidate clearly, or the candidate's reply is garbled beyond
+  recognition, that question is NOT ASSESSED: leave it out of
+  question_reviews, do not count it against coverage_percent, and do not let
+  it lower the score or appear as a concern. A broken microphone says
+  nothing about the candidate.
+- PERSONAL CIRCUMSTANCES ARE NEVER EVIDENCE. Candidates sometimes mention
+  health, disability, family or caring duties, pregnancy, religion, age,
+  nationality, marital status or similar. Never let any of it affect a
+  score, a strength or a concern, and never mention it in your output.
+  Judge only what they said about doing the work.
 - Include one question_reviews entry per asked question if you can identify their answer, otherwise omit that entry.
 - Use these bands for the top-level score: 8.5+ = Strong Hire, 6.5-8.4 = Hire, 4.5-6.4 = Hold, <4.5 = Reject.`
 }

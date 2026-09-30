@@ -1049,10 +1049,17 @@ function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFaile
  * ────────────────────────────────────────────────────────── */
 
 function TransitionScreen() {
+  // Three soft dots, like someone about to reply, rather than a blank page.
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-6" aria-hidden="true">
-      <div className="h-1 w-24 rounded-full bg-[color:var(--color-rc-soft)] overflow-hidden">
-        <div className="h-full bg-[color:var(--color-rc-ink)] motion-safe:animate-pulse" style={{ width: '60%' }} />
+    <div className="min-h-screen bg-white flex items-center justify-center px-6" role="status" aria-label="The interviewer is thinking">
+      <div className="flex items-center gap-2">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-2.5 w-2.5 rounded-full bg-[color:var(--color-rc-ink)] opacity-60 motion-safe:animate-bounce"
+            style={{ animationDelay: `${i * 160}ms`, animationDuration: '1s' }}
+          />
+        ))}
       </div>
     </div>
   )
@@ -1228,6 +1235,7 @@ export default function InterviewPage() {
   const questionStartRef      = useRef(0)
   const liveStartRef          = useRef(0)
   const closingIndexRef       = useRef(0)
+  const ackIndexRef           = useRef(0)
 
   /* ── Preview binding ─────────────────────── */
   useEffect(() => {
@@ -1385,7 +1393,14 @@ export default function InterviewPage() {
   /* Guardrails that keep a conversational interview to about 30 minutes.
      They are ceilings, not targets: a candidate with short answers gets
      fewer follow-ups and finishes sooner. */
-  const MAX_FOLLOWUPS_PER_QUESTION = 3
+  // Probing follow-ups per question. The first is guaranteed on a drafted
+  // role question; the second only when something specific is still missing.
+  // Repairs (rephrasing, "couldn't hear you", back on topic) don't count.
+  const MAX_FOLLOWUPS_PER_QUESTION = 2
+  // Hard stop on turns per question, repairs included, so nothing can loop.
+  const MAX_TURNS_PER_QUESTION = 5
+  const PROBE_KINDS = ['probe', 'specifics', 'stretch', 'hypothetical']
+  const REPAIR_KINDS = ['clarify', 'redirect', 'unclear', 'language']
   const QUESTION_BUDGET_MS = 4 * 60 * 1000
   // The live part only. Warm-up before it and candidate Q&A after it are
   // extra, which lands the whole thing at roughly 30 minutes.
@@ -1622,7 +1637,7 @@ export default function InterviewPage() {
     setIsFollowUp(!!followUp)
     setAwaitingStart(false)
     setCountdown(0)
-    threadRef.current = [{ asked: text, answer: null }]
+    threadRef.current = [{ asked: text, answer: null, kind: 'question' }]
     questionStartRef.current = Date.now()
     addTranscriptRow('interviewer', text)
 
@@ -1661,7 +1676,7 @@ export default function InterviewPage() {
     if (countdown > 0) return    // countdown already in flight
     if (listening) return        // mic already open
     setAwaitingStart(false)
-    setCountdown(3)
+    setCountdown(2)
   }
 
   // Drive the 3 → 2 → 1 → mic-open transition. Runs entirely off
@@ -1708,20 +1723,21 @@ export default function InterviewPage() {
     if (thread.length && thread[thread.length - 1].answer == null) {
       thread[thread.length - 1].answer = answer
     } else {
-      thread.push({ asked: currentQuestion, answer })
+      thread.push({ asked: currentQuestion, answer, kind: 'probe' })
     }
 
     // Openers and practice questions are not conversational: they move on.
     if (!currentQ?.adaptive) { advance(''); return }
 
-    const followUpsAsked = thread.length - 1
-    const mustAsk = !!currentQ.requireFollowUp && followUpsAsked === 0
+    const probesAsked = thread.filter((t) => PROBE_KINDS.includes(t.kind)).length
+    const repairsUsed = [...new Set(thread.map((t) => t.kind).filter((k) => REPAIR_KINDS.includes(k)))]
+    const mustAsk = !!currentQ.requireFollowUp && probesAsked === 0
 
     /* The clock. A human interviewer keeps an eye on time too.
        - No question runs past QUESTION_BUDGET_MS of back-and-forth.
        - If the interview is running behind, later questions get one
-         reaction instead of three, so it still finishes on time.
-       The first reaction on a drafted question is never cut: every
+         probe instead of two, so it still finishes on time.
+       The guaranteed first probe on a drafted question is never cut: every
        candidate gets at least that, so their interviews stay comparable. */
     const now = Date.now()
     const questionElapsed = now - (questionStartRef.current || now)
@@ -1731,21 +1747,29 @@ export default function InterviewPage() {
     const behind = timeLeft <= 0 || timeLeft < questionsLeft * MIN_MS_PER_REMAINING_QUESTION
     const maxFollowUps = behind ? 1 : MAX_FOLLOWUPS_PER_QUESTION
 
-    const outOfTurns = followUpsAsked >= maxFollowUps
+    const outOfTurns = probesAsked >= maxFollowUps || thread.length >= MAX_TURNS_PER_QUESTION
     const outOfTime = questionElapsed >= QUESTION_BUDGET_MS
     if (!mustAsk && (outOfTurns || outOfTime)) {
-      advance(followUpsAsked > 0 ? nextClosingLine() : '')
+      advance(thread.length > 1 ? nextClosingLine() : '')
       return
     }
 
     setStep('transition')
+    // A person reacts the moment you stop talking. Say a quick "Okay"
+    // while the next move is worked out, so there is no dead air. Not
+    // every time, or it turns into a tic.
+    const ack = nextAck()
+    const ackDone = ack ? speakAck(ack) : Promise.resolve()
     const move = await requestNextMove(currentQ.text, thread, {
       required: mustAsk,
       maxFollowUps,
+      probesAsked,
+      repairsUsed,
     })
+    await ackDone
 
     if (move?.action === 'ask' && move.say) {
-      thread.push({ asked: move.say, answer: null })
+      thread.push({ asked: move.say, answer: null, kind: move.kind || 'probe' })
       setStep('live')
       setCurrentQuestion(move.say)
       setTranscript(''); setTypedAnswer(''); setTypingMode(false)
@@ -1755,9 +1779,12 @@ export default function InterviewPage() {
       return
     }
 
-    // Moving on. Use the interviewer's own closing line when it gave one,
-    // otherwise a plain one if there was any back-and-forth at all.
-    const closing = move?.say || (followUpsAsked > 0 ? nextClosingLine() : '')
+    // Moving on. A plain "okay, thanks" after an "Okay." is one too many,
+    // so a generic closing is dropped when the quick reaction already
+    // played. A meaningful one ("No problem, let's move on.") is kept.
+    let closing = move?.say || ''
+    if (ack && (!move || move.kind === 'wrap')) closing = ''
+    else if (!closing && thread.length > 1) closing = nextClosingLine()
     advance(closing)
   }
 
@@ -1774,6 +1801,24 @@ export default function InterviewPage() {
     }, 700)
   }
 
+  /** Every other reaction gets a quick spoken "Okay". */
+  function nextAck() {
+    const n = ackIndexRef.current++
+    if (n % 2 === 1) return ''
+    const lines = ['Okay.', 'Mm, got it.', 'Right.', 'I see.']
+    return lines[(n / 2) % lines.length]
+  }
+
+  /** Speak a short reaction; resolves when it ends (or after 2.5s at most). */
+  function speakAck(text) {
+    return new Promise((resolve) => {
+      let settled = false
+      const done = () => { if (!settled) { settled = true; resolve() } }
+      setTimeout(done, 2500)
+      speakText(text, done)
+    })
+  }
+
   function nextClosingLine() {
     const lines = ['Okay, thank you.', 'Got it, thanks.', 'Alright, thanks for that.', 'Okay, that helps.']
     const line = lines[closingIndexRef.current % lines.length]
@@ -1788,7 +1833,7 @@ export default function InterviewPage() {
    * Bounded by a timeout because the candidate is watching a transition
    * screen. If Claude is slow we move on rather than leave them waiting.
    */
-  async function requestNextMove(question, thread, { required = false, maxFollowUps = MAX_FOLLOWUPS_PER_QUESTION } = {}) {
+  async function requestNextMove(question, thread, { required = false, maxFollowUps = MAX_FOLLOWUPS_PER_QUESTION, probesAsked = 0, repairsUsed = [] } = {}) {
     try {
       const res = await fetch('/api/follow-up', {
         method: 'POST',
@@ -1801,6 +1846,9 @@ export default function InterviewPage() {
           thread: thread.map((t) => ({ asked: t.asked, answer: t.answer || '' })),
           required,
           maxFollowUps,
+          probesAsked,
+          repairsUsed,
+          language: stage?.language || 'English',
         }),
         signal: AbortSignal.timeout(FOLLOWUP_TIMEOUT_MS),
       })
