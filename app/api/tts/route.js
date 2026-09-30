@@ -52,10 +52,16 @@ async function signedUrl(supabase, key) {
 export async function POST(request) {
   let text
   let warm = false
+  let fast = false
   try {
     const body = await request.json()
     text = typeof body?.text === 'string' ? body.text.trim() : ''
     warm = body?.warm === true
+    // Live follow-ups: a candidate is waiting in silence, so trade a little
+    // quality for speed (fewer diffusion steps). Measured on the L4 at the
+    // default 10 steps: ~12s per new sentence, which is longer than the
+    // candidate should ever wait.
+    fast = body?.fast === true
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -139,7 +145,7 @@ export async function POST(request) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${modalToken}`,
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(fast ? { text, inference_timesteps: 6 } : { text }),
       // A cold GPU container can take ~60s to load the 2B model. Anything
       // beyond this and the client is better off using browser speech.
       signal: AbortSignal.timeout(120_000),

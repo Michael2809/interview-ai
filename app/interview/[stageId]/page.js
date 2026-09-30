@@ -941,7 +941,7 @@ function LiveScreen({
           {/* Controls — Done stays disabled until the candidate has
               actually answered. Repeat is disabled during TTS. */}
           <ActionRow>
-            <PrimaryButton onClick={onDone} disabled={isSpeaking || awaitingStart || countdown > 0 || !answering} iconRight={<ArrowRight size={15} />}>
+            <PrimaryButton onClick={onDone} disabled={isSpeaking || (awaitingStart && !typingMode) || countdown > 0 || !answering} iconRight={<ArrowRight size={15} />}>
               Done answering
             </PrimaryButton>
             <SecondaryButton onClick={onRepeat} disabled={isSpeaking} iconLeft={<RefreshCcw size={14} />}>
@@ -1418,6 +1418,8 @@ export default function InterviewPage() {
   const TTS_RATE = 0.95
   // Ceiling on waiting for the server to return audio.
   const TTS_FETCH_TIMEOUT_MS = 12000
+  // Follow-ups are generated live and cannot be cached ahead of time.
+  const TTS_LIVE_FETCH_TIMEOUT_MS = 30000
   // Ceiling on deciding whether to ask a follow-up. The candidate is sitting on
   // a transition screen while this runs, so it has to be short.
   const FOLLOWUP_TIMEOUT_MS = 7000
@@ -1458,14 +1460,19 @@ export default function InterviewPage() {
 
   // Ask the server for one question's audio: a signed URL, or raw bytes if
   // the server could not cache it.
-  async function fetchTtsSource(text) {
+  async function fetchTtsSource(text, { live = false } = {}) {
     const response = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(live ? { text, fast: true } : { text }),
       // A cold GPU can take a while, but the candidate is waiting. Past this
       // we are better off speaking in the OS voice than sitting in silence.
-      signal: AbortSignal.timeout(TTS_FETCH_TIMEOUT_MS),
+      //
+      // Live follow-ups get longer: they can never be pre-generated, and a
+      // brand-new sentence takes the voice model several seconds even when
+      // it is awake. At 12s they regularly dropped to the browser voice
+      // mid-interview, which sounds like a different person asking.
+      signal: AbortSignal.timeout(live ? TTS_LIVE_FETCH_TIMEOUT_MS : TTS_FETCH_TIMEOUT_MS),
     })
     if (!response.ok) throw new Error(`tts ${response.status}`)
     if ((response.headers.get('Content-Type') || '').includes('application/json')) {
@@ -1478,14 +1485,14 @@ export default function InterviewPage() {
 
   // Cached per question text. Signed URLs last an hour on the server, so
   // entries are dropped after 50 minutes. A failed fetch is never cached.
-  function getTtsSource(text) {
+  function getTtsSource(text, opts) {
     const cache = ttsSourceCacheRef.current
     const hit = cache.get(text)
     if (hit && hit.expiresAt > Date.now()) return hit.promise
     // A question whose audio just failed is not retried for two minutes.
     // Without this, pressing Repeat waited out the full fetch timeout again
     // in silence before falling back to the browser voice.
-    const promise = fetchTtsSource(text).catch((err) => {
+    const promise = fetchTtsSource(text, opts).catch((err) => {
       cache.set(text, { promise: Promise.reject(err), expiresAt: Date.now() + 2 * 60 * 1000 })
       cache.get(text).promise.catch(() => {})
       throw err
@@ -1508,7 +1515,7 @@ export default function InterviewPage() {
       .catch(() => {})
   }
 
-  async function speakText(text, onDone) {
+  async function speakText(text, onDone, opts) {
     stopSpeaking()
 
     let done = false
@@ -1517,7 +1524,9 @@ export default function InterviewPage() {
     }
     // Same safety net as before: never leave the interview stuck waiting on
     // an "ended" event that never arrives.
-    const safety = setTimeout(fire, 30000)
+    // Live follow-ups may wait up to 30s for audio, so their safety net is
+    // longer; otherwise it could fire before the audio even arrives.
+    const safety = setTimeout(fire, opts?.live ? 50000 : 30000)
 
     const fallback = (why) => {
       clearTimeout(safety)
@@ -1533,7 +1542,7 @@ export default function InterviewPage() {
 
     try {
       // Cached per question, so a repeat skips the server round trip.
-      const source = await getTtsSource(text)
+      const source = await getTtsSource(text, opts)
       let src
       let isObjectUrl = false
       if (source.url) {
@@ -1836,7 +1845,11 @@ export default function InterviewPage() {
     if (countdown === 1) {
       const id = setTimeout(() => {
         setCountdown(0)
-        startListening({ persistLive: true })
+        // The warm-up screen shows `warmupTranscript`, not `transcript`.
+        // This always opened the mic in live-question mode, so warm-up
+        // speech went into a transcript nobody could see and the screen
+        // said "Listening" forever with nothing appearing.
+        startListening({ persistLive: step !== 'warmup' })
       }, 900)
       return () => clearTimeout(id)
     }
@@ -1884,7 +1897,7 @@ export default function InterviewPage() {
         setTranscript(''); setTypedAnswer(''); setTypingMode(false)
         setIsFollowUp(true)
         addTranscriptRow('interviewer', followUp.text)
-        speakText(followUp.text, () => { setAwaitingStart(true) })
+        speakText(followUp.text, () => { setAwaitingStart(true) }, { live: true })
         return
       }
       // No follow-up warranted, or generation failed — fall through and advance.
