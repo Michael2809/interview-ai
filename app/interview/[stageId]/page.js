@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { INTRO_QUESTIONS as INTRO_SPEC, scoredQuestionTexts } from '../../../lib/interview-questions'
-import { warmTtsCache } from '../../../lib/tts'
 import Link from 'next/link'
 import { ScanFace, Camera, Mic, Wifi, Globe, CheckCircle2, XCircle, Circle, Sparkles, ArrowLeft, ArrowRight, Type, RefreshCcw, AlertTriangle } from 'lucide-react'
 import Button from '../../../components/ui/Button'
@@ -1142,53 +1141,6 @@ export default function InterviewPage() {
   const [recruiter, setRecruiter] = useState(null)  // recruiter's display name
   const [questions, setQuestions] = useState([])
 
-  /* Generate this interview's audio in the background the moment the
-     questions load, while the candidate is still reading the landing page
-     and doing the device check. Before this, only the recruiter's own
-     questions were ever pre-generated. The warm-up and the three intro
-     questions every candidate gets were synthesized live, on a GPU that is
-     usually asleep (about 73s to wake), so they timed out and fell back to
-     the browser voice. Once generated, audio is cached for every candidate
-     after this one. */
-  const ttsWarmedRef = useRef(false)
-  useEffect(() => {
-    if (ttsWarmedRef.current || !questions.length) return
-    ttsWarmedRef.current = true
-    warmTtsCache([WARMUP_QUESTION, ...questions.map((q) => q?.text)])
-  }, [questions])
-
-  /* Keep the speech GPU awake for the whole interview.
-
-     Modal scales the voice container to zero after 60s idle and a cold
-     start takes well over a minute. Scripted questions are cached, but
-     follow-ups are written live from the candidate's answer, so they
-     reached a sleeping container, hit the 12s client timeout and dropped
-     to the browser voice after 12s of silence.
-
-     One tiny ping, then wait 40s after it returns, then the next: never
-     two in flight (parallel requests to a cold app can boot extra GPUs).
-     Runs from the device check until the interview ends, so the
-     container sleeps again between interviews. Roughly 10-15 cents of
-     GPU time per interview. */
-  const keepTtsAwake = ['device', 'howto', 'warmup', 'live', 'transition'].includes(step)
-  useEffect(() => {
-    if (!keepTtsAwake) return
-    let cancelled = false
-    let timer = null
-    const ping = async () => {
-      if (cancelled) return
-      try {
-        await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ warm: true }),
-        })
-      } catch {}
-      if (!cancelled) timer = setTimeout(ping, 40000)
-    }
-    ping()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [keepTtsAwake])
   const [candidateName, setCandidateName] = useState('')
 
   const [permissionState, setPermissionState] = useState('idle')    // idle | requesting | granted | denied
@@ -1258,10 +1210,10 @@ export default function InterviewPage() {
   // Holds the <audio> element playing VoxCPM speech, so it can be stopped
   // when a question is interrupted or the candidate hits "repeat".
   const ttsAudioRef           = useRef(null)
-  // text -> { promise, expiresAt }. Keeps each question's audio source so
-  // 'Repeat question' plays instantly instead of asking the server again,
-  // and lets the next question be fetched while this one is answered.
-  const ttsSourceCacheRef     = useRef(new Map())
+  // Holds the utterance being spoken. Chrome can garbage-collect an
+  // unreferenced SpeechSynthesisUtterance mid-sentence, and then its onend
+  // never fires and the interview waits on the 30s safety timer.
+  const utteranceRef          = useRef(null)
   const finishedAtRef         = useRef(null)
   const recordingStartRef     = useRef(null)
 
@@ -1408,24 +1360,15 @@ export default function InterviewPage() {
   }, [])
 
   /* ── Speech output ──────────────────────────────────────────
-     Primary path is VoxCPM2 via /api/tts: one consistent, natural voice
-     for every candidate regardless of their device. The browser's
-     speechSynthesis is kept as a fallback ONLY — if the TTS service is
-     unreachable the interview continues in the OS voice rather than
-     failing outright. */
+     Questions are spoken in the browser's own voice (speechSynthesis).
+     The VoxCPM server voice was removed: live follow-ups took 12-30s to
+     generate and fell back to this voice mid-interview, so candidates heard
+     two different interviewers. One voice throughout is better. */
 
-  // Matches the previous utterance.rate exactly, so pacing is unchanged.
   const TTS_RATE = 0.95
-  // Ceiling on waiting for the server to return audio.
-  const TTS_FETCH_TIMEOUT_MS = 12000
-  // Follow-ups are generated live and cannot be cached ahead of time.
-  const TTS_LIVE_FETCH_TIMEOUT_MS = 30000
   // Ceiling on deciding whether to ask a follow-up. The candidate is sitting on
   // a transition screen while this runs, so it has to be short.
   const FOLLOWUP_TIMEOUT_MS = 7000
-  // Ceiling on waiting for that audio to become playable. Deliberately short:
-  // a candidate staring at a silent screen is worse than the OS voice.
-  const TTS_LOAD_TIMEOUT_MS = 6000
 
   function stopSpeaking() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -1454,138 +1397,14 @@ export default function InterviewPage() {
     }
     utterance.onend = fire
     utterance.onerror = fire
+    utteranceRef.current = utterance
     setTimeout(fire, 30000)
     window.speechSynthesis.speak(utterance)
   }
 
-  // Ask the server for one question's audio: a signed URL, or raw bytes if
-  // the server could not cache it.
-  async function fetchTtsSource(text, { live = false } = {}) {
-    const response = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(live ? { text, fast: true } : { text }),
-      // A cold GPU can take a while, but the candidate is waiting. Past this
-      // we are better off speaking in the OS voice than sitting in silence.
-      //
-      // Live follow-ups get longer: they can never be pre-generated, and a
-      // brand-new sentence takes the voice model several seconds even when
-      // it is awake. At 12s they regularly dropped to the browser voice
-      // mid-interview, which sounds like a different person asking.
-      signal: AbortSignal.timeout(live ? TTS_LIVE_FETCH_TIMEOUT_MS : TTS_FETCH_TIMEOUT_MS),
-    })
-    if (!response.ok) throw new Error(`tts ${response.status}`)
-    if ((response.headers.get('Content-Type') || '').includes('application/json')) {
-      const data = await response.json()
-      if (!data?.url) throw new Error('tts: no url')
-      return { url: data.url }
-    }
-    return { blob: await response.blob() }
-  }
-
-  // Cached per question text. Signed URLs last an hour on the server, so
-  // entries are dropped after 50 minutes. A failed fetch is never cached.
-  function getTtsSource(text, opts) {
-    const cache = ttsSourceCacheRef.current
-    const hit = cache.get(text)
-    if (hit && hit.expiresAt > Date.now()) return hit.promise
-    // A question whose audio just failed is not retried for two minutes.
-    // Without this, pressing Repeat waited out the full fetch timeout again
-    // in silence before falling back to the browser voice.
-    const promise = fetchTtsSource(text, opts).catch((err) => {
-      cache.set(text, { promise: Promise.reject(err), expiresAt: Date.now() + 2 * 60 * 1000 })
-      cache.get(text).promise.catch(() => {})
-      throw err
-    })
-    cache.set(text, { promise, expiresAt: Date.now() + 50 * 60 * 1000 })
-    return promise
-  }
-
-  // Fetch (and start downloading) a question's audio before it is needed.
-  function prefetchTts(text) {
-    if (!text) return
-    getTtsSource(text)
-      .then((source) => {
-        if (!source?.url) return
-        const a = new Audio()
-        a.preload = 'auto'
-        a.src = source.url
-        a.load()
-      })
-      .catch(() => {})
-  }
-
-  async function speakText(text, onDone, opts) {
+  function speakText(text, onDone) {
     stopSpeaking()
-
-    let done = false
-    const fire = () => {
-      if (done) return; done = true; setIsSpeaking(false); onDone && onDone()
-    }
-    // Same safety net as before: never leave the interview stuck waiting on
-    // an "ended" event that never arrives.
-    // Live follow-ups may wait up to 30s for audio, so their safety net is
-    // longer; otherwise it could fire before the audio even arrives.
-    const safety = setTimeout(fire, opts?.live ? 50000 : 30000)
-
-    const fallback = (why) => {
-      clearTimeout(safety)
-      if (done) return
-      // Log the reason. Without this, a silent degradation to the OS voice is
-      // indistinguishable from the feature never having shipped — which is
-      // exactly how the first version hid a stalled-audio bug.
-      if (why) console.warn('[tts] falling back to browser speech:', why)
-      speakTextBrowser(text, onDone)
-    }
-
-    setIsSpeaking(true)
-
-    try {
-      // Cached per question, so a repeat skips the server round trip.
-      const source = await getTtsSource(text, opts)
-      let src
-      let isObjectUrl = false
-      if (source.url) {
-        src = source.url
-      } else {
-        // A fresh object URL each play: stopSpeaking() revokes the old one.
-        src = URL.createObjectURL(source.blob)
-        isObjectUrl = true
-      }
-
-      const audio = new Audio()
-      audio.dataset.objectUrl = isObjectUrl ? 'true' : 'false'
-      audio.preload = 'auto'
-      audio.playbackRate = TTS_RATE
-      audio.src = src
-      ttsAudioRef.current = audio
-
-      // Wait for the audio to be genuinely playable BEFORE calling play().
-      //
-      // This is the bug that shipped first time round: on a slow or flaky
-      // connection the media stalls, and audio.play() then returns a promise
-      // that never resolves AND never rejects. The interview sat in silence
-      // until the 30s safety timer moved it on. Waiting for 'canplay' with an
-      // explicit timeout means a stalled download degrades to the browser
-      // voice in a couple of seconds instead of hanging.
-      await new Promise((resolve, reject) => {
-        const giveUp = setTimeout(
-          () => reject(new Error('audio load timeout')),
-          TTS_LOAD_TIMEOUT_MS,
-        )
-        audio.addEventListener('canplay', () => { clearTimeout(giveUp); resolve() }, { once: true })
-        audio.addEventListener('error', () => { clearTimeout(giveUp); reject(new Error('audio load error')) }, { once: true })
-        audio.load()
-      })
-
-      audio.onended = () => { clearTimeout(safety); fire() }
-      audio.onerror = () => fallback('playback error')
-
-      // Rejects if the browser blocks autoplay; fall back to the OS voice.
-      await audio.play()
-    } catch (err) {
-      fallback(err?.message || 'unknown')
-    }
+    speakTextBrowser(text, onDone)
   }
 
   /* ── Permissions + stream lifecycle ──────── */
@@ -1778,26 +1597,6 @@ export default function InterviewPage() {
     setCountdown(0)
     addTranscriptRow('interviewer', text)
 
-    // If this question can spawn a follow-up, boot the speech GPU now.
-    //
-    // The timing is the whole point. Scripted questions are served from cache
-    // and never reach Modal, so nothing keeps the container alive and it is
-    // reliably cold whenever a follow-up needs generating live — a cold start
-    // exceeds the client timeout and drops that one question to the browser
-    // voice, which is jarring mid-interview.
-    //
-    // Firing it here means the boot overlaps the 40-60 seconds the candidate
-    // spends answering. A ping to an already-warm container costs about a
-    // second and resets its idle timer, so consecutive adaptive questions keep
-    // it alive for the price of one boot.
-    if (q.adaptive) {
-      fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ warm: true }),
-      }).catch(() => {})
-    }
-
     speakText(text, () => {
       // Do NOT auto-start listening. Speech recognition and the
       // browser's microphone stay closed until the candidate
@@ -1806,8 +1605,6 @@ export default function InterviewPage() {
       setAwaitingStart(true)
     })
 
-    // Get the next question's audio ready while this one is being answered.
-    prefetchTts(questions[index + 1]?.text)
   }
 
   function repeatCurrentQuestion() {
@@ -1897,7 +1694,7 @@ export default function InterviewPage() {
         setTranscript(''); setTypedAnswer(''); setTypingMode(false)
         setIsFollowUp(true)
         addTranscriptRow('interviewer', followUp.text)
-        speakText(followUp.text, () => { setAwaitingStart(true) }, { live: true })
+        speakText(followUp.text, () => { setAwaitingStart(true) })
         return
       }
       // No follow-up warranted, or generation failed — fall through and advance.

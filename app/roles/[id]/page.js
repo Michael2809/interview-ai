@@ -7,7 +7,6 @@ import { awaitingDecision } from '@/lib/decisions'
 import { groupQuestions, interviewShape, canAddCustomQuestion, customQuestionCount, CUSTOM_QUESTION_LIMIT } from '@/lib/questions'
 import CompareModal from '@/components/CompareModal'
 import { mergeCvRows, MAX_BATCH_BYTES } from '@/lib/resumes'
-import { warmTtsCache } from '@/lib/tts'
 import Link from 'next/link'
 import {
   ArrowLeft, Plus, ChevronRight, ChevronDown, MoreHorizontal, Search,
@@ -3636,7 +3635,6 @@ export default function RoleDetailPage() {
     await refreshQuestions()
     // Pre-selected questions WILL be asked, so synthesize their audio now
     // rather than making the first candidate wait on a cold GPU.
-    warmTtsCache(rows.filter((r) => r.approved).map((r) => r.text))
     flashMessage(`Fresh questions drafted for ${stage.name}.`)
   }
 
@@ -3693,7 +3691,6 @@ export default function RoleDetailPage() {
       if (data) setQuestions((prev) => [...prev, data])
       // Custom questions are inserted already approved, so warm their audio
       // straight away for the same reason as handleToggleQuestion.
-      warmTtsCache([text.trim()])
       await refreshQuestions()
       setCustomQuestionStage(null)
       flashMessage('Custom question added.')
@@ -3747,7 +3744,6 @@ export default function RoleDetailPage() {
       await refreshQuestions()
       return
     }
-    warmTtsCache([q.text])
   }
 
   async function handleSkipRequirement(group) {
@@ -3779,8 +3775,6 @@ export default function RoleDetailPage() {
     setQuestions((prev) => prev.map((row) => row.id === q.id ? { ...row, approved: nowApproved } : row))
     // Approving a question means it WILL be asked, so synthesize its audio now
     // rather than making the first candidate wait ~73s on a cold GPU.
-    // Deliberately not awaited — see lib/tts.js.
-    if (nowApproved) warmTtsCache([q.text])
   }
   function handleDeleteQuestion(q) {
     // Route through a confirmation modal — no native window.confirm.
