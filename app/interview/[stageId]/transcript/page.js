@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { scoredQuestionTexts } from '@/lib/interview-questions'
+import { scoredQuestionTexts, INTRO_QUESTIONS } from '@/lib/interview-questions'
 import { EXPIRY_OPTIONS, DEFAULT_EXPIRY } from '@/lib/share'
 import { readCandidateInterview } from '@/lib/transcript'
 import Link from 'next/link'
@@ -2222,13 +2222,17 @@ export default function TranscriptPage() {
   }, [transcriptLines])
 
   const followUps = useMemo(() => {
-    // Follow-ups counted as consecutive interviewer turns
-    let n = 0
-    for (let i = 1; i < transcriptLines.length; i++) {
-      if (transcriptLines[i].speaker === 'interviewer' && transcriptLines[i - 1].speaker === 'interviewer') n++
-    }
-    return n
-  }, [transcriptLines])
+    // Every interviewer line that is not one of the planned questions is
+    // the interviewer reacting to an answer: a follow-up, a "can I ask
+    // why?", a clarification or a nudge back on topic.
+    const planned = new Set(
+      [...INTRO_QUESTIONS.map((q) => q.text), ...questions.map((q) => q.text)]
+        .map((t) => String(t || '').trim()),
+    )
+    return transcriptLines.filter(
+      (l) => l.speaker === 'interviewer' && !planned.has(String(l.content || '').trim()),
+    ).length
+  }, [transcriptLines, questions])
 
   const interruptions = 0  // Not tracked in transcript today.
 

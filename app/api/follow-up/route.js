@@ -5,141 +5,237 @@ const anthropic = new Anthropic({
 })
 
 /**
- * Decide whether the candidate's answer warrants a follow-up, and if so, write
- * one grounded in what they actually said.
+ * The interviewer's next move after the candidate speaks.
  *
- * Returns { followUp: string } or { followUp: null }.
+ * A real interviewer does not ask a question, take the answer and read the
+ * next line off a sheet. They react. Something interesting gets dug into,
+ * something vague gets pinned down, a dodge gets a gentle "can I ask why?",
+ * a misunderstanding gets the question rephrased, and when there is nothing
+ * more to get they say "okay, thanks" and move on.
  *
- * Design notes
- * ------------
- * The model decides IF a follow-up is warranted, not just what it should be.
- * The previous behaviour asked a hardcoded sentence whenever an answer was under
- * 25 words, which was backwards twice over: it prodded candidates who had
- * nothing left to add, and it never probed the long, confident answers where the
- * interesting gaps actually live.
+ * This route is that reaction. It sees the WHOLE exchange on the current
+ * question so far (the question, every follow-up, every answer) and returns
+ * one of two moves:
  *
- * The transcript is raw speech-to-text, so the same caveat as scoring applies —
- * never follow up on how something was said, only on what is missing from it.
+ *   { action: 'ask',     kind, say }   say one more thing and listen again
+ *   { action: 'move_on', kind, say }   close this question, say is a short
+ *                                      closing line spoken before the next one
+ *
+ * The client owns the clock. It tells us how many follow-ups have been asked
+ * and the most it will allow, and it cuts the conversation off itself when
+ * the time budget runs out. This route only decides what a good interviewer
+ * would do next.
+ *
+ * `required` means the first reply on this question may not be a move_on:
+ * every drafted role question gets at least one real reaction, so no
+ * candidate gets a shallower interview than the next one.
  */
 
-const NONE = 'NONE'
+const KINDS = new Set(['probe', 'specifics', 'refusal', 'redirect', 'clarify', 'unclear', 'hypothetical', 'wrap'])
 
 export async function POST(request) {
-  let stageName, level, question, answer, required
+  let body
   try {
-    const body = await request.json()
-    ;({ stageName, level, question, answer, required } = body)
+    body = await request.json()
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!question || !answer || !String(answer).trim()) {
-    return Response.json({ followUp: null })
+  const {
+    stageName, level, roleTitle,
+    question,
+    required = false,
+    maxFollowUps = 3,
+  } = body || {}
+
+  // `thread` is every turn on this question after the original ask:
+  // [{ asked: <what the interviewer said>, answer: <what the candidate said> }]
+  // The first entry's `asked` is the original question itself.
+  // Older clients send a single { question, answer } — accept that too.
+  let thread = Array.isArray(body?.thread) ? body.thread : null
+  if (!thread && body?.answer) thread = [{ asked: question, answer: body.answer }]
+  thread = (thread || [])
+    .filter((t) => t && typeof t.answer === 'string')
+    .map((t) => ({ asked: String(t.asked || ''), answer: String(t.answer || '').slice(0, 4000) }))
+
+  if (!question || thread.length === 0 || !thread[thread.length - 1].answer.trim()) {
+    return Response.json({ action: 'move_on', kind: 'wrap', say: '' })
   }
 
-  // Scored role questions always get exactly one follow-up. An optional
-  // follow-up made the interview a different depth for every candidate,
-  // which puts noise straight into the ranking. `required` removes the
-  // model's option to decline. It must still ground the question in what
-  // the candidate actually said; it just may not skip.
-  const prompt = required
-    ? buildRequiredPrompt({ stageName, level, question, answer })
-    : buildOptionalPrompt({ stageName, level, question, answer })
+  const followUpsAsked = Math.max(0, thread.length - 1)
+  const mustAsk = !!required && followUpsAsked === 0
+  const lastTurn = followUpsAsked + 1 >= maxFollowUps
+
+  const prompt = buildPrompt({
+    stageName, level, roleTitle, question, thread,
+    followUpsAsked, maxFollowUps, mustAsk, lastTurn,
+  })
 
   try {
     const result = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     })
+    const raw = (result.content?.[0]?.text || '').trim()
+    const move = parseMove(raw)
+    if (!move) return Response.json(fallback(mustAsk))
 
-    const text = (result.content?.[0]?.text || '').trim()
+    // The model said move on when it was not allowed to. Rare, but a
+    // required question with no reaction at all is the one thing this
+    // route exists to prevent.
+    if (move.action === 'move_on' && mustAsk) return Response.json(fallback(true))
 
-    // Treat anything that looks like a refusal as "no follow-up". Being strict
-    // here matters: a stray "NONE." reaching the candidate as a spoken question
-    // would be worse than skipping the follow-up entirely.
-    const normalized = text.replace(/[."'\s]/g, '').toUpperCase()
-    if (!text || normalized === NONE || normalized.startsWith(NONE)) {
-      return Response.json({ followUp: null })
-    }
-
-    // A "follow-up" that isn't a question is almost certainly the model
-    // narrating rather than asking. Skip rather than speak it.
-    if (!text.includes('?')) {
-      return Response.json({ followUp: null })
-    }
-
-    return Response.json({ followUp: text })
+    return Response.json(move)
   } catch (error) {
     console.error('follow-up generation failed:', error?.message ?? error)
-    // Fail closed: no follow-up, interview advances normally.
-    return Response.json({ followUp: null })
+    // Fail soft: the interview carries on with a plain closing line.
+    return Response.json({ action: 'move_on', kind: 'wrap', say: '' })
   }
 }
 
-function buildOptionalPrompt({ stageName, level, question, answer }) {
-  return `You are conducting a "${stageName || 'interview'}" interview at "${level || 'standard'}" difficulty.
+/**
+ * Pull the JSON out of the model's reply and hold it to the contract.
+ * Anything that would sound broken when spoken aloud is rejected.
+ */
+function parseMove(raw) {
+  if (!raw) return null
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end <= start) return null
+  let obj
+  try { obj = JSON.parse(raw.slice(start, end + 1)) } catch { return null }
 
-You asked:
-"${question}"
+  const action = obj?.action === 'ask' ? 'ask' : obj?.action === 'move_on' ? 'move_on' : null
+  if (!action) return null
+  const kind = KINDS.has(obj?.kind) ? obj.kind : (action === 'ask' ? 'probe' : 'wrap')
+  let say = typeof obj?.say === 'string' ? obj.say.replace(/\s+/g, ' ').trim() : ''
 
-The candidate answered (this is RAW speech-to-text: no punctuation, and some
-words are misrecognised — judge the substance, never the phrasing):
-"${answer}"
+  // Never read out anything that looks like instructions or markup.
+  if (/[{}<>[\]]|NONE|JSON/.test(say)) return null
 
-Decide whether ONE follow-up question would genuinely add information.
-
-Ask a follow-up only if there is a specific, identifiable gap, such as:
-- they described an outcome but not how they arrived at it
-- they claimed a result with no scale, number or timeframe
-- they described what "we" did without saying what THEY did
-- they named a decision but not the alternatives or trade-offs
-- they answered a different question than the one asked
-
-Do NOT ask a follow-up if:
-- the answer is already specific and complete
-- the only follow-up you can think of is generic ("tell me more", "can you give
-  an example") with no particular gap in mind
-- the candidate clearly has no further experience to draw on — pressing would
-  produce nothing and only make the interview feel adversarial
-
-If a follow-up is warranted, write ONE short, conversational question that
-references something concrete the candidate actually said. Do not preface it.
-Match the "${level || 'standard'}" difficulty.
-
-If no follow-up is warranted, reply with exactly: ${NONE}
-
-Reply with ONLY the question, or ONLY ${NONE}.`
+  if (action === 'ask') {
+    // The prompt asks for a question mark, but a clarifying line like
+    // "Any job is fine, I just mean a time you had a tough target." is a
+    // perfectly good thing to say and still hands the turn back. Only
+    // reject what cannot be spoken: empty or rambling.
+    if (say.length < 8 || say.length > 400) return null
+  } else {
+    // Closing lines stay short. A long one is the model sneaking in a question.
+    if (say.includes('?') || say.length > 120) say = ''
+  }
+  return { action, kind, say }
 }
 
-function buildRequiredPrompt({ stageName, level, question, answer }) {
-  return `You are conducting a "${stageName || 'interview'}" interview at "${level || 'standard'}" difficulty.
+/**
+ * Used only when a reaction is required and the model gave us nothing
+ * usable. Neutral, works after any answer, and still makes the
+ * candidate go one level deeper.
+ */
+function fallback(mustAsk) {
+  if (!mustAsk) return { action: 'move_on', kind: 'wrap', say: '' }
+  return {
+    action: 'ask',
+    kind: 'specifics',
+    say: 'Can you walk me through one specific time that happened, and what you personally did?',
+  }
+}
 
-You asked:
-"${question}"
+function buildPrompt({ stageName, level, roleTitle, question, thread, followUpsAsked, maxFollowUps, mustAsk, lastTurn }) {
+  const exchange = thread.map((t, i) => {
+    const who = i === 0 ? 'YOU ASKED (the main question)' : 'YOU FOLLOWED UP'
+    return `${who}:\n"${t.asked}"\n\nCANDIDATE:\n"${t.answer}"`
+  }).join('\n\n')
 
-The candidate answered (this is RAW speech-to-text: no punctuation, and some
-words are misrecognised - judge the substance, never the phrasing):
-"${answer}"
+  const rules = []
+  if (mustAsk) {
+    rules.push('This is your FIRST reaction to this question. You MUST choose "ask". Every candidate gets at least one real reaction on this question.')
+  }
+  if (lastTurn && !mustAsk) {
+    rules.push(`You have already asked ${followUpsAsked} follow-up${followUpsAsked === 1 ? '' : 's'}. You may ask at most one more. Only ask if it would clearly get something new, otherwise move on.`)
+  }
+  if (followUpsAsked >= maxFollowUps) {
+    rules.push('You have used all your follow-ups on this question. You MUST choose "move_on".')
+  }
 
-Ask exactly ONE follow-up question. You may not decline.
+  return `You are a warm, sharp, experienced human interviewer running a live
+first-round screening interview${roleTitle ? ` for a ${roleTitle} role` : ''}
+("${stageName || 'interview'}", ${level || 'standard'} difficulty). You are
+talking with the candidate right now, out loud. Decide your next move the way
+a good human interviewer would.
 
-Every candidate for this role answers the same questions and gets one
-follow-up on each, so their answers can be compared fairly. Skipping would
-give this candidate a shallower interview than the others.
+The candidate's words are RAW speech-to-text: no punctuation, and some words
+are misrecognised. Judge what they meant, never how they said it.
 
-Choose the single most useful thing to probe, in this order of preference:
-1. A claim with no scale, number, timeframe or outcome behind it
-2. An outcome described without saying how they got there
-3. Something described as "we" where their own part is unclear
-4. A decision named without the alternatives or the trade-off
-5. If the answer was genuinely complete, ask what they would do differently,
-   or how their approach would change under a specific harder constraint
+THE CONVERSATION ON THIS QUESTION SO FAR
+${exchange}
 
-Write ONE short, conversational question that quotes or references something
-concrete the candidate actually said. Never ask about how they spoke, their
-grammar, their fluency or their pace. Do not preface it. Match the
-"${level || 'standard'}" difficulty.
+Read the candidate's LAST reply in the context of everything above, work out
+which of these it is, and react like a person would:
 
-Reply with ONLY the question.`
+1. A real, relevant answer.
+   Pick the single most interesting, surprising, odd or unclear thing they
+   said and dig into it. Good targets: a claim with no number or scale, an
+   outcome with no "how", "we" where their own part is unclear, a decision
+   with no alternatives or trade-off, something that doesn't quite add up
+   with what they said earlier, a detail you are curious about.
+   kind: "probe"
+
+2. Vague or generic ("I'm a team player", "I always communicate well").
+   Ask for one concrete, real example.
+   kind: "specifics"
+
+3. They decline, dodge or ask to skip ("I'd rather not answer", "can we skip
+   this", "I don't want to talk about that", "pass").
+   - If they have NOT declined earlier in this exchange: respond like a kind
+     human. No pressure. Ask, gently, why, and offer an easy way out, e.g.
+     "Sure, no problem. Can I ask what makes you prefer not to go into it? If
+     it's confidential, a different example is completely fine." Adapt it,
+     don't copy it.
+     kind: "refusal", action: "ask"
+   - If they already declined once, OR they gave a reason (confidentiality,
+     NDA, personal), accept it gracefully and move on. Never push twice.
+     If they offered a substitute answer instead, treat it as case 1.
+     kind: "refusal", action: "move_on"
+
+4. Off-topic: they answered a different question.
+   Briefly and politely steer them back to what you actually asked.
+   Only once. If they drift again, move on.
+   kind: "redirect"
+
+5. They ask you something about the question ("what do you mean?", "like in
+   my current job?"). Rephrase or clarify the question simply, then ask it
+   again. kind: "clarify"
+
+6. Unclear or garbled, looks like the microphone failed or it's nonsense.
+   If it looks like a transcription problem, ask them to say that again.
+   If it is deliberate nonsense or a joke, redirect once, then move on.
+   kind: "unclear"
+
+7. "I don't know" or "I haven't done that".
+   Once, ask how they WOULD approach it, or about the closest thing they
+   have done. If they still have nothing, move on kindly.
+   kind: "hypothetical"
+
+8. Complete, and nothing new is worth getting. Move on.
+   kind: "wrap"
+
+HOW YOU TALK
+- One short, natural, spoken sentence or two. You can start with a brief
+  human acknowledgement ("Okay.", "Got it.", "Interesting.", "Right.") but
+  not every time, and never praise or judge the answer ("Great answer",
+  "Perfect", "That's wrong").
+- When you probe, refer to something they ACTUALLY said, in plain words.
+- Ask only ONE question at a time, and end with it, so the candidate knows
+  it's their turn.
+- Never ask about their grammar, accent, fluency or pace.
+- Never reveal what the role is looking for or how they are being scored.
+- Don't repeat a follow-up you already asked.
+- Keep it professional and kind, even if the answer was rude or silly.
+- When you move on, "say" is a short closing line of 2 to 6 words with NO
+  question mark, like "Okay, thanks for that." or "Got it, let's move on."
+  or "No problem at all." It is spoken just before the next question.
+${rules.length ? '\nLIMITS FOR THIS TURN\n- ' + rules.join('\n- ') + '\n' : ''}
+Reply with ONLY this JSON, nothing else:
+{"action": "ask" | "move_on", "kind": "<one of: probe, specifics, refusal, redirect, clarify, unclear, hypothetical, wrap>", "say": "<exactly what you will say out loud>"}`
 }

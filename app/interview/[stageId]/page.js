@@ -32,7 +32,10 @@ const STORAGE_TIMEOUT_MS = 90 * 1000
    row that has not landed in ~2.5s of trying is not going to. */
 const TRANSCRIPT_BACKOFFS = [0, 400, 900, 1200]
 const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000   // 2 hours to allow a retry
-const AVG_SECONDS_PER_QUESTION = 45           // used for the "N minutes remaining" estimate
+// Used for the "about N minutes" estimates. An average across the whole
+// interview: the three openers take about a minute each, a role question
+// with its back-and-forth takes three to four.
+const AVG_SECONDS_PER_QUESTION = 150
 
 function storageKey(stageId) { return 'recrewt:interview:' + stageId }
 
@@ -679,7 +682,7 @@ function HowToScreen({ recruiter, questionCount, onBack, onContinue }) {
     { n: '01', label: "You'll hear one question at a time.", sub: 'Wait until it finishes speaking, then answer.' },
     { n: '02', label: 'Take a moment to think.',              sub: 'Silence is fine. Start whenever you’re ready.' },
     { n: '03', label: 'Speak your answer.',                   sub: 'Aim for 30 seconds to 2 minutes per question.' },
-    { n: '04', label: 'A follow-up may appear.',              sub: 'Answer it the same way.' },
+    { n: '04', label: 'I’ll react to what you say.',          sub: 'Like a real interviewer, I may ask a follow-up or two. Answer them the same way.' },
     { n: '05', label: `After ${questionCount} questions, we’re done.`, sub: `Your responses go to ${recruiter || 'your recruiter'}.` },
   ]
   return (
@@ -766,16 +769,16 @@ function toAiQuestion(row) {
   // other, and of course they scored differently. Same shape for
   // everyone, so the scores mean the same thing.
   //
-  // The exception is a question the recruiter wrote themselves. That
-  // wording is already exactly what they meant to ask, and chasing it
-  // with a generated "can you say more about that" reads as the machine
-  // second-guessing them. Still scored, just not followed up — and
-  // every candidate gets the same treatment, so the shape holds.
+  // A question the recruiter wrote themselves is not forced: their
+  // wording is already exactly what they meant to ask. It is still
+  // conversational, though. If the candidate dodges, drifts or says
+  // something worth digging into, the interviewer reacts, like a person
+  // would.
   const custom = row?.source === 'custom'
   return {
     ...row,
     type: 'ai',
-    adaptive: !custom,
+    adaptive: true,
     requireFollowUp: !custom,
     scored: true,
     recorded: true,
@@ -1162,7 +1165,6 @@ export default function InterviewPage() {
   const [typingMode, setTypingMode] = useState(false)
   const [typedAnswer, setTypedAnswer] = useState('')
   const [isFollowUp, setIsFollowUp] = useState(false)
-  const [askedFollowUp, setAskedFollowUp] = useState(false)
   // Set to true after AI TTS finishes; the mic never opens until the
   // candidate clicks the visible "Ready to Answer" CTA. This guarantees
   // the interviewer's own voice is never captured by speech
@@ -1216,6 +1218,16 @@ export default function InterviewPage() {
   const utteranceRef          = useRef(null)
   const finishedAtRef         = useRef(null)
   const recordingStartRef     = useRef(null)
+
+  /* The conversation on the current question.
+     threadRef holds every turn since the question was asked:
+     [{ asked, answer }], first entry is the question itself. The
+     interviewer's next move is decided from the whole thread, the way a
+     person remembers what was said a minute ago. */
+  const threadRef             = useRef([])
+  const questionStartRef      = useRef(0)
+  const liveStartRef          = useRef(0)
+  const closingIndexRef       = useRef(0)
 
   /* ── Preview binding ─────────────────────── */
   useEffect(() => {
@@ -1369,6 +1381,18 @@ export default function InterviewPage() {
   // Ceiling on deciding whether to ask a follow-up. The candidate is sitting on
   // a transition screen while this runs, so it has to be short.
   const FOLLOWUP_TIMEOUT_MS = 7000
+
+  /* Guardrails that keep a conversational interview to about 30 minutes.
+     They are ceilings, not targets: a candidate with short answers gets
+     fewer follow-ups and finishes sooner. */
+  const MAX_FOLLOWUPS_PER_QUESTION = 3
+  const QUESTION_BUDGET_MS = 4 * 60 * 1000
+  // The live part only. Warm-up before it and candidate Q&A after it are
+  // extra, which lands the whole thing at roughly 30 minutes.
+  const LIVE_BUDGET_MS = 26 * 60 * 1000
+  // Time each question still to come should have left for it. When the
+  // clock says we can't give them that, follow-ups get cut to one.
+  const MIN_MS_PER_REMAINING_QUESTION = 2 * 60 * 1000
 
   function stopSpeaking() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -1580,10 +1604,14 @@ export default function InterviewPage() {
     setStep('live')
     setCurrentIndex(0)
     setIsFollowUp(false)
+    liveStartRef.current = Date.now()
     askQuestion(0, false)
   }
 
-  function askQuestion(index, followUp) {
+  /* `preface` is the interviewer's short closing line on the previous
+     question ("Okay, thanks for that."). It is spoken, not written:
+     the screen and the transcript show the question alone. */
+  function askQuestion(index, followUp, preface = '') {
     if (index >= questions.length) { finishInterview(); return }
     const q = questions[index]
     const text = q.text
@@ -1592,12 +1620,14 @@ export default function InterviewPage() {
     setTypedAnswer('')
     setTypingMode(false)
     setIsFollowUp(!!followUp)
-    setAskedFollowUp(false)
     setAwaitingStart(false)
     setCountdown(0)
+    threadRef.current = [{ asked: text, answer: null }]
+    questionStartRef.current = Date.now()
     addTranscriptRow('interviewer', text)
 
-    speakText(text, () => {
+    const spoken = preface ? `${preface} ${text}` : text
+    speakText(spoken, () => {
       // Do NOT auto-start listening. Speech recognition and the
       // browser's microphone stay closed until the candidate
       // explicitly clicks "Ready to Answer" — otherwise the AI's TTS
@@ -1672,56 +1702,93 @@ export default function InterviewPage() {
       await addTranscriptRow('candidate', answer)
     }
 
-    // Adaptive follow-up: gated on question.adaptive, not on type
-    // equality. New question types automatically inherit correct
-    // behaviour by declaring adaptive:true|false.
-    //
-    // The DECISION to follow up belongs to /api/follow-up, which sees the
-    // actual answer. It used to be a word-count test here, which was backwards:
-    // it prodded candidates who had nothing left to say, and never probed the
-    // long confident answers where the real gaps are.
-    const canFollowUp = !!currentQ?.adaptive && !askedFollowUp && !isFollowUp
-    if (canFollowUp) {
-      setAskedFollowUp(true)
-      setStep('transition')
-
-      const followUpText = await requestFollowUp(currentQ.text, answer, !!currentQ.requireFollowUp)
-
-      if (followUpText) {
-        setStep('live')
-        const followUp = makeFollowupQuestion(followUpText)
-        setCurrentQuestion(followUp.text)
-        setTranscript(''); setTypedAnswer(''); setTypingMode(false)
-        setIsFollowUp(true)
-        addTranscriptRow('interviewer', followUp.text)
-        speakText(followUp.text, () => { setAwaitingStart(true) })
-        return
-      }
-      // No follow-up warranted, or generation failed — fall through and advance.
-      // Deliberately NOT falling back to a canned "tell me more": a generic
-      // prod with no gap behind it is what this change exists to remove.
+    // Keep the whole back-and-forth on this question, so the next move is
+    // decided from everything said so far, not just the last line.
+    const thread = threadRef.current
+    if (thread.length && thread[thread.length - 1].answer == null) {
+      thread[thread.length - 1].answer = answer
+    } else {
+      thread.push({ asked: currentQuestion, answer })
     }
 
-    // Otherwise advance to next question
+    // Openers and practice questions are not conversational: they move on.
+    if (!currentQ?.adaptive) { advance(''); return }
+
+    const followUpsAsked = thread.length - 1
+    const mustAsk = !!currentQ.requireFollowUp && followUpsAsked === 0
+
+    /* The clock. A human interviewer keeps an eye on time too.
+       - No question runs past QUESTION_BUDGET_MS of back-and-forth.
+       - If the interview is running behind, later questions get one
+         reaction instead of three, so it still finishes on time.
+       The first reaction on a drafted question is never cut: every
+       candidate gets at least that, so their interviews stay comparable. */
+    const now = Date.now()
+    const questionElapsed = now - (questionStartRef.current || now)
+    const liveElapsed = now - (liveStartRef.current || now)
+    const questionsLeft = questions.length - currentIndex - 1
+    const timeLeft = LIVE_BUDGET_MS - liveElapsed
+    const behind = timeLeft <= 0 || timeLeft < questionsLeft * MIN_MS_PER_REMAINING_QUESTION
+    const maxFollowUps = behind ? 1 : MAX_FOLLOWUPS_PER_QUESTION
+
+    const outOfTurns = followUpsAsked >= maxFollowUps
+    const outOfTime = questionElapsed >= QUESTION_BUDGET_MS
+    if (!mustAsk && (outOfTurns || outOfTime)) {
+      advance(followUpsAsked > 0 ? nextClosingLine() : '')
+      return
+    }
+
+    setStep('transition')
+    const move = await requestNextMove(currentQ.text, thread, {
+      required: mustAsk,
+      maxFollowUps,
+    })
+
+    if (move?.action === 'ask' && move.say) {
+      thread.push({ asked: move.say, answer: null })
+      setStep('live')
+      setCurrentQuestion(move.say)
+      setTranscript(''); setTypedAnswer(''); setTypingMode(false)
+      setIsFollowUp(true)
+      addTranscriptRow('interviewer', move.say)
+      speakText(move.say, () => { setAwaitingStart(true) })
+      return
+    }
+
+    // Moving on. Use the interviewer's own closing line when it gave one,
+    // otherwise a plain one if there was any back-and-forth at all.
+    const closing = move?.say || (followUpsAsked > 0 ? nextClosingLine() : '')
+    advance(closing)
+  }
+
+  /** Close the current question and ask the next one. */
+  function advance(closing) {
     const next = currentIndex + 1
+    setIsFollowUp(false)
     setStep('transition')
     setTimeout(() => {
       if (next >= questions.length) { setStep('candidate-qa'); return }
       setCurrentIndex(next)
       setStep('live')
-      askQuestion(next, false)
+      askQuestion(next, false, closing)
     }, 700)
   }
 
+  function nextClosingLine() {
+    const lines = ['Okay, thank you.', 'Got it, thanks.', 'Alright, thanks for that.', 'Okay, that helps.']
+    const line = lines[closingIndexRef.current % lines.length]
+    closingIndexRef.current += 1
+    return line
+  }
+
   /**
-   * Ask the server whether this answer deserves a follow-up.
-   * Returns the question text, or null to move on.
+   * Ask the interviewer brain what to do next on this question.
+   * Returns { action: 'ask' | 'move_on', kind, say } or null.
    *
-   * Bounded by a timeout because this runs mid-interview with a candidate
-   * watching a transition screen. If Claude is slow we advance rather than
-   * leave them staring at nothing.
+   * Bounded by a timeout because the candidate is watching a transition
+   * screen. If Claude is slow we move on rather than leave them waiting.
    */
-  async function requestFollowUp(question, answer, required = false) {
+  async function requestNextMove(question, thread, { required = false, maxFollowUps = MAX_FOLLOWUPS_PER_QUESTION } = {}) {
     try {
       const res = await fetch('/api/follow-up', {
         method: 'POST',
@@ -1729,16 +1796,22 @@ export default function InterviewPage() {
         body: JSON.stringify({
           stageName: stage?.name || 'Interview',
           level: stage?.level || 'standard',
+          roleTitle: role?.title || '',
           question,
-          answer,
+          thread: thread.map((t) => ({ asked: t.asked, answer: t.answer || '' })),
           required,
+          maxFollowUps,
         }),
         signal: AbortSignal.timeout(FOLLOWUP_TIMEOUT_MS),
       })
       if (!res.ok) return null
       const data = await res.json()
-      const text = typeof data?.followUp === 'string' ? data.followUp.trim() : ''
-      return text || null
+      if (data?.action !== 'ask' && data?.action !== 'move_on') return null
+      return {
+        action: data.action,
+        kind: data.kind || '',
+        say: typeof data.say === 'string' ? data.say.trim() : '',
+      }
     } catch (err) {
       console.warn('[follow-up] skipped:', err?.message || err)
       return null

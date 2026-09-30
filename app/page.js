@@ -682,8 +682,8 @@ export default function LandingPage() {
           </div>
           <div className="s2-feat">
             <span className="s2-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 10.8L15.8 7.2M8.2 13.2L15.8 16.8"/></svg></span>
-            <b>One intelligent follow-up</b>
-            <p>For every answer, the AI generates one sharp, contextual follow-up.</p>
+            <b>Follow-ups like a real interviewer</b>
+            <p>It digs into what the candidate actually said, asks why when they dodge, and moves on when there&rsquo;s nothing more to get.</p>
           </div>
         </div>
       </div>

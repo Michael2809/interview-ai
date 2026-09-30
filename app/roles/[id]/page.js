@@ -1583,7 +1583,7 @@ function StageEditPanel({
           </h4>
           {shape.picked > 0 && (
             <p className="mt-1.5 text-[13px] tabular-nums text-[color:var(--color-rc-muted)]">
-              About {shape.minutes} minutes · {shape.answers} recorded answers
+              About {shape.minutes} minutes · around {shape.answers} answers
             </p>
           )}
         </div>
@@ -1682,8 +1682,9 @@ function StageEditPanel({
       {(groups.length > 0 || untagged.length > 0 || custom.length > 0) && (
         <p className="mt-5 text-[12px] leading-relaxed text-[color:var(--color-rc-muted)]">
           Candidates also get a practice question that is not recorded, three opening
-          questions about themselves and their background, and one follow-up on each
-          drafted question above. The openers are transcribed and shown to you, but
+          questions about themselves and their background, and a real back-and-forth
+          on each question above: the AI reacts to what they say with one to three
+          follow-ups. The openers are transcribed and shown to you, but
           none of them move the score.
         </p>
       )}
@@ -3670,8 +3671,8 @@ export default function RoleDetailPage() {
     }
     setSavingCustomQuestion(true)
     try {
-      // source: 'custom' is what stops the interview page chasing this
-      // with a generated follow-up, and what labels it "your question"
+      // source: 'custom' makes follow-ups optional on this question (the
+      // recruiter's wording stands on its own), and labels it "your question"
       // on the transcript instead of a JD requirement.
       const payload = { stage_id: stage.id, text: text.trim(), approved: true, covers: null, source: 'custom' }
       const { data, error } = await supabase

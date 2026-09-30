@@ -271,6 +271,17 @@ Rules:
 - Every strength and concern MUST have an evidence sentence rooted in what the candidate said.
 - A concern must be about substance. Never raise a concern about grammar,
   fluency, filler words, punctuation or transcription quality.
+- The interview is a conversation. After each main question the interviewer
+  may react: follow-ups, a gentle "can I ask why?", a clarification, or a
+  nudge back on topic. Everything between one main question and the next
+  belongs to that main question. Judge it on the WHOLE exchange: a thin first
+  answer that becomes specific under follow-up earns credit for what it
+  became.
+- If the candidate declined to answer: a plain refusal with no reason and
+  nothing offered instead counts as not answered (0.0-3.9) and lowers
+  coverage_percent, and list it as a concern with their words. If they gave a
+  legitimate reason (confidentiality, an NDA) and answered in general terms or
+  with another example, judge that answer and do not penalise the refusal.
 - Include one question_reviews entry per asked question if you can identify their answer, otherwise omit that entry.
 - Use these bands for the top-level score: 8.5+ = Strong Hire, 6.5-8.4 = Hire, 4.5-6.4 = Hold, <4.5 = Reject.`
 }
