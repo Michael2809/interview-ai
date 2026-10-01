@@ -34,7 +34,7 @@ const LANDING_JSON_LD = {
       contactPoint: {
         '@type': 'ContactPoint',
         contactType: 'sales',
-        email: 'hello@recrewtai.com',
+        email: 'support@recrewtai.com',
         url: 'https://calendly.com/mike-recrewtai',
       },
     },
@@ -1306,7 +1306,7 @@ export default function LandingPage() {
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </nav>
-      <a className="ft-email" href="mailto:hello@recrewtai.com">hello@recrewtai.com</a>
+      <a className="ft-email" href="mailto:support@recrewtai.com">support@recrewtai.com</a>
     </div>
     <div className="ft-bottom">
       <span>© {new Date().getFullYear()} Recrewt AI. All rights reserved.</span>

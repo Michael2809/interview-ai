@@ -390,7 +390,7 @@ export default function SubscriptionPage() {
 
   async function handleChoosePlan(plan) {
     if (plan.key === PLAN_KEYS.ENTERPRISE) {
-      window.location.href = 'mailto:hello@recrewtai.com?subject=Recrewt%20Enterprise%20enquiry'
+      window.location.href = 'mailto:support@recrewtai.com?subject=Recrewt%20Enterprise%20enquiry'
       return
     }
     if (changingPlan) return
@@ -595,7 +595,7 @@ export default function SubscriptionPage() {
               <ComingSoonTile
                 icon={<CreditCard size={16} aria-hidden="true" />}
                 title="Managed by Dodo Payments"
-                description="Your card details are held by Dodo, never by Recrewt. To update a card, change billing details or retrieve an invoice, use the receipt email from your last payment, or email hello@recrewtai.com and we'll sort it out."
+                description="Your card details are held by Dodo, never by Recrewt. To update a card, change billing details or retrieve an invoice, use the receipt email from your last payment, or email support@recrewtai.com and we'll sort it out."
               />
             </Section>
 
@@ -656,7 +656,7 @@ export default function SubscriptionPage() {
                     Questions about your subscription, an early billing preview, or Enterprise details? Reach out and we&rsquo;ll get back within one business day.
                   </p>
                 </div>
-                <Button as="a" href="mailto:hello@recrewtai.com?subject=Subscription%20help" variant="secondary" size="sm">
+                <Button as="a" href="mailto:support@recrewtai.com?subject=Subscription%20help" variant="secondary" size="sm">
                   Email support
                 </Button>
               </div>
