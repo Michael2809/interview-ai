@@ -89,7 +89,7 @@ const LANDING_JSON_LD = {
           price: '620',
           priceCurrency: 'USD',
           description:
-            '500 candidates per month, unlimited hiring roles, full sentiment analysis.',
+            '500 candidates per month, unlimited hiring roles, priority support.',
           availability: 'https://schema.org/InStock',
           url: `${SITE_URL}/#pricing`,
           priceSpecification: {
@@ -527,34 +527,40 @@ export default function LandingPage() {
       </a>
       <div className="hd-actions">
         <p className="hd-line" id="hdLine">Adaptive AI interviews for modern hiring teams.</p>
+        <nav className="hd-nav" aria-label="Main">
+          <a href="#how-it-works">How it works</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#trust">Trust</a>
+        </nav>
         <a className="hd-login" href="/login">Log in</a>
+        <a className="hd-demo" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a demo</a>
       </div>
     </header>
 
     {/* hero copy */}
     <div className="hero-copy" id="heroCopy">
-      <p className="hc-eyebrow">Meet your AI Hiring Consultant.</p>
+      <p className="hc-eyebrow">AI interviewer for hiring teams</p>
       <h1 className="hc-headline" id="hc-headline">
         Every candidate <em>screened.</em>
         <span className="l2">Before your team spends a minute.</span>
       </h1>
       <p className="hc-sub" id="heroSub">
-        Recrewt AI interviews every candidate, asks intelligent follow-up
-        questions, analyzes every response, and gives your team the insights
-        needed to make confident hiring decisions.
+        Recrewt AI interviews each applicant on video, asks follow-up
+        questions about what they actually said, and gives your team scored
+        answers with the reasons behind each score.
       </p>
       <div className="hc-actions">
         <a className="btn btn-primary" href="#pricing">
-          Start Hiring Smarter <span className="arrow" aria-hidden="true">→</span>
+          Get started <span className="arrow" aria-hidden="true">→</span>
         </a>
-        <a className="btn btn-secondary" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a Demo</a>
+        <a className="btn btn-secondary" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a demo</a>
       </div>
     </div>
 
     {/* story notes — asymmetric, in the desk's negative space */}
-    <div className="note" id="hn1" aria-hidden="true"><span className="idx">01</span><p className="ht">Evaluations accumulate.</p></div>
-    <div className="note" id="hn2" aria-hidden="true"><span className="idx">02</span><p className="ht">Operations become increasingly heavy.</p></div>
-    <div className="note" id="hn3" aria-hidden="true"><span className="idx">03</span><p className="ht">Peak workload.</p></div>
+    <div className="note" id="hn1" aria-hidden="true"><span className="idx">01</span><p className="ht">200 applications. One open role.</p></div>
+    <div className="note" id="hn2" aria-hidden="true"><span className="idx">02</span><p className="ht">The pile keeps growing.</p></div>
+    <div className="note" id="hn3" aria-hidden="true"><span className="idx">03</span><p className="ht">Recrewt interviews all of them.</p></div>
 
     {/* payoff — calm, human, in the final frame's negative space */}
     <div className="payoff" id="payoff" aria-hidden="true">
@@ -566,13 +572,35 @@ export default function LandingPage() {
 </div>
 
 {/* ============================================================
+     SITE NAV — sits after the hero in the DOM, so it slides in as the
+     hero finishes and then sticks. No JS; the hero is untouched.
+     ============================================================ */}
+<header className="site-nav">
+  <div className="sn-inner">
+    <a className="sn-logo" href="#hero" aria-label="Recrewt AI, back to top">
+      <img src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" loading="lazy" decoding="async" />
+    </a>
+    <nav className="sn-links" aria-label="Sections">
+      <a href="#how-it-works">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#trust">Trust</a>
+    </nav>
+    <div className="sn-actions">
+      <a className="sn-login" href="/login">Log in</a>
+      <a className="sn-btn sn-btn-sec" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a demo</a>
+      <a className="sn-btn sn-btn-pri" href="#pricing">Get started</a>
+    </div>
+  </div>
+</header>
+
+{/* ============================================================
      BRAND INTERLUDE — the white canvas becomes a brand belief card
      ============================================================ */}
 <section className="interlude" id="interlude" aria-label="Recrewt AI">
   <div className="il-pin">
     <div className="il-inner">
       <img className="il-logo" src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" loading="lazy" decoding="async" />
-      <h2 className="il-belief">Every candidate deserves <em>a conversation.</em><br />Now you can afford to have one.</h2>
+      <h2 className="il-belief">Most applicants never get <em>a conversation.</em><br />Now all of them can.</h2>
     </div>
   </div>
 </section>
@@ -581,9 +609,9 @@ export default function LandingPage() {
      ============================================================ */}
 <section className="how" id="how-it-works" aria-labelledby="how-heading">
   <div className="container how-head reveal">
-    <p className="eyebrow-2">THE PROCESS</p>
+    <p className="eyebrow-2">How it works</p>
     <h2 id="how-heading">Three steps.<br /><em>One great hire.</em></h2>
-    <p className="how-sub">Spend time choosing candidates. Not screening them.</p>
+    <p className="how-sub">Spend your time choosing candidates, not screening them.</p>
   </div>
 
   <div className="container how-body" id="howBody">
@@ -597,17 +625,17 @@ export default function LandingPage() {
     {/* 01 · editorial two-column (reference match) */}
     <article className="step1" id="chapter1">
       <div className="s1-left reveal">
-        <span className="s1-num">01</span>
-        <h3 className="s1-title">Create the role<span className="dot">.</span></h3>
+        <span className="s1-num">Step 1 of 3</span>
+        <h3 className="s1-title">Create the role.</h3>
         <p className="s1-copy">
-          Define the role and experience level. Recrewt prepares relevant
-          interview questions, or uses the candidate's resume to make them
-          more specific. Review, edit, and choose exactly what gets asked.
+          Describe the role and the level you need. Recrewt drafts the
+          interview questions. Add a candidate's resume and they get specific
+          to that person. Review, edit and choose exactly what gets asked.
         </p>
         <ul className="s1-features">
-          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg></span><b>Resume upload optional</b></li>
-          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><b>Questions fully editable</b></li>
-          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.7 5.1L19 9l-5.3 1.9L12 16l-1.7-5.1L5 9l5.3-1.9L12 2z"/></svg></span><b>You choose what gets asked</b></li>
+          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg></span><b>Resume upload optional</b></li>
+          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span><b>Questions fully editable</b></li>
+          <li className="s1-feat"><span className="s1-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 6h9M11 12h9M11 18h9"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><b>You choose what gets asked</b></li>
         </ul>
       </div>
 
@@ -624,7 +652,7 @@ export default function LandingPage() {
               <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 20h16"/><rect x="5" y="12" width="3.4" height="6" rx="1"/><rect x="10.3" y="7" width="3.4" height="11" rx="1"/><rect x="15.6" y="9.5" width="3.4" height="8.5" rx="1"/></svg><span>Reports</span></a>
               <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg><span>Settings</span></a>
             </nav>
-            <div className="cr-user"><span className="cr-av"></span><span><b>Arjun Mehta</b><em>Hiring Manager</em></span></div>
+            <div className="cr-user"><span className="cr-av">AM</span><span><b>Arjun Mehta</b><em>Hiring Manager</em></span></div>
           </aside>
           <div className="cr-main">
             <div className="cr-head">
@@ -632,17 +660,17 @@ export default function LandingPage() {
               <span className="cr-btn">Create Role</span>
             </div>
             <div className="cr-form">
-              <div className="cr-field"><label>Role Title</label><div className="cr-input">e.g. Senior Product Designer</div></div>
+              <div className="cr-field"><label>Role Title</label><div className="cr-input cr-filled">Senior Product Designer</div></div>
               <div className="cr-grid">
-                <div className="cr-field"><label>Job Description</label><div className="cr-textarea">Enter a brief description of the role and key responsibilities…</div></div>
+                <div className="cr-field"><label>Job Description</label><div className="cr-textarea cr-filled">Own the end-to-end design of our onboarding and activation flows. Work with product and engineering from research to ship.</div></div>
                 <div className="cr-col">
-                  <div className="cr-field"><label>Job Category</label><div className="cr-select">Select category <em>▾</em></div></div>
-                  <div className="cr-field"><label>Specialization <em>(Optional)</em></label><div className="cr-select">Select specialization <em>▾</em></div></div>
+                  <div className="cr-field"><label>Job Category</label><div className="cr-select cr-filled">Design <em>▾</em></div></div>
+                  <div className="cr-field"><label>Specialization <em>(Optional)</em></label><div className="cr-select cr-filled">Product design <em>▾</em></div></div>
                 </div>
               </div>
               <div className="cr-two">
-                <div className="cr-field"><label>Experience Level</label><div className="cr-select">Select experience level <em>▾</em></div></div>
-                <div className="cr-field"><label>Employment Type</label><div className="cr-select">Select employment type <em>▾</em></div></div>
+                <div className="cr-field"><label>Experience Level</label><div className="cr-select cr-filled">5 to 8 years <em>▾</em></div></div>
+                <div className="cr-field"><label>Employment Type</label><div className="cr-select cr-filled">Full-time <em>▾</em></div></div>
               </div>
             </div>
             <div className="cr-roles">
@@ -650,9 +678,9 @@ export default function LandingPage() {
               <table className="cr-table">
                 <thead><tr><th>Role Title</th><th>Category</th><th>Experience</th><th>Created On</th><th>Status</th></tr></thead>
                 <tbody>
-                  <tr><td>Senior Product Designer</td><td>Design</td><td>3 – 5 years</td><td>12 May 2025</td><td><span className="cr-badge">Active</span></td></tr>
-                  <tr><td>Frontend Developer</td><td>Engineering</td><td>2 – 4 years</td><td>10 May 2025</td><td><span className="cr-badge">Active</span></td></tr>
-                  <tr><td>Marketing Associate</td><td>Marketing</td><td>1 – 3 years</td><td>08 May 2025</td><td><span className="cr-badge">Active</span></td></tr>
+                  <tr><td>Frontend Developer</td><td>Engineering</td><td>3 – 5 years</td><td>24 Sep 2026</td><td><span className="cr-badge">Active</span></td></tr>
+                  <tr><td>Customer Success Lead</td><td>Operations</td><td>4 – 6 years</td><td>18 Sep 2026</td><td><span className="cr-badge">Active</span></td></tr>
+                  <tr><td>Marketing Associate</td><td>Marketing</td><td>1 – 3 years</td><td>11 Sep 2026</td><td><span className="cr-badge">Active</span></td></tr>
                 </tbody>
               </table>
             </div>
@@ -665,8 +693,8 @@ export default function LandingPage() {
     <article className="step2" id="chapter2">
       <div className="s2-header reveal">
         <div className="s2-intro">
-          <span className="s1-num">02</span>
-          <h3 className="s1-title">AI runs the interview<span className="dot">.</span></h3>
+          <span className="s1-num">Step 2 of 3</span>
+          <h3 className="s1-title">AI runs the interview.</h3>
           <p>Recrewt’s AI conducts natural, adaptive interviews that adjust in real time. Every answer unlocks deeper insights and better follow-ups.</p>
         </div>
         <div className="s2-features">
@@ -677,13 +705,13 @@ export default function LandingPage() {
           </div>
           <div className="s2-feat">
             <span className="s2-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.4"/><path d="M16 10l5-3v10l-5-3z"/></svg></span>
-            <b>Video enabled</b>
-            <p>Face-to-face conversations create a more human and authentic experience.</p>
+            <b>Face to face on video</b>
+            <p>Closer to a real conversation than a form, and easier to judge.</p>
           </div>
           <div className="s2-feat">
-            <span className="s2-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 10.8L15.8 7.2M8.2 13.2L15.8 16.8"/></svg></span>
-            <b>Follow-ups like a real interviewer</b>
-            <p>It digs into what the candidate actually said, pushes a strong answer one step harder, and moves on when there&rsquo;s nothing more to get.</p>
+            <span className="s2-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M10 9.3a2 2 0 112.6 1.9c-.4.2-.6.5-.6.9M12 13.8h.01"/></svg></span>
+            <b>Real follow-ups</b>
+            <p>Digs into what the candidate said and moves on when there&rsquo;s nothing more to get.</p>
           </div>
         </div>
       </div>
@@ -691,26 +719,30 @@ export default function LandingPage() {
       <div className="reveal">
         <div className="cr-app cr-app-iv" role="img" aria-label="Recrewt AI - Live candidate interview screen">
           <aside className="cr-side">
-            <div className="cr-brand">recrewt<em>.</em></div>
+            <div className="cr-brand">Recrewt <span>AI</span></div>
             <nav className="cr-nav">
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Dashboard</span></a>
               <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5.5A2 2 0 0110 3.5h4a2 2 0 012 2V7"/></svg><span>Roles</span></a>
-              <a className="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"><path d="M4 5h16v11H8l-4 3z"/></svg><span>Interviews</span></a>
-              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 20h16"/><rect x="5" y="12" width="3.4" height="6" rx="1"/><rect x="10.3" y="7" width="3.4" height="11" rx="1"/><rect x="15.6" y="9.5" width="3.4" height="8.5" rx="1"/></svg><span>Results</span></a>
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.5a3 3 0 010 5.7M20 20a5 5 0 00-4-4.9"/></svg><span>Candidates</span></a>
+              <a className="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><span>Interviews</span></a>
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3"/></svg><span>AI Agents</span></a>
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 20h16"/><rect x="5" y="12" width="3.4" height="6" rx="1"/><rect x="10.3" y="7" width="3.4" height="11" rx="1"/><rect x="15.6" y="9.5" width="3.4" height="8.5" rx="1"/></svg><span>Reports</span></a>
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg><span>Settings</span></a>
             </nav>
             <div className="cr-user"><span className="cr-av">AM</span><span><b>Arjun Mehta</b><em>Hiring Manager</em></span></div>
           </aside>
           <div className="cr-main">
             <div className="iv-head">
               <div className="iv-identity">
-                <span className="iv-avatar" aria-hidden="true"><i className="live-pulse"></i></span>
+                <span className="iv-avatar" aria-hidden="true"><img src="/assets/candidates/candidate-01.jpg" alt="" loading="lazy" decoding="async" /><i className="live-pulse"></i></span>
                 <div className="iv-labels">
-                  <b>Candidate</b>
-                  <em>Live Interview</em>
+                  <b>Priya Nair</b>
+                  <em>Senior Product Designer · Live interview</em>
                 </div>
               </div>
               <div className="iv-meta">
-                <span className="iv-q">Q2 of 8</span>
-                <span className="iv-rec"><i></i>REC 12:47</span>
+                <span className="iv-q">Question 2 of 8</span>
+                <span className="iv-rec"><i></i>REC 04:12</span>
               </div>
             </div>
 
@@ -725,29 +757,29 @@ export default function LandingPage() {
                        decoding="async" />
                 </picture>
                 <span className="iv-live-tag" aria-label="Live"><i></i>LIVE</span>
-                <span className="iv-badge"><i></i>Candidate</span>
+                <span className="iv-badge"><i></i>Priya Nair</span>
               </div>
 
               <div className="iv-transcript iv-grid">
                 <div className="iv-turn turn-ai">
                   <span className="iv-ava" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.6 4.8L18 9.4l-4.4 1.6L12 15.8l-1.6-4.8L6 9.4l4.4-1.6L12 3z"/></svg></span>
                   <div className="iv-bubble">
-                    <p>Q2. Can you walk me through a time you solved a complex design problem?</p>
-                    <span className="iv-ts">12:45 PM</span>
+                    <p>Can you walk me through a time you solved a complex design problem?</p>
+                    <span className="iv-ts">03:05</span>
                   </div>
                 </div>
                 <div className="iv-turn turn-me" id="ivAnswer">
-                  <span className="iv-ava ava-c" aria-hidden="true">C</span>
+                  <span className="iv-ava ava-c" aria-hidden="true">P</span>
                   <div className="iv-bubble">
                     <p>Sure. In my last role, we were redesigning our onboarding flow, but user drop-off was still high. I dug into the data and found that most users weren’t completing the key action because <mark id="ivPhrase">the value wasn’t clear early enough.</mark></p>
-                    <span className="iv-ts">12:46 PM</span>
+                    <span className="iv-ts">03:20</span>
                   </div>
                 </div>
                 <div className="iv-turn turn-follow" id="ivFollowup">
                   <span className="iv-ava" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l1.6 4.8L18 9.4l-4.4 1.6L12 15.8l-1.6-4.8L6 9.4l4.4-1.6L12 3z"/></svg></span>
                   <div className="iv-bubble">
                     <p><b>Follow-up:</b> What specific change did you make to make the value clearer?</p>
-                    <span className="iv-ts">12:46 PM</span>
+                    <span className="iv-ts">04:02</span>
                   </div>
                 </div>
                 <svg className="iv-connect" id="ivConnect">
@@ -763,8 +795,8 @@ export default function LandingPage() {
 
             <div className="iv-foot">
               <div className="iv-progress">
-                <div className="lbl">Questions remaining</div>
-                <div className="val">6<em>of 8</em></div>
+                <div className="lbl">Progress</div>
+                <div className="val">2<em>of 8 questions</em></div>
                 <span className="iv-bar"><u></u></span>
               </div>
               <div className="iv-nextup">
@@ -782,23 +814,16 @@ export default function LandingPage() {
     {/* 03 · centered header + full-width card + pillars (approved mockup) */}
     <article className="step3" id="chapter3">
       <div className="s3-head reveal">
-        <span className="s3-pill">Step 03</span>
-        <h3 className="s3-h">
-          Review the <em>evidence.</em>
-          <span className="under" aria-hidden="true">
-            <svg viewBox="0 0 500 12" preserveAspectRatio="none">
-              <path d="M 4 10 Q 250 -2 496 8" stroke="#FFD84D" strokeWidth="5" fill="none" strokeLinecap="round"/>
-            </svg>
-          </span>
-        </h3>
-        <p className="s3-sub">Everything behind every recommendation.</p>
+        <span className="s1-num">Step 3 of 3</span>
+        <h3 className="s1-title">Review the evidence.</h3>
+        <p className="s3-sub">Each score links back to the answer that earned it. Watch the moment, read the reasoning, then decide.</p>
       </div>
 
       <div className="s3-card reveal">
         <div className="s3-conv">
           <div className="s3-cand">
             <b>Priya Nair</b>
-            <em>Product Designer</em>
+            <em>Senior Product Designer · Interviewed 30 Sep 2026</em>
           </div>
 
           <div className="s3-stream">
@@ -811,8 +836,8 @@ export default function LandingPage() {
             <div className="s3-turn">
               <div className="s3-ans">
                 <div className="s3-arow">
-                  <span className="s3-aav">C</span>
-                  <span className="s3-albl">Candidate</span>
+                  <span className="s3-aav">P</span>
+                  <span className="s3-albl">Priya</span>
                 </div>
                 <div className="s3-abody">I led the redesign of our onboarding experience. The main challenge was high drop-off in the first week. I ran user interviews, mapped friction points, and simplified the flow.</div>
                 <div className="s3-ameta">
@@ -842,12 +867,16 @@ export default function LandingPage() {
             <div className="s3-turn">
               <div className="s3-ans">
                 <div className="s3-arow">
-                  <span className="s3-aav">C</span>
-                  <span className="s3-albl">Candidate</span>
+                  <span className="s3-aav">P</span>
+                  <span className="s3-albl">Priya</span>
                 </div>
                 <div className="s3-abody">We tracked activation rate, time to value, and week-one retention. Activation improved by 32% and week-one retention by 18%.</div>
                 <div className="s3-ameta">
                   <span>02:34</span>
+                  <span className="s3-wave" aria-hidden="true">
+                    <b style={{height: "4px"}}></b><b style={{height: "7px"}}></b><b style={{height: "11px"}}></b><b style={{height: "6px"}}></b><b style={{height: "10px"}}></b><b style={{height: "14px"}}></b><b style={{height: "8px"}}></b><b style={{height: "5px"}}></b><b style={{height: "10px"}}></b><b style={{height: "7px"}}></b><b style={{height: "3px"}}></b><b style={{height: "9px"}}></b><b style={{height: "12px"}}></b><b style={{height: "6px"}}></b><b style={{height: "9px"}}></b><b style={{height: "5px"}}></b>
+                  </span>
+                  <span className="s3-mic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 12v1a6 6 0 0012 0v-1M12 19v2M9 21h6"/></svg></span>
                 </div>
               </div>
               <div className="s3-an">
@@ -862,7 +891,7 @@ export default function LandingPage() {
 
             <div className="s3-more">
               <span>
-                4 more answers
+                6 more answers
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
               </span>
             </div>
@@ -876,20 +905,18 @@ export default function LandingPage() {
               <source srcSet="/assets/candidates/candidate-01.webp" type="image/webp" />
               <img loading="lazy" src="/assets/candidates/candidate-01.jpg" alt="Candidate on a recorded Recrewt interview" decoding="async" />
             </picture>
-            <span className="s3-vts">02:43</span>
-            <span className="s3-vic" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <path d="M5 12h1M9 8v8M13 5v14M17 8v8M20 12h1"/>
-              </svg>
+            <span className="s3-vts">18:04</span>
+            <span className="s3-vic s3-play" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
             </span>
           </div>
 
           <div className="s3-rec">
-            <div className="s3-rlbl">AI Recommendation</div>
-            <div className="s3-rscore">82<em>/ 100</em></div>
+            <div className="s3-rlbl">Overall score</div>
+            <div className="s3-rscore">8.4<em>/ 10</em></div>
             <div className="s3-rsuglbl">Suggested Outcome</div>
             <div className="s3-rsug">Shortlist</div>
-            <div className="s3-rexp">Based on overall interview performance and analysis. The recruiter makes the final call.</div>
+            <div className="s3-rexp">Average of all 8 answers. The AI suggests, the recruiter makes the final call.</div>
           </div>
 
           <div className="s3-divider"></div>
@@ -903,13 +930,14 @@ export default function LandingPage() {
               </button>
               <button className="s3-btn s3-hold" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 15.5v.5"/></svg>
-                On Hold
+                Hold
               </button>
               <button className="s3-btn s3-reject" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>
                 Reject
               </button>
             </div>
+            <p className="s3-dnote">Nothing happens until you choose.</p>
           </div>
         </div>
       </div>
@@ -918,15 +946,15 @@ export default function LandingPage() {
         <div className="s3-pillar">
           <span className="s3-pic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 4.8L18 8.4l-4.4 1.6L12 14.8l-1.6-4.8L6 8.4l4.4-1.6L12 2z"/></svg></span>
           <div>
-            <b>Every answer is analyzed.</b>
-            <p>We evaluate for quality, depth and clarity.</p>
+            <b>Scored answer by answer.</b>
+            <p>Each reply is rated for quality, depth and clarity.</p>
           </div>
         </div>
         <div className="s3-pillar">
-          <span className="s3-pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6l8-3z"/></svg></span>
+          <span className="s3-pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h7M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></span>
           <div>
-            <b>Every recommendation is explainable.</b>
-            <p>Transparent scoring across every skill.</p>
+            <b>Reasons for every score.</b>
+            <p>Plain-language notes, not a black box.</p>
           </div>
         </div>
         <div className="s3-pillar">
@@ -951,7 +979,7 @@ export default function LandingPage() {
       <h2 className="fit-h" id="fit-heading">
         Keep your hiring process.<br />
         <span className="l2">
-          <em>Upgrade every interview.</em>
+          <em>Upgrade the interview.</em>
           <span className="under" aria-hidden="true">
             <svg viewBox="0 0 600 12" preserveAspectRatio="none">
               <path d="M 6 9 Q 300 -2 594 7" stroke="#FFD84D" strokeWidth="5" fill="none" strokeLinecap="round"/>
@@ -959,7 +987,7 @@ export default function LandingPage() {
           </span>
         </span>
       </h2>
-      <p className="fit-sub">Recrewt fits into the hiring process you already have. We handle interviews and evidence. You stay focused on hiring.</p>
+      <p className="fit-sub">Recrewt fits into the process you already run. It handles the first interview and the evidence behind each score. Your team keeps the rest.</p>
     </div>
   </div>
 
@@ -979,8 +1007,8 @@ export default function LandingPage() {
       <div className="fit-stage on">
         <span className="fit-node" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="8" r="3.6"/>
-            <path d="M4.5 20a7.5 7.5 0 0115 0"/>
+            <rect x="3" y="6" width="13" height="12" rx="2"/>
+            <path d="M16 10.5l5-3v9l-5-3z"/>
           </svg>
         </span>
         <span className="fit-name">Interview</span>
@@ -1021,7 +1049,38 @@ export default function LandingPage() {
         <svg className="fit-brace" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true">
           <path d="M 2 2 C 2 10, 4 14, 10 14 C 30 14, 40 17, 46 17 L 50 20 L 54 17 C 60 17, 70 14, 90 14 C 96 14, 98 10, 98 2"/>
         </svg>
-        <div className="fit-caption">Recrewt AI works here.</div>
+        <div className="fit-caption">Recrewt handles these two</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{/* ============================================================
+     SECTION — Trust. Answers the questions HR buyers ask first.
+     Lines marked TODO need Mike's real answers before going live.
+     ============================================================ */}
+<section className="trust" id="trust" aria-labelledby="trust-heading">
+  <div className="container">
+    <div className="tr-head">
+      <span className="tr-label">Trust</span>
+      <h2 id="trust-heading">What hiring teams ask us <em>first.</em></h2>
+    </div>
+    <div className="tr-grid">
+      <div className="tr-item">
+        <h3>Do candidates know they&rsquo;re talking to AI?</h3>
+        <p>Yes. <span className="tr-todo">TODO: say where you tell them, for example the invite email and the screen before the interview starts.</span></p>
+      </div>
+      <div className="tr-item">
+        <h3>Does the AI decide who gets hired?</h3>
+        <p>No. It scores answers and suggests a next step. A person on your team makes every decision.</p>
+      </div>
+      <div className="tr-item">
+        <h3>Is every candidate judged the same way?</h3>
+        <p>Candidates for the same role get the same core questions and the same scoring rubric. Follow-ups change based on what each person says.</p>
+      </div>
+      <div className="tr-item">
+        <h3>Where does candidate data live?</h3>
+        <p><span className="tr-todo">TODO: add your hosting region, how long recordings are kept, and how a candidate can ask for deletion.</span></p>
       </div>
     </div>
   </div>
@@ -1040,9 +1099,9 @@ export default function LandingPage() {
 <section className="pricing" id="pricing" aria-labelledby="pricing-heading">
   <div className="container">
     <div className="pr-head reveal">
-      <span className="pr-label">Plans</span>
+      <span className="pr-label">Pricing</span>
       <h2 id="pricing-heading">Choose the plan that <em>fits your hiring.</em></h2>
-      <p>Start with the volume that matches how you hire today. Every plan includes the complete Recrewt interview experience.</p>
+      <p>Pick the volume that matches how you hire today. Every plan includes the full interview, scoring and evidence workflow.</p>
     </div>
 
     <div className="pr-grid reveal">
@@ -1050,7 +1109,7 @@ export default function LandingPage() {
         name="Growth"
         price="$420"
         priceSuffix="/ month"
-        blurb="Perfect for teams hiring consistently."
+        blurb="For small teams hiring every month. Works out at $2.10 per candidate."
         limits={[
           { type: 'candidates', value: '200', label: 'Candidates / month' },
           { type: 'roles',      value: '10',  label: 'Active hiring roles' },
@@ -1063,7 +1122,7 @@ export default function LandingPage() {
           'Share results with your team by link',
           'Email support',
         ]}
-        cta={{ label: 'Start with Growth', variant: 'secondary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2h5VbmxX3JNDLIKz1P?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
+        cta={{ label: 'Get started', variant: 'secondary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2h5VbmxX3JNDLIKz1P?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
 
       {/* Growth and Scale run the same product. The old list sold
@@ -1073,43 +1132,41 @@ export default function LandingPage() {
           Volume and support are the honest differences. */}
       <PricingCard
         state="featured"
+        badgeLabel="Best value"
         name="Scale"
         price="$620"
         priceSuffix="/ month"
-        blurb="For growing hiring teams."
+        blurb="For teams running several roles at once. Works out at $1.24 per candidate."
         limits={[
           { type: 'candidates', value: '500',       label: 'Candidates / month' },
           { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
         ]}
         featuresHeading="Everything in Growth, plus:"
         features={[
-          'Unlimited active hiring roles',
-          'More than double the monthly candidates',
           'Priority support',
         ]}
-        cta={{ label: 'Start with Scale', variant: 'primary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2hHWPwycoOZW6NdF3T?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
+        cta={{ label: 'Get started', variant: 'primary', href: 'https://checkout.dodopayments.com/buy/pdt_0Nk2hHWPwycoOZW6NdF3T?redirect_url=https%3A%2F%2Frecrewtai.com%2Flogin%3Fnext%3D%2Fsubscription' }}
       />
 
       <PricingCard
         name="Enterprise"
         price="Custom"
-        priceSuffix="By quotation"
-        blurb="Built for organizations that hire at scale."
+        priceSuffix="pricing"
+        blurb="For high-volume hiring. Priced on your volume."
         limits={[
           { type: 'candidates', value: 'Unlimited', label: 'Candidates / month' },
           { type: 'roles',      value: 'Unlimited', label: 'Active hiring roles' },
         ]}
         featuresHeading="Everything in Scale, plus:"
         features={[
-          'Unlimited candidates',
-          'Custom interview design with our team',
+          'Interview design with our team',
           'Dedicated account manager',
-          'Custom onboarding & training',
+          'Custom onboarding and training',
         ]}
         cta={{
-          label: 'Talk to Sales',
+          label: 'Book a demo',
           variant: 'secondary',
-          href: 'mailto:hello@recrewtai.com?subject=Recrewt%20Enterprise%20enquiry',
+          href: 'https://calendly.com/mike-recrewtai',
         }}
       />
     </div>
@@ -1118,12 +1175,12 @@ export default function LandingPage() {
         plan shares. Kept truthful: no "credit card required" copy
         because Recrewt is paid SaaS. */}
     <p className="pr-trust reveal">
-      All plans include secure cloud hosting, automatic AI improvements, and standard email support.
+      All plans include secure cloud hosting and automatic AI improvements.
     </p>
     {/* Quieter secondary — flexibility signal. Reduces purchase
         anxiety and communicates that a plan choice today isn't
         permanent. */}
-    <p className="pr-foot reveal">Cancel anytime. Upgrade anytime.</p>
+    <p className="pr-foot reveal">Change or cancel your plan any time.</p>
   </div>
 </section>
 
@@ -1135,12 +1192,15 @@ export default function LandingPage() {
     <span className="cta-label reveal">Ready when you are</span>
     <h2 id="cta-heading" className="cta-h reveal">
       Hiring is important.<br />
-      <em>Your time is too.</em>
+      <em>So is your time.</em>
     </h2>
-    <p className="cta-copy reveal">Recrewt works quietly in the background so every interview is consistent, every decision is supported, and you can focus on what really matters—hiring great people.</p>
+    <p className="cta-copy reveal">Recrewt runs the first interview with every applicant, so your team only meets the people worth meeting.</p>
     <div className="cta-actions reveal">
-      <a className="cta-btn" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a 15-minute walkthrough <span className="arrow" aria-hidden="true">→</span></a>
-      <p className="cta-note">No commitment. Just a conversation about your hiring process.</p>
+      <div className="cta-btns">
+        <a className="cta-btn cta-btn-pri" href="#pricing">Get started <span className="arrow" aria-hidden="true">→</span></a>
+        <a className="cta-btn" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a 15-minute demo</a>
+      </div>
+      <p className="cta-note">No commitment. Just a conversation about how you hire.</p>
     </div>
   </div>
 </section>
@@ -1152,8 +1212,9 @@ export default function LandingPage() {
         <img src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" loading="lazy" decoding="async" />
       </a>
       <nav className="ft-nav" aria-label="Footer navigation">
-        <a href="#how-it-works">Product</a>
+        <a href="#how-it-works">How it works</a>
         <a href="#pricing">Pricing</a>
+        <a href="#trust">Trust</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </nav>
@@ -1161,7 +1222,6 @@ export default function LandingPage() {
     </div>
     <div className="ft-bottom">
       <span>© {new Date().getFullYear()} Recrewt AI. All rights reserved.</span>
-      <span>Built for modern hiring teams.</span>
     </div>
   </div>
 </footer>
