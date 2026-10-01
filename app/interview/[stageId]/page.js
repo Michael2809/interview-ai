@@ -949,11 +949,23 @@ function LiveScreen({
   stream, videoRef, currentIndex, totalQuestions, question, isSpeaking, listening,
   transcript, typedAnswer, setTypedAnswer, typingMode, setTypingMode,
   onRepeat, onDone, remainingMinutes, recording, isFollowUp,
-  awaitingStart, onStartSpeaking, countdown,
+  awaitingStart, onStartSpeaking, countdown, onCameraTrouble,
 }) {
   const progressCount = currentIndex + 1
   const answering = transcript.trim().length > 0 || typedAnswer.trim().length > 0
   const cameraTrouble = useCameraCheck(videoRef, stream)
+  const [reconnecting, setReconnecting] = useState(false)
+  // Try to bring the camera back by itself the moment the check notices.
+  const troubleRef = useRef(onCameraTrouble)
+  troubleRef.current = onCameraTrouble
+  useEffect(() => {
+    if (cameraTrouble && troubleRef.current) troubleRef.current()
+  }, [cameraTrouble])
+  async function handleReconnect() {
+    if (!onCameraTrouble) return
+    setReconnecting(true)
+    try { await onCameraTrouble() } finally { setReconnecting(false) }
+  }
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Top status bar */}
@@ -976,8 +988,16 @@ function LiveScreen({
       </div>
 
       {cameraTrouble && (
-        <div role="alert" className="bg-[color:var(--color-rc-red)] text-white text-[13px] leading-snug px-5 py-2.5 text-center">
-          We can&rsquo;t see you. Please check your camera is on and not covered.
+        <div role="alert" className="bg-[color:var(--color-rc-red)] text-white text-[13px] leading-snug px-5 py-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center">
+          <span>We can&rsquo;t see you. Your camera may have switched off.</span>
+          <button
+            type="button"
+            onClick={handleReconnect}
+            disabled={reconnecting}
+            className="h-8 px-3 rounded-[8px] bg-white text-[color:var(--color-rc-red)] text-[12.5px] font-semibold disabled:opacity-70"
+          >
+            {reconnecting ? 'Turning on…' : 'Turn camera back on'}
+          </button>
         </div>
       )}
 
@@ -1287,6 +1307,9 @@ export default function InterviewPage() {
   const [onlineOk, setOnlineOk] = useState(true)
 
   const [currentIndex, setCurrentIndex] = useState(0)
+  // Bumped whenever the camera is reconnected, so the preview and the
+  // camera check pick up the new camera.
+  const [camGen, setCamGen] = useState(0)
   const [currentQuestion, setCurrentQuestion] = useState('')
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [listening, setListening] = useState(false)
@@ -1363,6 +1386,15 @@ export default function InterviewPage() {
      unfroze, saving the same answer up to 12 times. One tap counts, the
      rest are ignored until the next question is on screen. */
   const submittingRef         = useRef(false)
+  /* Camera resilience. iPhones can switch the camera off by themselves
+     mid-interview (voice-to-text grabbing the microphone is the usual
+     trigger). The recording is drawn through a canvas so it carries on
+     when the camera comes back instead of freezing for the rest of the
+     interview, and a dropped camera is reconnected automatically. */
+  const camPipeRef            = useRef(null)
+  const reconnectingRef       = useRef(false)
+  const camDropRef            = useRef(null)
+  const currentIndexRef       = useRef(0)
   const startingLiveRef       = useRef(false)
 
   useEffect(() => { setHasInviteToken(!!inviteTokenRef.current) }, [])
@@ -1377,7 +1409,9 @@ export default function InterviewPage() {
     // permissionState too: on the device check the camera is switched on
     // without the step changing, so binding on step alone left the
     // preview blank until the candidate moved on.
-  }, [step, permissionState])
+  }, [step, permissionState, camGen])
+
+  useEffect(() => { currentIndexRef.current = currentIndex }, [currentIndex])
 
   /* ── Load data + init ────────────────────── */
 
@@ -1625,10 +1659,133 @@ export default function InterviewPage() {
   }
 
   function releaseStream() {
+    stopCameraPipe()
     if (streamRef.current) {
       try { streamRef.current.getTracks().forEach((t) => t.stop()) } catch {}
     }
     streamRef.current = null
+  }
+
+  /* ── Camera resilience ───────────────────── */
+
+  const CAMERA_CONSTRAINTS = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 24 } }
+
+  /** What the video recorder records: a canvas fed by the camera, plus
+      the microphone. If the camera drops, the canvas shows "Camera
+      reconnecting" and then the new camera, so the recording never
+      freezes. Falls back to recording the camera directly on browsers
+      that cannot record a canvas. */
+  function buildRecordingStream(stream) {
+    const track = stream.getVideoTracks()[0]
+    if (track) watchCameraTrack(track)
+    try {
+      const canvas = document.createElement('canvas')
+      if (!track || typeof canvas.captureStream !== 'function') return stream
+      const st = track.getSettings ? track.getSettings() : {}
+      const sw = st.width || 640, sh = st.height || 480
+      const scale = Math.min(1, 640 / Math.max(sw, sh))
+      const w = Math.max(2, Math.round(sw * scale) & ~1)
+      const h = Math.max(2, Math.round(sh * scale) & ~1)
+      canvas.width = w; canvas.height = h
+      const ctx = canvas.getContext('2d')
+      const v = document.createElement('video')
+      v.muted = true; v.playsInline = true; v.autoplay = true
+      v.setAttribute('playsinline', '')
+      v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;'
+      document.body.appendChild(v)
+      v.srcObject = new MediaStream([track])
+      v.play().catch(() => {})
+      const pipe = { canvas, ctx, v, w, h, track, timer: null }
+      pipe.timer = setInterval(() => {
+        const t = pipe.track
+        const live = t && t.readyState === 'live' && !t.muted
+        if (live && v.readyState >= 2 && v.videoWidth) {
+          const r = Math.min(w / v.videoWidth, h / v.videoHeight)
+          const dw = v.videoWidth * r, dh = v.videoHeight * r
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h)
+          ctx.drawImage(v, (w - dw) / 2, (h - dh) / 2, dw, dh)
+        } else {
+          ctx.fillStyle = '#111'; ctx.fillRect(0, 0, w, h)
+          ctx.fillStyle = '#bbb'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'
+          ctx.fillText('Camera reconnecting…', w / 2, h / 2)
+        }
+      }, Math.round(1000 / 15))
+      camPipeRef.current = pipe
+      const out = canvas.captureStream(15)
+      stream.getAudioTracks().forEach((a) => out.addTrack(a))
+      return out
+    } catch (err) {
+      console.warn('canvas recording unavailable, recording the camera directly:', err)
+      return stream
+    }
+  }
+
+  function stopCameraPipe() {
+    const pipe = camPipeRef.current
+    if (!pipe) return
+    clearInterval(pipe.timer)
+    try { pipe.v.srcObject = null; pipe.v.remove() } catch {}
+    camPipeRef.current = null
+  }
+
+  function watchCameraTrack(track) {
+    track.onended = () => { onCameraLost() }
+    track.onmute = () => {
+      // iOS mutes briefly sometimes; only act if it stays muted.
+      setTimeout(() => { if (track.muted && track.readyState === 'live') onCameraLost() }, 2000)
+    }
+  }
+
+  function onCameraLost() {
+    if (!camDropRef.current) camDropRef.current = { at: Date.now(), q: currentIndexRef.current + 1 }
+    reconnectCamera()
+  }
+
+  /** Get a fresh camera and swap it in everywhere. True on success. */
+  async function reconnectCamera() {
+    if (reconnectingRef.current || !streamRef.current) return false
+    // Reached here from the camera check rather than the camera's own
+    // "ended" signal: the check needs two bad samples 3s apart, so the
+    // drop began about 6 seconds ago.
+    if (!camDropRef.current) camDropRef.current = { at: Date.now() - 6000, q: currentIndexRef.current + 1 }
+    reconnectingRef.current = true
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: CAMERA_CONSTRAINTS, audio: false })
+      const nt = fresh.getVideoTracks()[0]
+      if (!nt) return false
+      const old = streamRef.current
+      // A NEW stream object for the preview and the camera check. The old
+      // one is left alone: on browsers recording the camera directly, the
+      // recorder is still attached to it and must not see its tracks change.
+      old.getVideoTracks().forEach((t) => { if (t.readyState === 'live' && t.muted) { try { t.stop() } catch {} } })
+      streamRef.current = new MediaStream([nt, ...old.getAudioTracks()])
+      const pipe = camPipeRef.current
+      if (pipe) {
+        pipe.track = nt
+        pipe.v.srcObject = new MediaStream([nt])
+        pipe.v.play().catch(() => {})
+      }
+      watchCameraTrack(nt)
+      setCamGen((g) => g + 1)
+      const drop = camDropRef.current
+      camDropRef.current = null
+      if (drop) {
+        const secs = Math.max(1, Math.round((Date.now() - drop.at) / 1000))
+        // Straight to the database, not through the transcript: this is a
+        // note for the recruiter, never something to score.
+        supabase.from('interviews').insert({
+          stage_id: stageId, speaker: 'camera_note',
+          content: `Camera dropped for ${secs}s during question ${drop.q}`,
+          candidate_name: candidateName, session_id: sessionIdRef.current,
+        }).then(() => {}, () => {})
+      }
+      return true
+    } catch (err) {
+      console.warn('camera reconnect failed:', err)
+      return false
+    } finally {
+      reconnectingRef.current = false
+    }
   }
 
   /* ── Speech recognition (voice → transcript) ─── */
@@ -1774,7 +1931,7 @@ export default function InterviewPage() {
       // the difference between a twenty-minute interview weighing about
       // 45MB and about 75MB. Size is not a quality question here, it is
       // whether the recording arrives at all.
-      const videoRecorder = new MediaRecorder(stream, { mimeType: videoMime, videoBitsPerSecond: 300000, audioBitsPerSecond: 64000 })
+      const videoRecorder = new MediaRecorder(buildRecordingStream(stream), { mimeType: videoMime, videoBitsPerSecond: 300000, audioBitsPerSecond: 64000 })
       mediaRecorderRef.current = videoRecorder
       chunksRef.current = []
       videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
@@ -2572,6 +2729,7 @@ export default function InterviewPage() {
         awaitingStart={awaitingStart}
         onStartSpeaking={handleStartSpeaking}
         countdown={countdown}
+        onCameraTrouble={reconnectCamera}
       />
     )
   }

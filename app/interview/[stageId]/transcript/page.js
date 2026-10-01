@@ -2241,7 +2241,14 @@ export default function TranscriptPage() {
     ).length
   }, [transcriptLines, questions])
 
-  const interruptions = 0  // Not tracked in transcript today.
+  // Camera drops during the interview, written by the interview page as
+  // 'camera_note' rows, e.g. "Camera dropped for 4s during question 8".
+  const interruptions = useMemo(() => {
+    const notes = (linesForSelected || []).filter((l) => l?.speaker === 'camera_note')
+    if (notes.length === 0) return 0
+    const detail = notes.map((n) => String(n.content || '').replace(/^Camera dropped for /, '')).join('; ')
+    return `${notes.length} camera (${detail})`
+  }, [linesForSelected])
 
   const currentScoreRow = useMemo(() => {
     if (!selected) return null
