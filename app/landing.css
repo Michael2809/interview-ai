@@ -1677,3 +1677,13 @@
   .rc-landing #hn1, .rc-landing #hn2, .rc-landing #hn3 { max-width: 340px; }
   .rc-landing .note .ht { margin-top: 0; text-wrap: balance; }
 }
+
+/* ---- round 3: story boxes sit on the wall, not on the desk ---- */
+@media (min-width: 761px) {
+  .rc-landing #hn1, .rc-landing #hn2, .rc-landing #hn3 {
+    width: max-content; max-width: 340px;
+    background: rgba(255,255,255,0.93);
+    box-shadow: 0 14px 40px rgba(17,17,17,0.14);
+  }
+  .rc-landing .note .ht { font-size: clamp(26px, 2.2vw, 34px); }
+}

@@ -130,6 +130,48 @@ export default function LandingPage() {
     };
   }, []);
 
+  // Hero story boxes: placed on the empty wall areas of the desk photo
+  // (left of the monitor, right of the monitor) so they never cover the
+  // paperwork. Positions follow the photo as it scales. Only sets
+  // left/top/max-width; the hero script still owns the fade timing.
+  useEffect(() => {
+    var pin = document.querySelector('.rc-landing .hero-pin');
+    var fig = document.getElementById('figure');
+    var notes = [document.getElementById('hn1'), document.getElementById('hn2'), document.getElementById('hn3')];
+    if (!pin || !fig || notes.some(function (n) { return !n; })) return;
+    var GUTTER = 24, MIN_RIGHT = 190;
+    function setBox(el, x, y, w) {
+      el.style.left = x + 'px'; el.style.top = y + 'px';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.maxWidth = w + 'px';
+    }
+    function place() {
+      if (window.innerWidth <= 760) { notes.forEach(function (n) { n.removeAttribute('style'); }); return; }
+      var f = fig.getBoundingClientRect(), p = pin.getBoundingClientRect();
+      if (!f.width) return;
+      var X = function (fx) { return f.left - p.left + fx * f.width; };
+      var Y = function (fy) { return f.top - p.top + fy * f.height; };
+      var top = Math.max(Y(0.13), 104);
+      // left wall: between the window frame and the monitor
+      var lx = Math.max(X(0.215), GUTTER);
+      var lw = Math.max(220, Math.min(X(0.448) - lx, 380));
+      // right wall: between the monitor and the edge of the screen
+      var rx = X(0.828);
+      var rw = Math.min(p.width - GUTTER - rx, 320);
+      var keep = function (el) { return { o: el.style.opacity, t: el.style.transform }; };
+      notes.forEach(function (n) { var k = keep(n); n.removeAttribute('style'); n.style.opacity = k.o; n.style.transform = k.t; });
+      setBox(notes[0], lx, top, lw);
+      if (rw >= MIN_RIGHT) setBox(notes[1], rx, top, rw);
+      else setBox(notes[1], lx, top, lw);   /* narrow screens: right wall too thin, use the left wall */
+      setBox(notes[2], lx, top, lw);
+    }
+    var ro = 'ResizeObserver' in window ? new ResizeObserver(place) : null;
+    if (ro) { ro.observe(fig); ro.observe(pin); }
+    window.addEventListener('resize', place);
+    requestAnimationFrame(place);
+    return function () { if (ro) ro.disconnect(); window.removeEventListener('resize', place); };
+  }, []);
+
   useEffect(() => {
     // Inline scripts from the original standalone landing HTML.
     // Each expects the DOM (hero stage, panel-interview, spine dots, etc.)
