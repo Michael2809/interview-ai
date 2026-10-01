@@ -151,19 +151,23 @@ export default function LandingPage() {
       if (!f.width) return;
       var X = function (fx) { return f.left - p.left + fx * f.width; };
       var Y = function (fy) { return f.top - p.top + fy * f.height; };
-      var top = Math.max(Y(0.13), 104);
-      // left wall: between the window frame and the monitor
-      var lx = Math.max(X(0.215), GUTTER);
-      var lw = Math.max(220, Math.min(X(0.448) - lx, 380));
-      // right wall: between the monitor and the edge of the screen
-      var rx = X(0.828);
-      var rw = Math.min(p.width - GUTTER - rx, 320);
+      // Reading path shaped like ">": top left, then lower on the right,
+      // then lowest on the left. No symmetry on purpose.
+      var vw = p.width, vh = p.height;
+      var edge = Math.min(Math.max(56, vw * 0.06), 112);   // same left edge as the logo
       var keep = function (el) { return { o: el.style.opacity, t: el.style.transform }; };
       notes.forEach(function (n) { var k = keep(n); n.removeAttribute('style'); n.style.opacity = k.o; n.style.transform = k.t; });
-      setBox(notes[0], lx, top, lw);
-      if (rw >= MIN_RIGHT) setBox(notes[1], rx, top, rw);
-      else setBox(notes[1], lx, top, lw);   /* narrow screens: right wall too thin, use the left wall */
-      setBox(notes[2], lx, top, lw);
+      // 1) left wall, high up, between the window and the monitor
+      var x1 = Math.max(X(0.215), GUTTER), y1 = Math.max(Y(0.13), 104);
+      var w1 = Math.max(220, Math.min(X(0.448) - x1, 380));
+      setBox(notes[0], x1, y1, w1);
+      // 2) right wall, lower, beside the monitor (falls back to lower on the left wall when that gap is too thin)
+      var x2 = X(0.828), w2 = Math.min(vw - GUTTER - x2, 320), y2 = Math.max(Y(0.34), y1 + 120);
+      if (w2 >= MIN_RIGHT) setBox(notes[1], x2, y2, w2);
+      else setBox(notes[1], Math.max(X(0.27), GUTTER), Math.max(Y(0.29), y1 + 110), Math.max(220, Math.min(X(0.448) - X(0.27), 320)));
+      // 3) lowest, back on the left, above the folder by the window sill
+      var y3 = Math.min(Math.max(Y(0.47), y2 + 110), vh - 150);
+      setBox(notes[2], edge, y3, Math.max(220, Math.min(X(0.30) - edge, 360)));
     }
     var ro = 'ResizeObserver' in window ? new ResizeObserver(place) : null;
     if (ro) { ro.observe(fig); ro.observe(pin); }
