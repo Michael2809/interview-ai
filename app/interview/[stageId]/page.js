@@ -31,7 +31,6 @@ const STORAGE_TIMEOUT_MS = 90 * 1000
    Short and finite: the candidate is sitting there waiting, and a
    row that has not landed in ~2.5s of trying is not going to. */
 const TRANSCRIPT_BACKOFFS = [0, 400, 900, 1200]
-const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000   // 2 hours to allow a retry
 // Used for the "about N minutes" estimates. An average across the whole
 // interview: the three openers take about a minute each, a role question
 // with its back-and-forth takes three to four.
@@ -1011,7 +1010,7 @@ function LiveScreen({
  * Screen 6 — DoneScreen
  * ────────────────────────────────────────────────────────── */
 
-function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFailed, transcriptSaveFailed, retryAllowed, onRetry, canRetry }) {
+function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFailed, transcriptSaveFailed }) {
   const days = Math.max(1, Number(slaDays) || 5)
   return (
     <PageShell>
@@ -1070,14 +1069,6 @@ function DoneScreen({ candidateName, recruiter, company, slaDays, videoSaveFaile
         </div>
       )}
 
-      {retryAllowed && canRetry && (
-        <div className="mt-8">
-          <SecondaryButton onClick={onRetry} iconLeft={<RefreshCcw size={14} />}>Retake interview</SecondaryButton>
-          <p className="mt-2 text-[12px] text-[color:var(--color-rc-muted)]">
-            You can retake this interview once within 2 hours if you hit a technical issue.
-          </p>
-        </div>
-      )}
     </PageShell>
   )
 }
@@ -1371,7 +1362,7 @@ export default function InterviewPage() {
         } catch (err) { console.warn('interview-access check failed:', err) }
       } else {
         const prior = readAttempt(stageId)
-        if (prior && !browserRetakeOk(prior, !!ctx?.role?.interview_retry_allowed)) {
+        if (prior) {
           setLockedReason(prior.finishedAt ? 'completed' : 'started')
         }
       }
@@ -1653,12 +1644,6 @@ export default function InterviewPage() {
 
 
   /* ── Live interview: start recording + first question ─── */
-
-  /** The browser lock allows the role's one retake, within two hours. */
-  function browserRetakeOk(prior, retryAllowed) {
-    if (!retryAllowed || !prior?.finishedAt) return false
-    return (prior.count || 1) < 2 && Date.now() - prior.finishedAt < RETRY_WINDOW_MS
-  }
 
   async function beginLiveInterview() {
     if (!streamRef.current) { await requestStream(); if (!streamRef.current) return }
@@ -2363,17 +2348,6 @@ export default function InterviewPage() {
   function handleRepeat() { repeatCurrentQuestion() }
   function handleTypingToggle(setter) { setTypingMode(setter); if (typeof setter === 'function') {} }
 
-  function handleRetakeInterview() {
-    // Only allowed if role.interview_retry_allowed and within 2h of first
-    // completion; the server enforces that when the questions start.
-    // A retake is a new attempt, so it gets its own session id.
-    sessionIdRef.current = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null
-    setStep('landing')
-    setCurrentIndex(0); setIsFollowUp(false); setTypedAnswer(''); setTranscript('')
-    setVideoSaveFailed(false); setUploadStatus('')
-    transcriptRef.current = []
-  }
-
   /* ── Derived ─────────────────────────────── */
 
   const remainingMinutes = useMemo(() => {
@@ -2381,13 +2355,6 @@ export default function InterviewPage() {
     return Math.max(1, Math.round((left * AVG_SECONDS_PER_QUESTION) / 60))
   }, [questions.length, currentIndex])
 
-  const canRetry = useMemo(() => {
-    if (!role?.interview_retry_allowed) return false
-    if (!finishedAtRef.current) return true
-    return (Date.now() - finishedAtRef.current) < RETRY_WINDOW_MS
-  }, [role?.interview_retry_allowed])
-
-  const retryAllowed = !!role?.interview_retry_allowed
   const slaDays = role?.interview_response_sla_days || 5
   const companyName = role?.company_name || null
 
@@ -2485,9 +2452,6 @@ export default function InterviewPage() {
         slaDays={slaDays}
         videoSaveFailed={videoSaveFailed}
         transcriptSaveFailed={transcriptSaveFailed}
-        retryAllowed={retryAllowed}
-        canRetry={canRetry}
-        onRetry={handleRetakeInterview}
       />
     )
   }

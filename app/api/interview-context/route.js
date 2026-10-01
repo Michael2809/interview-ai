@@ -33,7 +33,7 @@ export async function GET(request) {
   }
 
   const { data: role } = await svc
-    .from('roles').select('id, title, user_id, status, interview_retry_allowed').eq('id', stage.role_id).maybeSingle()
+    .from('roles').select('id, title, user_id, status').eq('id', stage.role_id).maybeSingle()
 
   let companyName = null
   let recruiter = null
@@ -67,7 +67,7 @@ export async function GET(request) {
     stage: { id: stage.id, name: stage.name },
     // Deliberately narrow: title only. The description, experience level
     // and owner id are the recruiter's business, not the candidate's.
-    role: role ? { id: role.id, title: role.title, interview_retry_allowed: !!role.interview_retry_allowed } : null,
+    role: role ? { id: role.id, title: role.title } : null,
     companyName,
     recruiter,
     questions: questions || [],

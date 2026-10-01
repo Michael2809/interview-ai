@@ -31,12 +31,11 @@ export async function POST(request) {
       allowed: !!r.allowed,
       reason: r.reason || null,
       inviteEmail: r.inviteEmail || null,
-      retake: !!r.retake,
     })
   } catch (err) {
     console.error('interview-access failed:', err?.message ?? err)
     // Fail open. A broken check must not lock an honest candidate out of
     // the interview they were invited to.
-    return Response.json({ allowed: true, reason: null, inviteEmail: null, retake: false })
+    return Response.json({ allowed: true, reason: null, inviteEmail: null })
   }
 }
