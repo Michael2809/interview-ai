@@ -382,7 +382,7 @@ function PipelineCell({ label, value }) {
   const isZero = !value || value === 0
   return (
     <div className="min-w-0">
-      <div className="text-[10px] md:text-[10.5px] uppercase tracking-[0.08em] md:tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)] truncate">
+      <div className="text-[10px] md:text-[10.5px] uppercase tracking-[0.02em] sm:tracking-[0.08em] md:tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)] truncate">
         {label}
       </div>
       <div
@@ -549,7 +549,7 @@ function RoleRow({ role, onDuplicate, onSetStatus, onDelete, hasStatusColumn = t
   return (
     <div
       className={
-        'p-5 md:p-6 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] ' +
+        'min-w-0 p-5 md:p-6 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] ' +
         '[box-shadow:0_1px_2px_rgba(17,17,17,0.015),0_20px_36px_-34px_rgba(17,17,17,0.06)] ' +
         'transition-[transform,box-shadow,border-color] duration-[280ms] ease-[cubic-bezier(.22,.61,.36,1)] ' +
         'hover:-translate-y-0.5 hover:border-[color:var(--color-rc-line-hover)] ' +
@@ -562,10 +562,13 @@ function RoleRow({ role, onDuplicate, onSetStatus, onDelete, hasStatusColumn = t
           <div className="flex items-center gap-2.5 flex-wrap">
             <Link
               href={primaryHref}
-              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded min-w-0"
+              className="block max-w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded min-w-0"
             >
+              {/* Wraps instead of truncating: a long title like "Senior
+                  Backend Engineer, Payments Infrastructure" used to push
+                  the whole card off the side of a phone screen. */}
               <h3
-                className="text-[19px] md:text-[20px] leading-tight font-semibold tracking-[-0.022em] text-[color:var(--color-rc-ink)] truncate"
+                className="text-[19px] md:text-[20px] leading-tight font-semibold tracking-[-0.022em] text-[color:var(--color-rc-ink)] [overflow-wrap:anywhere]"
                 style={{ fontFamily: 'var(--font-editorial), inherit' }}
               >
                 {role.title}

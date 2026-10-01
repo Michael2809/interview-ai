@@ -818,7 +818,7 @@ function MomentumRoleCard({ role }) {
       href={`/roles/${role.id}`}
       aria-label={`Continue working on ${role.title}`}
       className={
-        'group block rounded-[14px] bg-white border border-[color:var(--color-rc-line)] ' +
+        'group block min-w-0 rounded-[14px] bg-white border border-[color:var(--color-rc-line)] ' +
         'px-6 py-5 md:px-7 md:py-6 cursor-pointer ' +
         'transition-[transform,border-color] duration-150 ease-out ' +
         'hover:-translate-y-0.5 hover:border-[color:var(--color-rc-line-hover)] ' +
@@ -827,7 +827,7 @@ function MomentumRoleCard({ role }) {
     >
       <div className="flex items-start justify-between gap-4">
         <h3
-          className="text-[19px] leading-tight font-semibold tracking-[-0.018em] text-[color:var(--color-rc-ink)] truncate"
+          className="min-w-0 text-[19px] leading-tight font-semibold tracking-[-0.018em] text-[color:var(--color-rc-ink)] [overflow-wrap:anywhere]"
           style={{ fontFamily: 'var(--font-editorial), inherit' }}
         >
           {role.title}
