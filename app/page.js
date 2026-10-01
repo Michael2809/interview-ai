@@ -106,27 +106,44 @@ const LANDING_JSON_LD = {
 };
 
 export default function LandingPage() {
-  // Site nav: fixed to the top, shown only once the hero has scrolled
-  // past, so it never slides through the pinned white interlude.
+  // Site nav: fixed to the top. On desktop it rises from the bottom of the
+  // screen during the blank white moment at the very end of the hero
+  // (after "Welcome to the team", before the interlude text), so it never
+  // crosses any content. On phones (static hero) it drops in from the top.
   // Separate from the hero/interlude scripts below, which are unchanged.
   useEffect(() => {
     var hero = document.getElementById('hero');
     var nav = document.getElementById('siteNav');
+    var stage = document.getElementById('stage');
     if (!hero || !nav) return;
     var raf = null;
     function check() {
       raf = null;
       var r = hero.getBoundingClientRect();
-      var limit = Math.min(window.innerHeight * 0.5, r.height - 120);
-      nav.classList.toggle('is-visible', r.bottom <= limit);
+      var dist = hero.offsetHeight - window.innerHeight;
+      var show;
+      if (dist > 0) {
+        // rise only once the desk photo has actually faded to white
+        // (the hero engine eases its fade, so read the stage itself)
+        var stageOpacity = stage ? parseFloat(stage.style.opacity || '1') : 0;
+        show = (-r.top / dist) >= 0.96 && stageOpacity < 0.2;
+      } else {
+        show = r.bottom <= Math.min(window.innerHeight * 0.5, r.height - 120);
+      }
+      nav.classList.toggle('is-visible', show);
     }
     function onScroll() { if (raf === null) raf = requestAnimationFrame(check); }
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
+    // the stage keeps fading for a moment after scrolling stops, so also
+    // re-check whenever the hero engine updates its opacity
+    var mo = stage && 'MutationObserver' in window ? new MutationObserver(onScroll) : null;
+    if (mo) mo.observe(stage, { attributes: true, attributeFilter: ['style'] });
     check();
     return function () {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      if (mo) mo.disconnect();
     };
   }, []);
 
@@ -1127,7 +1144,8 @@ export default function LandingPage() {
 
 {/* ============================================================
      SECTION — Trust. Answers the questions HR buyers ask first.
-     Lines marked TODO need Mike's real answers before going live.
+     Every answer matches the interview consent screen and /privacy.
+     If either of those changes, update this section too.
      ============================================================ */}
 <section className="trust" id="trust" aria-labelledby="trust-heading">
   <div className="container">
@@ -1138,7 +1156,7 @@ export default function LandingPage() {
     <div className="tr-grid">
       <div className="tr-item">
         <h3>Do candidates know they&rsquo;re talking to AI?</h3>
-        <p>Yes. <span className="tr-todo">TODO: say where you tell them, for example the invite email and the screen before the interview starts.</span></p>
+        <p>Yes. Before the interview starts, candidates tick a box agreeing to be recorded and to their answers being analysed by AI. Then the interviewer introduces itself as the AI interviewer.</p>
       </div>
       <div className="tr-item">
         <h3>Does the AI decide who gets hired?</h3>
@@ -1149,8 +1167,8 @@ export default function LandingPage() {
         <p>Candidates for the same role get the same core questions and the same scoring rubric. Follow-ups change based on what each person says.</p>
       </div>
       <div className="tr-item">
-        <h3>Where does candidate data live?</h3>
-        <p><span className="tr-todo">TODO: add your hosting region, how long recordings are kept, and how a candidate can ask for deletion.</span></p>
+        <h3>What happens to candidate data?</h3>
+        <p>Only the recruiter who created the role can see it. It&rsquo;s kept until you delete the role or ask us to, then permanently removed within 30 days. Candidates can ask for their data to be erased at any time. <a className="tr-link" href="/privacy">Read the privacy policy</a></p>
       </div>
     </div>
   </div>
