@@ -913,6 +913,9 @@ function useCameraCheck(videoRef, stream) {
     let prev = null
     let bad = 0
     const id = setInterval(() => {
+      // Kept light on purpose: one tiny 16x12 sample every few seconds,
+      // and nothing at all while the tab is in the background.
+      if (typeof document !== 'undefined' && document.hidden) return
       const v = videoRef.current
       const track = stream.getVideoTracks?.()[0]
       let problem = !track || track.readyState === 'ended'
@@ -935,8 +938,8 @@ function useCameraCheck(videoRef, stream) {
         } catch { /* a frame we cannot read is not proof of a problem */ }
       }
       bad = problem ? bad + 1 : 0
-      setTrouble(bad >= 3)
-    }, 2000)
+      setTrouble(bad >= 2)
+    }, 3000)
     return () => clearInterval(id)
   }, [stream, videoRef])
   return trouble
@@ -1355,6 +1358,12 @@ export default function InterviewPage() {
   const liveStartRef          = useRef(0)
   const closingIndexRef       = useRef(0)
   const ackIndexRef           = useRef(0)
+  /* Guards against double taps. On a phone the screen can stall for a
+     moment after a tap; every extra tap used to queue up and run once it
+     unfroze, saving the same answer up to 12 times. One tap counts, the
+     rest are ignored until the next question is on screen. */
+  const submittingRef         = useRef(false)
+  const startingLiveRef       = useRef(false)
 
   useEffect(() => { setHasInviteToken(!!inviteTokenRef.current) }, [])
 
@@ -1717,6 +1726,12 @@ export default function InterviewPage() {
   /* ── Live interview: start recording + first question ─── */
 
   async function beginLiveInterview() {
+    if (startingLiveRef.current) return
+    startingLiveRef.current = true
+    try { await beginLiveInterviewOnce() } finally { startingLiveRef.current = false }
+  }
+
+  async function beginLiveInterviewOnce() {
     if (!streamRef.current) { await requestStream(); if (!streamRef.current) return }
 
     /* The one-attempt lock is taken HERE, as the real questions start,
@@ -1814,6 +1829,7 @@ export default function InterviewPage() {
     setIsFollowUp(!!followUp)
     setAwaitingStart(false)
     setCountdown(0)
+    submittingRef.current = false
     threadRef.current = [{ asked: text, answer: null, kind: 'question' }]
     questionStartRef.current = Date.now()
     addTranscriptRow('interviewer', text)
@@ -1878,11 +1894,16 @@ export default function InterviewPage() {
   }, [countdown])
 
   async function submitAnswer() {
+    if (submittingRef.current) return
+    const answer = (typingMode ? typedAnswer : transcript).trim()
+    if (!answer) return
+    submittingRef.current = true
     stopListening()
     setCountdown(0)
     setAwaitingStart(false)
-    const answer = (typingMode ? typedAnswer : transcript).trim()
-    if (!answer) return
+    // Leave the answer screen straight away, so the tap visibly worked
+    // even while the answer is still being saved.
+    setStep('transition')
 
     const currentQ = questions[currentIndex]
 
@@ -1947,6 +1968,7 @@ export default function InterviewPage() {
 
     if (move?.action === 'ask' && move.say) {
       thread.push({ asked: move.say, answer: null, kind: move.kind || 'probe' })
+      submittingRef.current = false
       setStep('live')
       setCurrentQuestion(move.say)
       setTranscript(''); setTypedAnswer(''); setTypingMode(false)
@@ -1971,7 +1993,7 @@ export default function InterviewPage() {
     setIsFollowUp(false)
     setStep('transition')
     setTimeout(() => {
-      if (next >= questions.length) { setStep('candidate-qa'); return }
+      if (next >= questions.length) { submittingRef.current = false; setStep('candidate-qa'); return }
       setCurrentIndex(next)
       setStep('live')
       askQuestion(next, false, closing)
