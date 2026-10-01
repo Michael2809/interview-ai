@@ -300,13 +300,13 @@ function FilterBar({
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-3 md:flex md:items-center md:gap-3 md:w-auto">
+      <div className="grid grid-cols-2 gap-3 [&>*:last-child]:col-span-2 md:flex md:items-center md:gap-3 md:w-auto">
         <Select
           aria-label="Filter by status"
           value={status}
           onChange={(e) => onStatus(e.target.value)}
           fullWidth={false}
-          className="min-w-[140px]"
+          className="min-w-0 md:min-w-[140px]"
           options={[
             { value: 'all',      label: 'All status'  },
             { value: 'active',   label: 'Active'      },
@@ -319,7 +319,7 @@ function FilterBar({
           value={dept}
           onChange={(e) => onDept(e.target.value)}
           fullWidth={false}
-          className="min-w-[160px]"
+          className="min-w-0 md:min-w-[160px]"
           options={[
             { value: 'all', label: 'All departments' },
             ...departments.map((d) => ({ value: d, label: d })),
@@ -330,7 +330,7 @@ function FilterBar({
           value={sort}
           onChange={(e) => onSort(e.target.value)}
           fullWidth={false}
-          className="min-w-[170px]"
+          className="min-w-0 md:min-w-[170px]"
           options={[
             { value: 'priority', label: 'Sort: Priority'     },
             { value: 'recent',   label: 'Sort: Most active'  },
@@ -382,7 +382,7 @@ function PipelineCell({ label, value }) {
   const isZero = !value || value === 0
   return (
     <div className="min-w-0">
-      <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)]">
+      <div className="text-[10px] md:text-[10.5px] uppercase tracking-[0.08em] md:tracking-[0.14em] font-semibold text-[color:var(--color-rc-muted)] truncate">
         {label}
       </div>
       <div
@@ -400,7 +400,7 @@ function PipelineCell({ label, value }) {
 function PipelineBreakdown({ waiting, ongoing, shortlisted, onHold, rejected, lastActivity }) {
   return (
     <div className="mt-4">
-      <div className="grid grid-cols-5 gap-x-4 md:gap-x-6">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-3 sm:grid-cols-5 sm:gap-x-4 md:gap-x-6">
         <PipelineCell label="Awaiting"    value={waiting} />
         <PipelineCell label="In progress" value={ongoing} />
         <PipelineCell label="Shortlisted" value={shortlisted} />

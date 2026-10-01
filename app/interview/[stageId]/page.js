@@ -90,7 +90,7 @@ function Display({ children, size = 'md', className = '' }) {
   const sizeClass = size === 'lg'
     ? 'text-[40px] md:text-[56px] leading-[1.02] tracking-[-0.04em]'
     : size === 'question'
-    ? 'text-[28px] md:text-[36px] leading-[1.15] tracking-[-0.028em]'
+    ? 'text-[23px] sm:text-[28px] md:text-[36px] leading-[1.2] tracking-[-0.022em]'
     : 'text-[28px] md:text-[36px] leading-[1.1] tracking-[-0.03em]'
   return (
     <h1
@@ -867,7 +867,9 @@ function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listen
             </p>
           )}
         </div>
-        <div className="rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden aspect-square">
+        {/* Small self-view on a phone so the buttons stay on screen;
+            the full square preview from tablet width up. */}
+        <div className="w-[96px] h-[128px] md:w-auto md:h-auto md:aspect-square rounded-[14px] md:rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden">
           {stream ? (
             <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" aria-label="Camera preview" />
           ) : null}
@@ -899,12 +901,12 @@ function LiveScreen({
     <div className="min-h-screen bg-white flex flex-col">
       {/* Top status bar */}
       <div className="border-b border-[color:var(--color-rc-line)]">
-        <div className="max-w-[980px] mx-auto px-6 py-4 flex items-center gap-4">
+        <div className="max-w-[980px] mx-auto px-5 md:px-6 py-3.5 md:py-4 flex items-center gap-3 md:gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              <div className="text-[11.5px] text-[color:var(--color-rc-muted)] tabular-nums">
+              <div className="shrink-0 whitespace-nowrap text-[11.5px] text-[color:var(--color-rc-muted)] tabular-nums">
                 Question {progressCount} of {totalQuestions}
-                {isFollowUp && <span className="ml-2 text-[color:var(--color-rc-warm)]">· follow-up</span>}
+                {isFollowUp && <span className="ml-1.5 md:ml-2 text-[color:var(--color-rc-warm)]">· follow-up</span>}
               </div>
               <ProgressBar current={progressCount - 1} total={totalQuestions} />
             </div>
@@ -916,7 +918,7 @@ function LiveScreen({
         </div>
       </div>
 
-      <div className="flex-1 max-w-[980px] mx-auto w-full px-6 py-12 md:py-16 grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
+      <div className="flex-1 max-w-[980px] mx-auto w-full px-5 md:px-6 py-8 md:py-16 grid gap-6 md:gap-8 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
         <div className="min-w-0">
           <SectionLabel>{isSpeaking ? '🔊 Interviewer is speaking' : countdown > 0 ? 'Get ready…' : awaitingStart ? 'Your turn' : listening ? '🎤 Listening' : 'Question'}</SectionLabel>
           <Display size="question" className="mt-3 max-w-[28ch]">
@@ -1205,6 +1207,10 @@ export default function InterviewPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   // 'started' | 'completed' once this person has used up their attempt.
   const [lockedReason, setLockedReason] = useState(null)
+  // Whether this visit came from an emailed invite. Null until mounted:
+  // the server cannot see the URL token, so deciding it during render made
+  // the server and browser draw different landing pages (hydration error).
+  const [hasInviteToken, setHasInviteToken] = useState(null)
 
   const [permissionState, setPermissionState] = useState('idle')    // idle | requesting | granted | denied
   const [tryingPermission, setTryingPermission] = useState(false)
@@ -1290,6 +1296,8 @@ export default function InterviewPage() {
   const closingIndexRef       = useRef(0)
   const ackIndexRef           = useRef(0)
 
+  useEffect(() => { setHasInviteToken(!!inviteTokenRef.current) }, [])
+
   /* ── Preview binding ─────────────────────── */
   useEffect(() => {
     // Wire the streamRef.current to whichever video preview is mounted.
@@ -1297,7 +1305,10 @@ export default function InterviewPage() {
     if (target && streamRef.current && target.srcObject !== streamRef.current) {
       target.srcObject = streamRef.current
     }
-  }, [step])
+    // permissionState too: on the device check the camera is switched on
+    // without the step changing, so binding on step alone left the
+    // preview blank until the candidate moved on.
+  }, [step, permissionState])
 
   /* ── Load data + init ────────────────────── */
 
@@ -2373,13 +2384,13 @@ export default function InterviewPage() {
         questionCount={questions.length}
         candidateName={candidateName}
         setCandidateName={setCandidateName}
-        askEmail={!inviteTokenRef.current}
+        askEmail={hasInviteToken === false}
         candidateEmail={candidateEmail}
         setCandidateEmail={setCandidateEmail}
         onBegin={handleBeginFromLanding}
         consented={consented}
         setConsented={setConsented}
-        canBegin={!!candidateName.trim() && contextOk === true && consented && (!!inviteTokenRef.current || EMAIL_RE.test(candidateEmail.trim()))}
+        canBegin={!!candidateName.trim() && contextOk === true && consented && hasInviteToken !== null && (hasInviteToken || EMAIL_RE.test(candidateEmail.trim()))}
       />
     )
   }

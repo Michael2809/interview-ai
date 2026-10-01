@@ -713,7 +713,7 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
   return (
     <div
       className={
-        'group grid grid-cols-[auto_auto_1fr_auto] md:grid-cols-[auto_auto_1fr_auto_auto_auto_auto] items-center gap-x-3 md:gap-x-4 px-4 md:px-5 py-3.5 ' +
+        'group grid grid-cols-[auto_auto_1fr_auto_auto] md:grid-cols-[auto_auto_1fr_auto_auto_auto_auto] items-center gap-x-2.5 md:gap-x-4 px-3 md:px-5 py-3.5 ' +
         'bg-white border-t border-[color:var(--color-rc-line)] first:border-t-0 transition-colors ' +
         (selected ? 'bg-[color:var(--color-rc-soft)]' : 'hover:bg-[color:var(--color-rc-soft)]/60')
       }
@@ -725,7 +725,7 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
         onChange={() => onToggleSelect(cand.email)}
         className={
           'h-4 w-4 rounded border border-[color:var(--color-rc-line-hover)] accent-[color:var(--color-rc-ink)] ' +
-          (selected ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]')
+          (selected ? '' : 'md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]')
         }
       />
 
@@ -755,7 +755,7 @@ function CandidateRow({ cand, selected, onToggleSelect, onSetStatus }) {
             </span>
           )}
         </div>
-        {getCandidateDisplayEmail(cand) && (
+        {getCandidateDisplayEmail(cand) && getCandidateDisplayEmail(cand) !== getCandidateDisplayName(cand) && (
           <div className="mt-0.5 text-[12.5px] text-[color:var(--color-rc-muted)] truncate">
             {getCandidateDisplayEmail(cand)}
           </div>
@@ -860,15 +860,15 @@ function CandidateFilterBar({ search, onSearch, stage, onStage, statusFilter, on
           className="w-full h-11 pl-9 pr-3 bg-white text-[14.5px] text-[color:var(--color-rc-ink)] border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)]"
         />
       </div>
-      <div className="grid grid-cols-3 gap-3 md:flex md:items-center md:gap-3">
+      <div className="grid grid-cols-2 gap-3 [&>*:last-child]:col-span-2 md:flex md:items-center md:gap-3">
         <Select
           aria-label="Filter by stage" value={stage} onChange={(e) => onStage(e.target.value)}
-          fullWidth={false} className="min-w-[160px]"
+          fullWidth={false} className="min-w-0 md:min-w-[160px]"
           options={[{ value: 'all', label: 'All stages' }, ...stages.map((s) => ({ value: String(s.id), label: s.name }))]}
         />
         <Select
           aria-label="Filter by status" value={statusFilter} onChange={(e) => onStatusFilter(e.target.value)}
-          fullWidth={false} className="min-w-[160px]"
+          fullWidth={false} className="min-w-0 md:min-w-[160px]"
           options={[
             { value: 'all',         label: 'All status'      },
             { value: 'waiting',     label: 'Waiting review'  },
@@ -880,7 +880,7 @@ function CandidateFilterBar({ search, onSearch, stage, onStage, statusFilter, on
         />
         <Select
           aria-label="Sort candidates" value={sort} onChange={(e) => onSort(e.target.value)}
-          fullWidth={false} className="min-w-[170px]"
+          fullWidth={false} className="min-w-0 md:min-w-[170px]"
           options={[
             { value: 'priority', label: 'Sort: Priority'     },
             { value: 'recent',   label: 'Sort: Most recent'  },
@@ -904,12 +904,12 @@ function BulkActionBar({ count, onClear, onShortlist, onReject, onExport, onComp
       role="toolbar"
       aria-label="Bulk candidate actions"
       aria-live="polite"
-      className="fixed left-1/2 -translate-x-1/2 bottom-6 z-40 flex items-center gap-2 md:gap-3 px-4 py-2.5 rounded-full bg-[color:var(--color-rc-ink)] text-white [box-shadow:0_20px_40px_-14px_rgba(17,17,17,0.35)]"
+      className="fixed left-3 right-3 bottom-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-6 z-40 flex flex-wrap md:flex-nowrap items-center justify-center gap-1 md:gap-3 px-2 md:px-4 py-2 md:py-2.5 rounded-[16px] md:rounded-full bg-[color:var(--color-rc-ink)] text-white [box-shadow:0_20px_40px_-14px_rgba(17,17,17,0.35)]"
     >
       <span className="text-[13px] font-medium tabular-nums px-2">
         {count} selected
       </span>
-      <div className="h-4 w-px bg-white/25" aria-hidden="true" />
+      <div className="hidden md:block h-4 w-px bg-white/25" aria-hidden="true" />
       <button
         type="button" onClick={onShortlist} disabled={busy}
         className="inline-flex items-center gap-1.5 h-8 px-3 rounded text-[13px] font-medium hover:bg-white/10 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
@@ -938,7 +938,7 @@ function BulkActionBar({ count, onClear, onShortlist, onReject, onExport, onComp
       >
         <Columns2 size={14} aria-hidden="true" /> Compare
       </button>
-      <div className="h-4 w-px bg-white/25" aria-hidden="true" />
+      <div className="hidden md:block h-4 w-px bg-white/25" aria-hidden="true" />
       <button
         type="button" onClick={onClear}
         aria-label="Clear selection"

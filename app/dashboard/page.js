@@ -499,7 +499,8 @@ function KPICell({ label, value, onClick, decimals = 0 }) {
 
 function KPIStrip({ cells }) {
   return (
-    <div className="rounded-[14px] bg-white border border-[color:var(--color-rc-line)] flex flex-col md:flex-row md:items-stretch divide-y md:divide-y-0 md:divide-x divide-[color:var(--color-rc-line)]">
+    // Two by two on a phone, one row from tablet width up.
+    <div className="rounded-[14px] overflow-hidden border border-[color:var(--color-rc-line)] grid grid-cols-2 gap-px bg-[color:var(--color-rc-line)] [&>*]:bg-white md:bg-white md:flex md:flex-row md:items-stretch md:gap-0 md:divide-x divide-[color:var(--color-rc-line)]">
       {cells.map((c, i) => (
         <KPICell key={i} {...c} />
       ))}

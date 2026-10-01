@@ -256,7 +256,7 @@ function StickyVerdictBar({ currentStatus, updatingStatus, onSetStatus, onArchiv
         aria-pressed={active}
         aria-label={active ? `${label} — currently selected` : `Mark as ${label}`}
         className={
-          'inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-[12.5px] font-medium ' +
+          'inline-flex items-center gap-1.5 h-9 md:h-8 px-2.5 md:px-3 rounded-[8px] text-[12.5px] font-medium ' +
           'transition-colors duration-150 disabled:opacity-60 disabled:cursor-not-allowed ' +
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] ' +
           (active
@@ -276,10 +276,11 @@ function StickyVerdictBar({ currentStatus, updatingStatus, onSetStatus, onArchiv
       role="toolbar"
       aria-label="Hiring decision"
       className={
-        'fixed z-30 left-1/2 -translate-x-1/2 bottom-6 print:hidden ' +
-        'flex items-center gap-1 h-12 pl-2 pr-1.5 rounded-[14px] ' +
+        // Full width on a phone so all four actions fit; centred pill above.
+        'fixed z-30 left-3 right-3 bottom-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-6 print:hidden ' +
+        'flex items-center justify-between md:justify-start gap-0.5 md:gap-1 h-12 pl-1.5 pr-1.5 md:pl-2 rounded-[14px] ' +
         'bg-[color:var(--color-rc-ink)] text-white ' +
-        '[box-shadow:0_24px_48px_-20px_rgba(17,17,17,0.4)] rc-bulk-bar-in whitespace-nowrap'
+        '[box-shadow:0_24px_48px_-20px_rgba(17,17,17,0.4)] rc-bulk-bar-in rc-bar-full whitespace-nowrap'
       }
     >
       {btn('shortlisted', 'Shortlist', ThumbsUp,   'primary')}
@@ -292,7 +293,7 @@ function StickyVerdictBar({ currentStatus, updatingStatus, onSetStatus, onArchiv
         disabled={archiving}
         aria-label="Archive candidate"
         className={
-          'inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-[12.5px] font-medium ' +
+          'inline-flex items-center gap-1.5 h-9 md:h-8 px-2.5 md:px-3 rounded-[8px] text-[12.5px] font-medium ' +
           'text-white/85 hover:text-white hover:bg-white/10 transition-colors duration-150 ' +
           'disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
         }

@@ -440,7 +440,7 @@ function RowMenu({ row, onAction, anchorRef }) {
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center justify-center h-7 w-7 rounded-[6px] text-[color:var(--color-rc-muted)] bg-white border border-[color:var(--color-rc-line)] hover:text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)]/60 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
+        className="inline-flex items-center justify-center h-9 w-9 md:h-7 md:w-7 rounded-[8px] md:rounded-[6px] text-[color:var(--color-rc-muted)] bg-white border border-[color:var(--color-rc-line)] hover:text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)]/60 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]"
       >
         <MoreHorizontal size={13} aria-hidden="true" />
       </button>
@@ -627,6 +627,9 @@ function AIIndicator({ row }) {
  */
 function CandidateRowImpl({ row, selected, onToggleSelect, onMessage, onMenuAction }) {
   const menuAnchorRef = useRef(null)
+  // Phones have no hover, so the hover-only actions never appear there.
+  // They get their own always-visible menu button with its own anchor.
+  const mobileMenuAnchorRef = useRef(null)
   // Note: every derivation here is cheap and depends only on `row`.
   // Because the component is wrapped in React.memo below with a
   // custom equality function, this body only re-runs when the row's
@@ -646,8 +649,8 @@ function CandidateRowImpl({ row, selected, onToggleSelect, onMessage, onMenuActi
         href={rowHref || '#'}
         aria-label={`Open ${displayName}`}
         className={
-          'grid grid-cols-[28px_10px_minmax(0,1fr)_auto_auto_18px] items-center gap-x-4 md:gap-x-5 ' +
-          'py-3 px-3 -mx-3 rounded-[10px] cursor-pointer ' +
+          'grid grid-cols-[28px_10px_minmax(0,1fr)_auto_auto_18px] items-center gap-x-3 md:gap-x-5 ' +
+          'py-3 pl-3 pr-11 md:pr-3 -mx-3 rounded-[10px] cursor-pointer ' +
           'hover:bg-[color:var(--color-rc-soft)]/70 hover:-translate-y-[1px] ' +
           'transition-[background-color,transform] duration-150 ease-[cubic-bezier(.22,.61,.36,1)] ' +
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
@@ -705,6 +708,14 @@ function CandidateRowImpl({ row, selected, onToggleSelect, onMessage, onMenuActi
               </span>
             )}
           </div>
+          {/* Phone only: status and score, which sit in their own
+              columns on wider screens. */}
+          <div className="md:hidden mt-1 flex items-center gap-1.5 text-[11.5px] leading-none whitespace-nowrap">
+            <span className="font-medium" style={{ color: spec.color }}>{spec.label}</span>
+            {row.score != null && (
+              <span className="text-[color:var(--color-rc-muted)] tabular-nums">· {Number(row.score).toFixed(1)}/10</span>
+            )}
+          </div>
         </div>
 
         {/* Score preview — subtle triage aid (only when scored) */}
@@ -750,6 +761,11 @@ function CandidateRowImpl({ row, selected, onToggleSelect, onMessage, onMenuActi
         <span onClick={stopLink} className="relative">
           <RowMenu row={row} onAction={onMenuAction} anchorRef={menuAnchorRef} />
         </span>
+      </div>
+
+      {/* Phone actions: always visible, since there is no hover. */}
+      <div className="md:hidden absolute right-0 top-1/2 -translate-y-1/2" onClick={stopLink}>
+        <RowMenu row={row} onAction={onMenuAction} anchorRef={mobileMenuAnchorRef} />
       </div>
     </li>
   )
@@ -807,11 +823,12 @@ function BulkActionBar({ count, onClear, onAction, onCompare, disabled }) {
       role="toolbar"
       aria-label="Bulk actions"
       className={
-        'fixed z-30 left-1/2 -translate-x-1/2 bottom-6 ' +
-        'flex items-center gap-1 h-12 pl-2 pr-1.5 rounded-[14px] ' +
+        // Edge to edge on a phone so every action fits; centred pill above.
+        'fixed z-30 left-3 right-3 bottom-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-6 ' +
+        'flex items-center justify-between md:justify-start gap-0.5 md:gap-1 h-12 pl-1.5 md:pl-2 pr-1.5 rounded-[14px] ' +
         'bg-[color:var(--color-rc-ink)] text-white ' +
         '[box-shadow:0_24px_48px_-20px_rgba(17,17,17,0.4)] ' +
-        'rc-bulk-bar-in whitespace-nowrap ' +
+        'rc-bulk-bar-in rc-bar-full whitespace-nowrap ' +
         (disabled ? 'opacity-70 pointer-events-none' : '')
       }
     >
@@ -855,7 +872,7 @@ function BulkActionBar({ count, onClear, onAction, onCompare, disabled }) {
 
 function BulkBtn({ children, onClick, primary, danger, muted, title }) {
   const base =
-    'inline-flex items-center h-8 px-3 rounded-[10px] text-[12.5px] font-medium ' +
+    'inline-flex items-center h-9 md:h-8 px-2.5 md:px-3 rounded-[10px] text-[12.5px] font-medium ' +
     'transition-colors duration-150 ' +
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
   const tone = primary
