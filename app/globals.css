@@ -208,8 +208,12 @@ body {
   from { opacity: 0; transform: translateY(2px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* `backwards`, not `both`: a transform kept on <main> after the fade
+   (even translateY(0)) makes it the containing block for every
+   position:fixed child, so the bulk-action and verdict bars sat at the
+   very bottom of the page instead of the bottom of the screen. */
 .rc-page-fade {
-  animation: rc-page-fade var(--dur-page, 180ms) var(--ease-rc-out) both;
+  animation: rc-page-fade var(--dur-page, 180ms) var(--ease-rc-out) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .rc-page-fade { animation: none; }
