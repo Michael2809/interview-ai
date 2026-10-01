@@ -826,17 +826,20 @@ const INTRO_QUESTIONS = INTRO_SPEC.map((q) => makeIntroQuestion(q.text, q.scored
 function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listening, transcript, onRetry, awaitingStart, onStartSpeaking, countdown }) {
   return (
     <PageShell>
-      <div className="flex items-center gap-3 mb-3">
+      {/* One grid so the camera can come FIRST on a phone (big, so the
+          candidate sees exactly what the recruiter will see) and sit in the
+          right-hand column on a laptop. */}
+      <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] md:gap-x-6 items-start">
+      <div className="flex items-center gap-3 mb-3 md:col-start-1">
         <SectionLabel>Warm-up</SectionLabel>
         <span className="text-[11.5px] text-[color:var(--color-rc-muted)]">This answer is not recorded or evaluated.</span>
       </div>
 
-      <Display size="question" className="mt-2 max-w-[24ch]">
+      <Display size="question" className="mt-2 max-w-[24ch] md:col-start-1">
         &ldquo;{WARMUP_QUESTION}&rdquo;
       </Display>
 
-      <div className="mt-8 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
-        <div className="min-w-0 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6 min-h-[180px]">
+        <div className="mt-6 md:mt-8 md:col-start-1 min-w-0 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-5 md:p-6 min-h-[150px] md:min-h-[180px]">
           {isSpeaking ? (
             <p className="text-[13.5px] text-[color:var(--color-rc-warm)]">
               <span aria-hidden="true" className="mr-1.5">🔊</span> Speaking…
@@ -867,12 +870,16 @@ function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listen
             </p>
           )}
         </div>
-        {/* Small self-view on a phone so the buttons stay on screen;
-            the full square preview from tablet width up. */}
-        <div className="w-[96px] h-[128px] md:w-auto md:h-auto md:aspect-square rounded-[14px] md:rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden">
-          {stream ? (
-            <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" aria-label="Camera preview" />
-          ) : null}
+        <div className="order-first md:order-none mb-5 md:mb-0 md:mt-8 md:col-start-2 md:row-start-3">
+          <div className="w-full aspect-[4/3] max-h-[36vh] md:max-h-none md:aspect-square rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden">
+            {stream ? (
+              <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" aria-label="Camera preview" />
+            ) : null}
+          </div>
+          <p className="mt-2 text-[12px] text-[color:var(--color-rc-muted)]">
+            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--color-rc-red)] mr-1.5 align-middle" />
+            This is how the recruiter will see you.
+          </p>
         </div>
       </div>
 
@@ -889,6 +896,52 @@ function WarmupScreen({ stream, videoRef, onSkip, onContinue, isSpeaking, listen
  * Screen 5 — LiveScreen
  * ────────────────────────────────────────────────────────── */
 
+/**
+ * Quietly watches the camera during the interview. True when the picture
+ * has gone black (covered, lens blocked, camera switched off) or frozen,
+ * or the camera track ended, for several checks in a row; false again as
+ * soon as it recovers. Without it, a candidate whose camera died would
+ * never know, and the recruiter would get 20 minutes of nothing.
+ */
+function useCameraCheck(videoRef, stream) {
+  const [trouble, setTrouble] = useState(false)
+  useEffect(() => {
+    if (!stream) return
+    const canvas = document.createElement('canvas')
+    canvas.width = 16; canvas.height = 12
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    let prev = null
+    let bad = 0
+    const id = setInterval(() => {
+      const v = videoRef.current
+      const track = stream.getVideoTracks?.()[0]
+      let problem = !track || track.readyState === 'ended'
+      if (!problem && v && v.readyState >= 2 && ctx) {
+        try {
+          ctx.drawImage(v, 0, 0, 16, 12)
+          const px = ctx.getImageData(0, 0, 16, 12).data
+          const hadPrev = !!prev
+          let sum = 0, diff = 0
+          for (let i = 0; i < px.length; i += 4) {
+            const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114
+            sum += lum
+            if (prev) diff += Math.abs(lum - prev[i / 4])
+            ;(prev ||= new Float32Array(px.length / 4))[i / 4] = lum
+          }
+          const avg = sum / (px.length / 4)
+          const dark = avg < 14
+          const frozen = hadPrev && diff === 0
+          problem = dark || frozen
+        } catch { /* a frame we cannot read is not proof of a problem */ }
+      }
+      bad = problem ? bad + 1 : 0
+      setTrouble(bad >= 3)
+    }, 2000)
+    return () => clearInterval(id)
+  }, [stream, videoRef])
+  return trouble
+}
+
 function LiveScreen({
   stream, videoRef, currentIndex, totalQuestions, question, isSpeaking, listening,
   transcript, typedAnswer, setTypedAnswer, typingMode, setTypingMode,
@@ -897,11 +950,12 @@ function LiveScreen({
 }) {
   const progressCount = currentIndex + 1
   const answering = transcript.trim().length > 0 || typedAnswer.trim().length > 0
+  const cameraTrouble = useCameraCheck(videoRef, stream)
   return (
     <div className="min-h-screen bg-white flex flex-col">
       {/* Top status bar */}
       <div className="border-b border-[color:var(--color-rc-line)]">
-        <div className="max-w-[980px] mx-auto px-5 md:px-6 py-3.5 md:py-4 flex items-center gap-3 md:gap-4">
+        <div className="max-w-[980px] mx-auto pl-5 pr-16 md:px-6 py-3.5 md:py-4 flex items-center gap-3 md:gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
               <div className="shrink-0 whitespace-nowrap text-[11.5px] text-[color:var(--color-rc-muted)] tabular-nums">
@@ -917,6 +971,12 @@ function LiveScreen({
           <RecordingIndicator recording={recording} />
         </div>
       </div>
+
+      {cameraTrouble && (
+        <div role="alert" className="bg-[color:var(--color-rc-red)] text-white text-[13px] leading-snug px-5 py-2.5 text-center">
+          We can&rsquo;t see you. Please check your camera is on and not covered.
+        </div>
+      )}
 
       <div className="flex-1 max-w-[980px] mx-auto w-full px-5 md:px-6 py-8 md:py-16 grid gap-6 md:gap-8 md:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] items-start">
         <div className="min-w-0">
@@ -997,10 +1057,10 @@ function LiveScreen({
           </ActionRow>
         </div>
 
-        {/* Webcam preview. Right-hand column on a laptop; on a phone a small
-            self-view under the buttons, so candidates can still see
-            themselves without it covering the question. */}
-        <div className="w-[96px] h-[128px] md:w-auto md:h-auto md:aspect-square rounded-[14px] md:rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden">
+        {/* Webcam preview. Right-hand column on a laptop. On a phone, a tiny
+            live circle pinned in the top corner: enough to show the camera
+            is on and they are in frame, without taking over the screen. */}
+        <div className="fixed top-1.5 right-3 z-40 h-10 w-10 rounded-full ring-2 ring-white [box-shadow:0_2px_8px_rgba(17,17,17,0.25)] md:static md:z-auto md:h-auto md:w-auto md:ring-0 md:shadow-none md:aspect-square md:rounded-[18px] bg-[color:var(--color-rc-soft)] md:border md:border-[color:var(--color-rc-line)] overflow-hidden">
           {stream && <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" aria-label="Your camera" />}
         </div>
       </div>
