@@ -106,6 +106,30 @@ const LANDING_JSON_LD = {
 };
 
 export default function LandingPage() {
+  // Site nav: fixed to the top, shown only once the hero has scrolled
+  // past, so it never slides through the pinned white interlude.
+  // Separate from the hero/interlude scripts below, which are unchanged.
+  useEffect(() => {
+    var hero = document.getElementById('hero');
+    var nav = document.getElementById('siteNav');
+    if (!hero || !nav) return;
+    var raf = null;
+    function check() {
+      raf = null;
+      var r = hero.getBoundingClientRect();
+      var limit = Math.min(window.innerHeight * 0.5, r.height - 120);
+      nav.classList.toggle('is-visible', r.bottom <= limit);
+    }
+    function onScroll() { if (raf === null) raf = requestAnimationFrame(check); }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    check();
+    return function () {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+
   useEffect(() => {
     // Inline scripts from the original standalone landing HTML.
     // Each expects the DOM (hero stage, panel-interview, spine dots, etc.)
@@ -558,9 +582,9 @@ export default function LandingPage() {
     </div>
 
     {/* story notes — asymmetric, in the desk's negative space */}
-    <div className="note" id="hn1" aria-hidden="true"><span className="idx">01</span><p className="ht">200 applications. One open role.</p></div>
-    <div className="note" id="hn2" aria-hidden="true"><span className="idx">02</span><p className="ht">The pile keeps growing.</p></div>
-    <div className="note" id="hn3" aria-hidden="true"><span className="idx">03</span><p className="ht">Recrewt interviews all of them.</p></div>
+    <div className="note" id="hn1" aria-hidden="true"><p className="ht">200 applications. One open role.</p></div>
+    <div className="note" id="hn2" aria-hidden="true"><p className="ht">The pile keeps growing.</p></div>
+    <div className="note" id="hn3" aria-hidden="true"><p className="ht">Recrewt interviews all of them.</p></div>
 
     {/* payoff — calm, human, in the final frame's negative space */}
     <div className="payoff" id="payoff" aria-hidden="true">
@@ -572,10 +596,10 @@ export default function LandingPage() {
 </div>
 
 {/* ============================================================
-     SITE NAV — sits after the hero in the DOM, so it slides in as the
-     hero finishes and then sticks. No JS; the hero is untouched.
+     SITE NAV — fixed to the top, fades in once the hero is done
+     (see the first useEffect). The hero itself is untouched.
      ============================================================ */}
-<header className="site-nav">
+<header className="site-nav" id="siteNav">
   <div className="sn-inner">
     <a className="sn-logo" href="#hero" aria-label="Recrewt AI, back to top">
       <img src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" loading="lazy" decoding="async" />

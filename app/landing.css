@@ -1660,3 +1660,20 @@
 .rc-landing .fit-caption { white-space: nowrap; }
 /* "Custom" should not read like a price */
 .rc-landing .pr-grid .pr-card:nth-child(3) .pr-price .amt { font-size: clamp(30px, 2.6vw, 38px); }
+
+/* ---- round 2 ---- */
+/* site nav: fixed, hidden during the hero, fades in after it */
+.rc-landing .site-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+  opacity: 0; transform: translateY(-100%); pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.rc-landing .site-nav.is-visible { opacity: 1; transform: none; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .rc-landing .site-nav { transition: none; } }
+
+/* hero story boxes: no numbers, alternating corners (left, right, left) */
+@media (min-width: 761px) {
+  .rc-landing #hn2 { left: auto; right: clamp(56px, 6vw, 112px); }
+  .rc-landing #hn1, .rc-landing #hn2, .rc-landing #hn3 { max-width: 340px; }
+  .rc-landing .note .ht { margin-top: 0; text-wrap: balance; }
+}
