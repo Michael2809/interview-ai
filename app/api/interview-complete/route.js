@@ -24,6 +24,8 @@ export async function POST(request) {
   const sessionId = body?.sessionId
   // The token from the invite link, when the candidate arrived by one.
   const inviteToken = body?.inviteToken
+  // The name they typed, so the invite and the interview read as one person.
+  const candidateName = String(body?.candidateName || '').trim().slice(0, 120)
 
   if (!stageId || !sessionId) {
     return Response.json({ error: 'stageId and sessionId are required.' }, { status: 400 })
@@ -60,7 +62,11 @@ export async function POST(request) {
   if (inviteToken) {
     const { error: inviteErr } = await svc
       .from('interviews')
-      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        ...(candidateName ? { candidate_name: candidateName } : {}),
+      })
       .eq('stage_id', stageId)
       .eq('token', inviteToken)
       .eq('speaker', 'invite')

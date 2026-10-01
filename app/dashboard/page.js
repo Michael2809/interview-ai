@@ -1480,6 +1480,8 @@ export default function DashboardPage() {
       ) {
         inviteMap[key] = {
           email: r.candidate_email,
+          // Set once the candidate starts and types their name.
+          name: r.candidate_name || null,
           roleTitle: rid ? roleTitle[rid] : null,
           invited_at: r.invited_at,
         }
@@ -1519,7 +1521,9 @@ export default function DashboardPage() {
       transcripts.map((r) => r.candidate_name?.toLowerCase()).filter(Boolean),
     )
     const ongoingArr = invitedArr.filter(
-      (c) => !completedNames.has(c.email?.toLowerCase()),
+      (c) =>
+        !completedNames.has(c.email?.toLowerCase()) &&
+        !(c.name && completedNames.has(c.name.toLowerCase())),
     )
 
     setDrawerLists({

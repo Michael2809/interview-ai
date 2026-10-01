@@ -1010,6 +1010,9 @@ export default function CandidatesPage() {
           const info = stageInfo[r.stage_id] || {}
           inviteMap.set(key, {
             email: r.candidate_email,
+            // The name the candidate typed when they started, written onto
+            // the invite by /api/link-invite. Null until they start.
+            name: r.candidate_name || null,
             stage_id: r.stage_id,
             stageName: info.name || 'Unknown stage',
             roleTitle: info.roleTitle || 'Unassigned role',
@@ -1044,6 +1047,15 @@ export default function CandidatesPage() {
       }
     })
 
+    // Invite email for a typed name, per stage, so a completed interview
+    // shows the address it was invited on.
+    const inviteEmailByStageName = {}
+    interviews
+      .filter((r) => r.speaker === 'invite' && r.candidate_email && r.candidate_name)
+      .forEach((r) => {
+        inviteEmailByStageName[`${r.stage_id}|${r.candidate_name.toLowerCase()}`] = r.candidate_email
+      })
+
     // Which invites have already produced a completed session?
     const finishedByStage = new Set(
       answerRows.map((r) => `${r.stage_id}|${(r.candidate_name || '').toLowerCase()}`),
@@ -1062,7 +1074,7 @@ export default function CandidatesPage() {
         id: 'c:' + key,
         kind: 'completed',
         name: c.candidate_name,
-        email: null,
+        email: inviteEmailByStageName[key] || null,
         roleTitle: c.roleTitle,
         stageName: c.stageName,
         stageId: c.stage_id,
@@ -1087,7 +1099,11 @@ export default function CandidatesPage() {
       const prefix = c.email.split('@')[0].toLowerCase()
       const covered = Array.from(finishedByStage).some((k) => {
         const [sid, nm] = k.split('|')
-        return String(sid) === String(c.stage_id) && (nm === prefix || nm === c.email.toLowerCase())
+        if (String(sid) !== String(c.stage_id)) return false
+        // The reliable link: the name they typed was written onto this invite.
+        if (c.name && nm === c.name.toLowerCase()) return true
+        // Older invites, from before that link existed: best guess.
+        return nm === prefix || nm === c.email.toLowerCase()
       })
       if (covered) continue
       const ageMs = c.invited_at ? Date.now() - new Date(c.invited_at).getTime() : Infinity

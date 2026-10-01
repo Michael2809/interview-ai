@@ -916,7 +916,7 @@ function LiveScreen({
             ) : awaitingStart ? (
               <div>
                 <p className="text-[15.5px] leading-relaxed text-[color:var(--color-rc-ink)]">
-                  Take a beat. When you click, we&rsquo;ll count you in from three.
+                  Take a beat. When you click, we&rsquo;ll count you in.
                 </p>
                 <div className="mt-5">
                   <PrimaryButton
@@ -959,8 +959,10 @@ function LiveScreen({
           </ActionRow>
         </div>
 
-        {/* Right-hand webcam preview */}
-        <div className="hidden md:block rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden aspect-square">
+        {/* Webcam preview. Right-hand column on a laptop; on a phone a small
+            self-view under the buttons, so candidates can still see
+            themselves without it covering the question. */}
+        <div className="w-[96px] h-[128px] md:w-auto md:h-auto md:aspect-square rounded-[14px] md:rounded-[18px] bg-[color:var(--color-rc-soft)] border border-[color:var(--color-rc-line)] overflow-hidden">
           {stream && <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" aria-label="Your camera" />}
         </div>
       </div>
@@ -1616,6 +1618,16 @@ export default function InterviewPage() {
       session_id: sessionIdRef.current,
     })
 
+    // Tie the name they typed to the invite they came in on, so the
+    // recruiter sees one candidate, not an email and a name. Best effort.
+    if (inviteTokenRef.current) {
+      fetch('/api/link-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId, inviteToken: inviteTokenRef.current, candidateName }),
+      }).catch(() => {})
+    }
+
     setStep('live')
     setCurrentIndex(0)
     setIsFollowUp(false)
@@ -1805,7 +1817,8 @@ export default function InterviewPage() {
   function nextAck() {
     const n = ackIndexRef.current++
     if (n % 2 === 1) return ''
-    const lines = ['Okay.', 'Mm, got it.', 'Right.', 'I see.']
+    // Real words only: the browser voice spells out sounds like "Mm".
+    const lines = ['Okay.', 'Got it.', 'Right.', 'I see.']
     return lines[(n / 2) % lines.length]
   }
 
@@ -2074,6 +2087,7 @@ export default function InterviewPage() {
           // Lets the server close the invite this candidate came in on,
           // so reminders never chase somebody who already interviewed.
           inviteToken: inviteTokenRef.current,
+          candidateName,
         }),
       })
       // Checked, not assumed: this route answers 400 and 500 with a body,

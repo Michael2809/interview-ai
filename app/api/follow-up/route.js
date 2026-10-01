@@ -143,6 +143,9 @@ function parseMove(raw) {
   if (!action) return null
   const kind = KINDS.has(obj?.kind) ? obj.kind : (action === 'ask' ? 'probe' : 'wrap')
   let say = typeof obj?.say === 'string' ? obj.say.replace(/\s+/g, ' ').trim() : ''
+  // The browser voice spells out "Mm" and "Hmm" letter by letter. Drop them.
+  say = say.replace(/^(?:(?:m+h?m+|h+m+|mhm|uh[- ]?huh)\b[\s,.!-]*)+/i, '').trim()
+  if (say) say = say[0].toUpperCase() + say.slice(1)
 
   // Never read out anything that looks like markup, or that talks about
   // scoring, instructions or the prompt, whatever the candidate said to
@@ -253,6 +256,8 @@ HOW YOU TALK
 - One or two short, natural, spoken sentences. Refer to what they actually
   said, in plain words.
 - Ask only ONE question, and end with it, so they know it's their turn.
+- Only use real words. Never write sounds like "Mm", "Hmm" or "Uh-huh":
+  the voice reads them out letter by letter.
 - You may start with a brief "Okay." or "Right." occasionally, but never
   praise or judge the answer ("Great answer", "Perfect", "That's wrong").
 - Never comment on grammar, accent, fluency or pace.

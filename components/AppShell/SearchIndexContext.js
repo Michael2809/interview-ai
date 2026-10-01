@@ -60,10 +60,19 @@ export function SearchIndexProvider({ children }) {
     const interviews = interviewsRes.data || []
     const scores = scoresRes.data || []
 
-    // Candidates: unique by email or candidate_name
+    // Candidates: unique by email or candidate_name. A typed name that
+    // was linked to an invite resolves to that invite's email, so one
+    // person is one search result.
+    const emailByStageName = {}
+    interviews.forEach((r) => {
+      if (r.speaker === 'invite' && r.candidate_email && r.candidate_name) {
+        emailByStageName[`${r.stage_id}|${r.candidate_name.toLowerCase()}`] = r.candidate_email
+      }
+    })
     const seen = new Map()
     interviews.forEach((r) => {
-      const key = (r.candidate_email || r.candidate_name || '').toLowerCase()
+      const linked = r.candidate_name ? emailByStageName[`${r.stage_id}|${r.candidate_name.toLowerCase()}`] : null
+      const key = (r.candidate_email || linked || r.candidate_name || '').toLowerCase()
       if (!key) return
       const stage = stages.find((s) => s.id === r.stage_id)
       const role = stage ? roles.find((rr) => rr.id === stage.role_id) : null
@@ -73,7 +82,7 @@ export function SearchIndexProvider({ children }) {
           type: 'candidate',
           key,
           name: r.candidate_name || r.candidate_email,
-          email: r.candidate_email || '',
+          email: r.candidate_email || linked || '',
           stageId: r.stage_id,
           stageName: stage?.name || null,
           roleId: stage?.role_id || null,
