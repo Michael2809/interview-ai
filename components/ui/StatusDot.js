@@ -56,6 +56,7 @@ const STATUS_MAP = {
 
   // Red — decision-blocking action required.
   'action-required':  { color: 'var(--color-rc-red)', label: 'Action required' },
+  'not-finished':     { color: 'var(--color-rc-red)', label: 'Started, not finished' },
   'needs-reschedule': { color: 'var(--color-rc-red)', label: 'Needs reschedule' },
   overdue:            { color: 'var(--color-rc-red)', label: 'Overdue' },
   'past-due':         { color: 'var(--color-rc-red)', label: 'Past due' },

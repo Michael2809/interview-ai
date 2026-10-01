@@ -4,6 +4,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useRef, useLayoutEffec
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { awaitingDecision } from '@/lib/decisions'
+import { dropUnfinished } from '@/lib/transcript'
 import Link from 'next/link'
 import {
   Search, X, ChevronRight, ChevronDown, Sparkles, MessageSquare, Calendar,
@@ -162,6 +163,7 @@ function statusForRow(row) {
   }
   if (row.kind === 'ongoing')  return 'in-progress'
   if (row.kind === 'invited')  return 'interview-scheduled'
+  if (row.kind === 'unfinished') return 'not-finished'
   return 'complete'
 }
 
@@ -408,6 +410,14 @@ function RowMenu({ row, onAction, anchorRef }) {
         <MenuItem i={3} refCb={registerItem} disabled={row.kind !== 'completed'} onClick={() => fire('archive')}>
           Archive Candidate
         </MenuItem>
+      )}
+      {row.kind === 'unfinished' && (
+        <>
+          <div aria-hidden="true" className="my-1 h-px bg-[color:var(--color-rc-line)]" />
+          <MenuItem i={4} refCb={registerItem} onClick={() => fire('allow-retry')}>
+            Allow another attempt
+          </MenuItem>
+        </>
       )}
       {row.kind === 'completed' && (
         <>
@@ -942,7 +952,7 @@ export default function CandidatesPage() {
       [rolesRes, stagesRes, interviewsRes, scoresRes] = await Promise.all([
         supabase.from('roles').select('id, title'),
         supabase.from('stages').select('id, role_id, name'),
-        supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, created_at'),
+        supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, created_at, session_id, status'),
         supabase.from('scores').select('candidate_name, score, status, stage_id, created_at, summary'),
       ])
     } catch (err) {
@@ -975,8 +985,9 @@ export default function CandidatesPage() {
 
     const roles = rolesRes.data || []
     const stages = stagesRes.data || []
-    const interviews = interviewsRes.data || []
     const scores = scoresRes.data || []
+    // Unfinished attempts are never candidates. See lib/transcript.js.
+    const interviews = dropUnfinished(interviewsRes.data || [], scores)
 
     const stageInfo = {}
     stages.forEach((s) => {
@@ -1011,8 +1022,10 @@ export default function CandidatesPage() {
           inviteMap.set(key, {
             email: r.candidate_email,
             // The name the candidate typed when they started, written onto
-            // the invite by /api/link-invite. Null until they start.
+            // the invite by /api/interview-access. Null until they start.
             name: r.candidate_name || null,
+            // 'in_progress' = started the real questions and never finished.
+            status: r.status || null,
             stage_id: r.stage_id,
             stageName: info.name || 'Unknown stage',
             roleTitle: info.roleTitle || 'Unassigned role',
@@ -1108,11 +1121,14 @@ export default function CandidatesPage() {
       if (covered) continue
       const ageMs = c.invited_at ? Date.now() - new Date(c.invited_at).getTime() : Infinity
       // Anything older than 3 days without a session → in-progress (stale).
-      // Fresher invites read as "interview scheduled".
+      // Fresher invites read as "interview scheduled". Started the real
+      // questions but never finished → its own state, with the option to
+      // let them try again.
+      const unfinished = c.status === 'in_progress'
       unified.push({
         id: 'i:' + c.email + '|' + c.stage_id,
-        kind: ageMs > 3 * DAY ? 'ongoing' : 'invited',
-        name: c.email,
+        kind: unfinished ? 'unfinished' : ageMs > 3 * DAY ? 'ongoing' : 'invited',
+        name: unfinished && c.name ? c.name : c.email,
         email: c.email,
         roleTitle: c.roleTitle,
         stageName: c.stageName,
@@ -1394,10 +1410,24 @@ export default function CandidatesPage() {
       case 'delete':
         setPendingDelete(row)
         return
+      case 'allow-retry':
+        // They started, got cut off, and the link locked. Reopen it.
+        fetch('/api/allow-retry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stageId: row.stageId, email: row.email }),
+        })
+          .then(async (res) => {
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status)
+            flashSuccess('Reopened. They can use the same link to try again.')
+            loadData()
+          })
+          .catch((err) => { console.warn('allow-retry failed:', err); flashError('Couldn’t reopen the interview. Try again.') })
+        return
       default:
         return
     }
-  }, [archiveOrRestore, flashSuccess, flashError])
+  }, [archiveOrRestore, flashSuccess, flashError, loadData])
 
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return

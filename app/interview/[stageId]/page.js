@@ -37,6 +37,8 @@ const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000   // 2 hours to allow a retry
 // with its back-and-forth takes three to four.
 const AVG_SECONDS_PER_QUESTION = 150
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 function storageKey(stageId) { return 'recrewt:interview:' + stageId }
 
 function readStoredSession(stageId) {
@@ -50,6 +52,20 @@ function readStoredSession(stageId) {
 function writeStoredSession(stageId, data) {
   if (typeof window === 'undefined') return
   try { window.localStorage.setItem(storageKey(stageId), JSON.stringify(data)) } catch {}
+}
+
+/* Same-browser lock for plain links (no invite token). The server lock
+   is per email; this stops the easy way round it, a new email in the
+   same browser. Best effort: private windows and other browsers escape
+   it, and nothing short of logins can stop that. */
+function attemptKey(stageId) { return 'recrewt:attempt:' + stageId }
+function readAttempt(stageId) {
+  if (typeof window === 'undefined') return null
+  try { const raw = window.localStorage.getItem(attemptKey(stageId)); return raw ? JSON.parse(raw) : null } catch { return null }
+}
+function writeAttempt(stageId, data) {
+  if (typeof window === 'undefined') return
+  try { window.localStorage.setItem(attemptKey(stageId), JSON.stringify(data)) } catch {}
 }
 
 function clearStoredSession(stageId) {
@@ -488,7 +504,7 @@ function CandidateQAScreen({ asked, limit, input, setInput, onAsk, onDone, sendi
  * Screen 1 — LandingScreen
  * ────────────────────────────────────────────────────────── */
 
-function LandingScreen({ stage, role, recruiter, questionCount, candidateName, setCandidateName, onBegin, canBegin, consented, setConsented }) {
+function LandingScreen({ stage, role, recruiter, questionCount, candidateName, setCandidateName, askEmail, candidateEmail, setCandidateEmail, onBegin, canBegin, consented, setConsented }) {
   const estMinutes = Math.max(3, Math.round((questionCount * AVG_SECONDS_PER_QUESTION) / 60))
   const inviter = recruiter || 'Your recruiter'
   const company = role?.company_name || 'the team'
@@ -531,6 +547,27 @@ function LandingScreen({ stage, role, recruiter, questionCount, candidateName, s
           className="w-full h-11 px-3.5 text-[14.5px] bg-white text-[color:var(--color-rc-ink)] leading-none border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0"
         />
       </div>
+
+      {/* Only on a plain link. An email invite already knows who this is. */}
+      {askEmail && (
+        <div className="mt-5">
+          <label htmlFor="candidate-email" className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+            Your email
+          </label>
+          <input
+            id="candidate-email"
+            type="email"
+            value={candidateEmail}
+            onChange={(e) => setCandidateEmail(e.target.value)}
+            placeholder="e.g. priya@example.com"
+            autoComplete="email"
+            className="w-full h-11 px-3.5 text-[14.5px] bg-white text-[color:var(--color-rc-ink)] leading-none border border-[color:var(--color-rc-line)] rounded placeholder:text-[color:var(--color-rc-muted)] placeholder:opacity-70 transition-colors duration-150 hover:border-[color:var(--color-rc-line-hover)] focus:outline-none focus:border-[color:var(--color-rc-ink)] focus:ring-2 focus:ring-[color:var(--color-rc-yellow)] focus:ring-offset-0"
+          />
+          <p className="mt-1.5 text-[12px] text-[color:var(--color-rc-muted)]">
+            Each person can take this interview once.
+          </p>
+        </div>
+      )}
 
       {/* Explicit consent. Continuing is not agreeing: India's DPDP rules
           require a clear affirmative action, so the candidate ticks this
@@ -1108,6 +1145,24 @@ function BrowserUnsupportedScreen({ browserName }) {
  * plainly that nothing was recorded, because the worst outcome here is a
  * candidate who believes they have already had their shot.
  */
+function AlreadyTakenScreen({ reason, recruiter }) {
+  const who = recruiter || 'the recruiter'
+  const finished = reason === 'completed'
+  return (
+    <PageShell>
+      <SectionLabel>{finished ? 'Interview complete' : 'Interview already started'}</SectionLabel>
+      <Display className="mt-4 max-w-[26ch]">
+        {finished ? 'You’ve already completed this interview.' : 'You’ve already started this interview.'}
+      </Display>
+      <EditorialText className="mt-4 max-w-[54ch]">
+        {finished
+          ? 'Each person can take it once, and your answers have already been sent to the hiring team. Thank you!'
+          : `Each person can take it once. If something went wrong, like your connection dropping, reply to the email that brought you here and ${who} can let you try again.`}
+      </EditorialText>
+    </PageShell>
+  )
+}
+
 function InterviewUnavailableScreen() {
   return (
     <PageShell>
@@ -1154,6 +1209,11 @@ export default function InterviewPage() {
   const [questions, setQuestions] = useState([])
 
   const [candidateName, setCandidateName] = useState('')
+  // Plain links ask for an email; invite links already have one.
+  const [candidateEmail, setCandidateEmail] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  // 'started' | 'completed' once this person has used up their attempt.
+  const [lockedReason, setLockedReason] = useState(null)
 
   const [permissionState, setPermissionState] = useState('idle')    // idle | requesting | granted | denied
   const [tryingPermission, setTryingPermission] = useState(false)
@@ -1295,6 +1355,26 @@ export default function InterviewPage() {
       // so submitAnswer() gates behaviour on the flags — not on
       // the type string.
       setQuestions([...INTRO_QUESTIONS, ...(ctx?.questions || []).map(toAiQuestion)])
+
+      // Has this person already used their attempt? Checked up front so a
+      // locked candidate is told straight away, not after camera setup.
+      if (inviteTokenRef.current) {
+        try {
+          const res = await fetch('/api/interview-access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stageId, inviteToken: inviteTokenRef.current }),
+          })
+          const access = res.ok ? await res.json() : null
+          if (access?.inviteEmail) setInviteEmail(access.inviteEmail)
+          if (access && access.allowed === false) setLockedReason(access.reason || 'started')
+        } catch (err) { console.warn('interview-access check failed:', err) }
+      } else {
+        const prior = readAttempt(stageId)
+        if (prior && !browserRetakeOk(prior, !!ctx?.role?.interview_retry_allowed)) {
+          setLockedReason(prior.finishedAt ? 'completed' : 'started')
+        }
+      }
     })()
 
     // Browser + online checks
@@ -1574,8 +1654,45 @@ export default function InterviewPage() {
 
   /* ── Live interview: start recording + first question ─── */
 
+  /** The browser lock allows the role's one retake, within two hours. */
+  function browserRetakeOk(prior, retryAllowed) {
+    if (!retryAllowed || !prior?.finishedAt) return false
+    return (prior.count || 1) < 2 && Date.now() - prior.finishedAt < RETRY_WINDOW_MS
+  }
+
   async function beginLiveInterview() {
     if (!streamRef.current) { await requestStream(); if (!streamRef.current) return }
+
+    /* The one-attempt lock is taken HERE, as the real questions start,
+       never on first click: people reload, switch device or fix their
+       camera before this point and should not lose their go for it. */
+    try {
+      const res = await fetch('/api/interview-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageId, claim: true,
+          inviteToken: inviteTokenRef.current,
+          email: inviteEmail || candidateEmail,
+          candidateName,
+        }),
+      })
+      const access = res.ok ? await res.json() : null
+      if (access && access.allowed === false) {
+        stopListening()
+        try { streamRef.current?.getTracks().forEach((t) => t.stop()) } catch {}
+        setLockedReason(access.reason || 'started')
+        return
+      }
+    } catch (err) {
+      // Fail open: a network blip must not lock out an honest candidate.
+      console.warn('interview-access claim failed:', err)
+    }
+    if (!inviteTokenRef.current) {
+      const prior = readAttempt(stageId)
+      writeAttempt(stageId, { count: (prior?.count || 0) + 1, startedAt: Date.now(), finishedAt: null })
+    }
+
     // Start recorders
     const stream = streamRef.current
     const videoMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
@@ -1616,17 +1733,9 @@ export default function InterviewPage() {
       stage_id: stageId, speaker: 'session_start', content: 'in_progress',
       candidate_name: candidateName, status: 'in_progress',
       session_id: sessionIdRef.current,
+      // What the one-attempt lock looks up for a plain link.
+      candidate_email: (inviteEmail || candidateEmail).trim().toLowerCase() || null,
     })
-
-    // Tie the name they typed to the invite they came in on, so the
-    // recruiter sees one candidate, not an email and a name. Best effort.
-    if (inviteTokenRef.current) {
-      fetch('/api/link-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stageId, inviteToken: inviteTokenRef.current, candidateName }),
-      }).catch(() => {})
-    }
 
     setStep('live')
     setCurrentIndex(0)
@@ -2046,6 +2155,10 @@ export default function InterviewPage() {
   async function finishInterview() {
     stopListening()
     finishedAtRef.current = Date.now()
+    if (!inviteTokenRef.current) {
+      const prior = readAttempt(stageId)
+      writeAttempt(stageId, { ...(prior || { count: 1 }), finishedAt: Date.now() })
+    }
     setStep('saving')
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop()
@@ -2218,6 +2331,7 @@ export default function InterviewPage() {
 
   async function handleBeginFromLanding() {
     if (!candidateName.trim() || !consented) return
+    if (!inviteTokenRef.current && !EMAIL_RE.test(candidateEmail.trim())) return
     setStep('device')
   }
   function handleBackFromDevice() { setStep('landing') }
@@ -2250,7 +2364,10 @@ export default function InterviewPage() {
   function handleTypingToggle(setter) { setTypingMode(setter); if (typeof setter === 'function') {} }
 
   function handleRetakeInterview() {
-    // Only allowed if role.interview_retry_allowed and within 2h of first completion.
+    // Only allowed if role.interview_retry_allowed and within 2h of first
+    // completion; the server enforces that when the questions start.
+    // A retake is a new attempt, so it gets its own session id.
+    sessionIdRef.current = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null
     setStep('landing')
     setCurrentIndex(0); setIsFollowUp(false); setTypedAnswer(''); setTranscript('')
     setVideoSaveFailed(false); setUploadStatus('')
@@ -2278,6 +2395,7 @@ export default function InterviewPage() {
 
   if (!browserOk) return <BrowserUnsupportedScreen browserName={browserName} />
   if (contextOk === false) return <InterviewUnavailableScreen />
+  if (lockedReason) return <AlreadyTakenScreen reason={lockedReason} recruiter={recruiter} />
 
   if (step === 'landing') {
     return (
@@ -2288,10 +2406,13 @@ export default function InterviewPage() {
         questionCount={questions.length}
         candidateName={candidateName}
         setCandidateName={setCandidateName}
+        askEmail={!inviteTokenRef.current}
+        candidateEmail={candidateEmail}
+        setCandidateEmail={setCandidateEmail}
         onBegin={handleBeginFromLanding}
         consented={consented}
         setConsented={setConsented}
-        canBegin={!!candidateName.trim() && contextOk === true && consented}
+        canBegin={!!candidateName.trim() && contextOk === true && consented && (!!inviteTokenRef.current || EMAIL_RE.test(candidateEmail.trim()))}
       />
     )
   }

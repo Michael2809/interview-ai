@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { awaitingDecision } from '@/lib/decisions'
+import { dropUnfinished } from '@/lib/transcript'
 import { groupQuestions, interviewShape, canAddCustomQuestion, customQuestionCount, CUSTOM_QUESTION_LIMIT } from '@/lib/questions'
 import CompareModal from '@/components/CompareModal'
 import { mergeCvRows, MAX_BATCH_BYTES } from '@/lib/resumes'
@@ -3096,10 +3097,10 @@ export default function RoleDetailPage() {
     const stageIds = (stagesRes.data || []).map((s) => s.id)
     if (stageIds.length > 0) {
       const [interviewsRes, scoresRes] = await Promise.all([
-        supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at').in('stage_id', stageIds),
+        supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status').in('stage_id', stageIds),
         supabase.from('scores').select('stage_id, candidate_name, score, status, created_at, summary').in('stage_id', stageIds.map(String)),
       ])
-      setInterviews(interviewsRes.data || [])
+      setInterviews(dropUnfinished(interviewsRes.data || [], scoresRes.data || []))
       setScores(scoresRes.data || [])
     } else {
       setInterviews([]); setScores([])
@@ -3122,10 +3123,10 @@ export default function RoleDetailPage() {
     const stageIds = stages.map((s) => s.id)
     if (stageIds.length === 0) return
     const [interviewsRes, scoresRes] = await Promise.all([
-      supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at').in('stage_id', stageIds),
+      supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status').in('stage_id', stageIds),
       supabase.from('scores').select('stage_id, candidate_name, score, status, created_at, summary').in('stage_id', stageIds.map(String)),
     ])
-    setInterviews(interviewsRes.data || [])
+    setInterviews(dropUnfinished(interviewsRes.data || [], scoresRes.data || []))
     setScores(scoresRes.data || [])
   }
 

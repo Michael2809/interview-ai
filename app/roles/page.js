@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { awaitingDecision } from '@/lib/decisions'
+import { dropUnfinished } from '@/lib/transcript'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -1748,8 +1749,8 @@ export default function RolesPage() {
     const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes] = await Promise.all([
       loadRolesResilient(),
       supabase.from('stages').select('id, role_id'),
-      supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at'),
-      supabase.from('scores').select('candidate_name, score, status, created_at'),
+      supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status'),
+      supabase.from('scores').select('stage_id, candidate_name, score, status, created_at'),
       (async () => {
         try {
           const { data: userData } = await supabase.auth.getUser()
@@ -1774,8 +1775,9 @@ export default function RolesPage() {
 
     const roles       = rolesRes.data       || []
     const stages      = stagesRes.data      || []
-    const interviews  = interviewsRes.data  || []
     const scores      = scoresRes.data      || []
+    // Unfinished attempts are not candidates yet. See lib/transcript.js.
+    const interviews  = dropUnfinished(interviewsRes.data || [], scores)
 
     const stageRole = {}
     stages.forEach((s) => { stageRole[s.id] = s.role_id })

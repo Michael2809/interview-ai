@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { scoredQuestionTexts, INTRO_QUESTIONS } from '@/lib/interview-questions'
 import { EXPIRY_OPTIONS, DEFAULT_EXPIRY } from '@/lib/share'
-import { readCandidateInterview } from '@/lib/transcript'
+import { readCandidateInterview, dropUnfinished } from '@/lib/transcript'
 import Link from 'next/link'
 import {
   ArrowLeft, ChevronRight, ChevronDown, MoreHorizontal, Sparkles, ThumbsUp,
@@ -2118,7 +2118,6 @@ export default function TranscriptPage() {
     const linesRes = await supabase
       .from('interviews').select().eq('stage_id', stageId).order('created_at', { ascending: true })
     const linesData = linesRes.data || []
-    setLines(linesData)
 
     // Approved questions for this stage
     const qRes = await supabase.from('questions').select('id, text, approved, covers, source').eq('stage_id', stageId).eq('approved', true)
@@ -2127,6 +2126,11 @@ export default function TranscriptPage() {
     // Scores for this stage
     const scoresRes = await supabase.from('scores').select().eq('stage_id', stageId)
     const scoresData = scoresRes.data || []
+
+    // Only finished interviews are shown here, and so only finished ones
+    // can ever be auto-scored. A half interview is not evidence.
+    const finishedLines = dropUnfinished(linesData, scoresData)
+    setLines(finishedLines)
     const map = {}
     const rowMap = {}
     scoresData.forEach((s) => {
@@ -2149,7 +2153,9 @@ export default function TranscriptPage() {
     }
 
     // Pick the selected candidate (from URL or first available)
-    const names = [...new Set(linesData.map((l) => l.candidate_name).filter(Boolean))]
+    // Invite rows now carry the typed name too; a name only counts here
+    // once there is a finished interview behind it.
+    const names = [...new Set(finishedLines.filter((l) => l.speaker !== 'invite').map((l) => l.candidate_name).filter(Boolean))]
     const urlCandidate = searchParams?.get('candidate') || null
     const pick = (urlCandidate && names.includes(urlCandidate)) ? urlCandidate : (names[0] || null)
     setSelected(pick)
@@ -2173,7 +2179,7 @@ export default function TranscriptPage() {
   }, [questions])
 
   const candidateNames = useMemo(
-    () => [...new Set(lines.map((l) => l.candidate_name).filter(Boolean))],
+    () => [...new Set(lines.filter((l) => l.speaker !== 'invite').map((l) => l.candidate_name).filter(Boolean))],
     [lines],
   )
 

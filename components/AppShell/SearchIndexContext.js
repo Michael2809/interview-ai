@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { dropUnfinished } from '@/lib/transcript'
 
 /**
  * SearchIndexContext — a small client-side index of candidates, roles,
@@ -52,13 +53,13 @@ export function SearchIndexProvider({ children }) {
     const [rolesRes, stagesRes, interviewsRes, scoresRes] = await Promise.all([
       supabase.from('roles').select('id, title, department, status').limit(500),
       supabase.from('stages').select('id, role_id, name, position').limit(1000),
-      supabase.from('interviews').select('stage_id, candidate_name, candidate_email, speaker').limit(4000),
+      supabase.from('interviews').select('stage_id, candidate_name, candidate_email, speaker, session_id, status').limit(4000),
       supabase.from('scores').select('stage_id, candidate_name, score, status').limit(4000),
     ])
     const roles = rolesRes.data || []
     const stages = stagesRes.data || []
-    const interviews = interviewsRes.data || []
     const scores = scoresRes.data || []
+    const interviews = dropUnfinished(interviewsRes.data || [], scores)
 
     // Candidates: unique by email or candidate_name. A typed name that
     // was linked to an invite resolves to that invite's email, so one

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { dropUnfinished } from '@/lib/transcript'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -1406,7 +1407,7 @@ export default function DashboardPage() {
         supabase
           .from('interviews')
           .select(
-            'stage_id, speaker, candidate_name, candidate_email, invited_at',
+            'stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status',
           ),
         supabase
           .from('scores')
@@ -1448,8 +1449,9 @@ export default function DashboardPage() {
 
     const roles = rolesRes.data || []
     const stages = stagesRes.data || []
-    const interviews = interviewsRes.data || []
     const scores = scoresRes.data || []
+    // Unfinished attempts are not candidates yet. See lib/transcript.js.
+    const interviews = dropUnfinished(interviewsRes.data || [], scores)
 
     const stageRole = {}
     stages.forEach((s) => {
