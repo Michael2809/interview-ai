@@ -1409,3 +1409,53 @@
    it did before the images were converted.
    ============================================================ */
 .rc-landing picture { display: contents; }
+
+
+/* ============================================================
+   FONT PREVIEW: Instrument Serif on the big headlines only.
+   Everything below 24px stays Archivo / Inter. Layout untouched.
+   Serif is narrower than Archivo, so sizes are nudged up ~10%.
+   ============================================================ */
+.rc-landing { --serif: var(--font-serif), "Instrument Serif", Georgia, serif; }
+
+.rc-landing .hc-headline,
+.rc-landing .il-belief,
+.rc-landing .how-head h2,
+.rc-landing .s3-h,
+.rc-landing .fit-h,
+.rc-landing .pr-head h2,
+.rc-landing .cta-h,
+.rc-landing .note .ht,
+.rc-landing .payoff .po-welcome {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.012em;
+}
+.rc-landing .hc-headline em,
+.rc-landing .il-belief em,
+.rc-landing .how-head h2 em,
+.rc-landing .s3-h em,
+.rc-landing .fit-h em,
+.rc-landing .pr-head h2 em,
+.rc-landing .cta-h em { font-style: italic; }
+
+@media (min-width: 981px) {
+  .rc-landing .hc-headline { font-size: clamp(50px, 6vw, 92px); line-height: 0.98; }
+  .rc-landing .il-belief   { font-size: clamp(38px, 4.9vw, 68px); line-height: 1.04; }
+  .rc-landing .how-head h2 { font-size: clamp(52px, 6.6vw, 100px); line-height: 0.95; }
+  .rc-landing .s3-h        { font-size: clamp(54px, 6.6vw, 94px); line-height: 0.95; }
+  .rc-landing .fit-h       { font-size: clamp(52px, 6.2vw, 82px); line-height: 1; }
+  .rc-landing .pr-head h2  { font-size: clamp(46px, 5.6vw, 72px); line-height: 1; }
+  .rc-landing .cta-h       { font-size: clamp(52px, 6.4vw, 86px); line-height: 1; }
+  .rc-landing .note .ht    { font-size: clamp(27px, 2.7vw, 40px); line-height: 1.04; }
+  .rc-landing .payoff .po-welcome { font-size: clamp(34px, 2.9vw, 42px); }
+}
+@media (max-width: 980px) {
+  .rc-landing .hc-headline { font-size: clamp(40px, 10.5vw, 52px); line-height: 1; }
+  .rc-landing .il-belief   { font-size: clamp(28px, 7.4vw, 34px); line-height: 1.1; }
+  .rc-landing .how-head h2,
+  .rc-landing .fit-h       { font-size: clamp(36px, 9.4vw, 46px); line-height: 1.02; }
+  .rc-landing .s3-h        { font-size: clamp(38px, 10vw, 48px); line-height: 1; }
+  .rc-landing .pr-head h2  { font-size: clamp(32px, 8.4vw, 40px); line-height: 1.04; }
+  .rc-landing .cta-h       { font-size: clamp(34px, 9vw, 46px); line-height: 1.04; }
+}

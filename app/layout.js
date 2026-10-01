@@ -1,4 +1,4 @@
-import { Inter, Plus_Jakarta_Sans, Archivo } from "next/font/google";
+import { Inter, Plus_Jakarta_Sans, Archivo, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,6 +18,15 @@ const archivo = Archivo({
   variable: "--font-archivo",
   subsets: ["latin"],
   weight: ["500", "600", "700"],
+  display: "swap",
+});
+
+// Instrument Serif: landing page headlines only (big sizes).
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
   display: "swap",
 });
 
@@ -67,7 +76,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jakarta.variable} ${archivo.variable} h-full antialiased`}
+      className={`${inter.variable} ${jakarta.variable} ${archivo.variable} ${instrumentSerif.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

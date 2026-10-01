@@ -535,7 +535,7 @@ export default function LandingPage() {
     <div className="hero-copy" id="heroCopy">
       <p className="hc-eyebrow">Meet your AI Hiring Consultant.</p>
       <h1 className="hc-headline" id="hc-headline">
-        Every candidate screened.
+        Every candidate <em>screened.</em>
         <span className="l2">Before your team spends a minute.</span>
       </h1>
       <p className="hc-sub" id="heroSub">
@@ -572,7 +572,7 @@ export default function LandingPage() {
   <div className="il-pin">
     <div className="il-inner">
       <img className="il-logo" src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" loading="lazy" decoding="async" />
-      <h2 className="il-belief">Every candidate deserves a conversation.<br />Now you can afford to have one.</h2>
+      <h2 className="il-belief">Every candidate deserves <em>a conversation.</em><br />Now you can afford to have one.</h2>
     </div>
   </div>
 </section>
@@ -582,7 +582,7 @@ export default function LandingPage() {
 <section className="how" id="how-it-works" aria-labelledby="how-heading">
   <div className="container how-head reveal">
     <p className="eyebrow-2">THE PROCESS</p>
-    <h2 id="how-heading">Three steps.<br />One great hire.</h2>
+    <h2 id="how-heading">Three steps.<br /><em>One great hire.</em></h2>
     <p className="how-sub">Spend time choosing candidates. Not screening them.</p>
   </div>
 
@@ -784,7 +784,7 @@ export default function LandingPage() {
       <div className="s3-head reveal">
         <span className="s3-pill">Step 03</span>
         <h3 className="s3-h">
-          Review the evidence.
+          Review the <em>evidence.</em>
           <span className="under" aria-hidden="true">
             <svg viewBox="0 0 500 12" preserveAspectRatio="none">
               <path d="M 4 10 Q 250 -2 496 8" stroke="#FFD84D" strokeWidth="5" fill="none" strokeLinecap="round"/>
@@ -951,7 +951,7 @@ export default function LandingPage() {
       <h2 className="fit-h" id="fit-heading">
         Keep your hiring process.<br />
         <span className="l2">
-          Upgrade every interview.
+          <em>Upgrade every interview.</em>
           <span className="under" aria-hidden="true">
             <svg viewBox="0 0 600 12" preserveAspectRatio="none">
               <path d="M 6 9 Q 300 -2 594 7" stroke="#FFD84D" strokeWidth="5" fill="none" strokeLinecap="round"/>
@@ -1041,7 +1041,7 @@ export default function LandingPage() {
   <div className="container">
     <div className="pr-head reveal">
       <span className="pr-label">Plans</span>
-      <h2 id="pricing-heading">Choose the plan that fits your hiring.</h2>
+      <h2 id="pricing-heading">Choose the plan that <em>fits your hiring.</em></h2>
       <p>Start with the volume that matches how you hire today. Every plan includes the complete Recrewt interview experience.</p>
     </div>
 
@@ -1135,7 +1135,7 @@ export default function LandingPage() {
     <span className="cta-label reveal">Ready when you are</span>
     <h2 id="cta-heading" className="cta-h reveal">
       Hiring is important.<br />
-      Your time is too.
+      <em>Your time is too.</em>
     </h2>
     <p className="cta-copy reveal">Recrewt works quietly in the background so every interview is consistent, every decision is supported, and you can focus on what really matters—hiring great people.</p>
     <div className="cta-actions reveal">
