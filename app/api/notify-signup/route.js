@@ -5,13 +5,13 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req) {
     try {
-        const { email, jobTitle } = await req.json()
+        const { email, name, company, jobTitle } = await req.json()
 
         await resend.emails.send({
             from: 'Recrewt AI <mike@recrewtai.com>',
             to: 'michaelrokkala@gmail.com',
             subject: 'New signup on Recrewt AI',
-            text: `Someone just completed onboarding.\n\nEmail: ${email}\nFirst role: ${jobTitle}`,
+            text: `Someone just completed onboarding.\n\nEmail: ${email}\nName: ${name || '-'}\nCompany: ${company || '-'}${jobTitle ? `\nFirst role: ${jobTitle}` : ''}`,
         })
 
         return NextResponse.json({ success: true })

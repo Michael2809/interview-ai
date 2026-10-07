@@ -16,6 +16,8 @@ import { createClient } from '@/lib/supabase/client'
  *   drawerOpen:    Boolean
  *   markAllRead:   () => Promise<void>
  *   markRead:      (id) => Promise<void>
+ *   clearAll:      () => Promise<boolean>   removes every notification
+ *                                            (the candidates are untouched)
  *   refresh:       () => Promise<void>
  */
 
@@ -69,8 +71,23 @@ export function InboxProvider({ children }) {
   const markAllRead = useCallback(async () => {
     const now = new Date().toISOString()
     setItems((prev) => prev.map((n) => n.read_at ? n : { ...n, read_at: now }))
-    await supabase.from('notifications').update({ read_at: now }).is('read_at', null)
-  }, [supabase])
+    const { error } = await supabase.from('notifications').update({ read_at: now }).is('read_at', null)
+    if (error) { console.error('inbox mark all read:', error); refresh(); return false }
+    return true
+  }, [supabase, refresh])
+
+  // A notification is only a pointer to a candidate, so clearing the
+  // inbox deletes the pointers and nothing else. RLS limits the delete
+  // to this user's rows; the created_at filter is only there because
+  // supabase-js refuses a delete with no filter at all.
+  const clearAll = useCallback(async () => {
+    const now = new Date().toISOString()
+    const before = items
+    setItems([])
+    const { error } = await supabase.from('notifications').delete().lte('created_at', now)
+    if (error) { console.error('inbox clear all:', error); setItems(before); return false }
+    return true
+  }, [supabase, items])
 
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
@@ -79,8 +96,8 @@ export function InboxProvider({ children }) {
 
   const value = useMemo(() => ({
     items, unreadCount, loading, drawerOpen,
-    openDrawer, closeDrawer, markRead, markAllRead, refresh,
-  }), [items, unreadCount, loading, drawerOpen, openDrawer, closeDrawer, markRead, markAllRead, refresh])
+    openDrawer, closeDrawer, markRead, markAllRead, clearAll, refresh,
+  }), [items, unreadCount, loading, drawerOpen, openDrawer, closeDrawer, markRead, markAllRead, clearAll, refresh])
 
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>
 }

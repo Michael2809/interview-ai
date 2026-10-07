@@ -25,6 +25,7 @@ import {
   Upload,
   ArrowLeft,
   Building2,
+  Pencil,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import { SkeletonRow, SkeletonLine } from '@/components/AppShell/Skeleton'
@@ -125,8 +126,8 @@ function relativeTime(iso) {
 
 function contextualAction(role) {
   const base = `/roles/${role.id}`
-  if (role.waiting > 0)   return { label: 'Review candidates',   variant: 'primary',   href: `${base}#candidates`, iconRight: true }
-  if (role.ongoing > 0)   return { label: 'Continue reviewing',  variant: 'secondary', href: `${base}#candidates`, iconRight: true }
+  if (role.waiting > 0)   return { label: 'Review candidates',   variant: 'primary',   href: `${base}?show=waiting#candidates`, iconRight: true }
+  if (role.ongoing > 0)   return { label: 'Continue reviewing',  variant: 'secondary', href: `${base}?show=all#candidates`, iconRight: true }
   if (role.invited > 0)   return { label: 'Invite more',         variant: 'secondary', href: `${base}#invite`,     iconLeft:  true }
   if (role.invited === 0) return { label: 'Send first invites',  variant: 'secondary', href: `${base}#invite`,     iconLeft:  true }
   return { label: 'View role', variant: 'ghost', href: base, iconRight: true }
@@ -1718,6 +1719,76 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
  * RolesPage — the page
  * ────────────────────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────────────────────
+ * EditClientModal — rename a client or change its "about" line
+ * ────────────────────────────────────────────────────────── */
+
+const CLIENT_NAME_MAX = 120
+const CLIENT_ABOUT_MAX = 1500
+
+function EditClientModal({ open, client, otherNames, onClose, onSave, saving }) {
+  const [name, setName] = useState(client?.name || '')
+  const [about, setAbout] = useState(client?.about || '')
+  const [error, setError] = useState('')
+
+  function submit(e) {
+    e?.preventDefault()
+    const clean = name.trim().replace(/\s+/g, ' ')
+    if (!clean) { setError('Enter the client’s name.'); return }
+    if (clean.length > CLIENT_NAME_MAX) { setError(`Keep it under ${CLIENT_NAME_MAX} characters.`); return }
+    if (otherNames.has(clean.toLowerCase())) { setError('You already have a client with that name.'); return }
+    onSave({ name: clean, about: about.trim() || null })
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => !saving && onClose()}
+      title="Edit client"
+      size="sm"
+      dismissible={!saving}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={submit} loading={saving}>Save changes</Button>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-4">
+        <TextField
+          label="Client name"
+          value={name}
+          maxLength={CLIENT_NAME_MAX}
+          autoFocus
+          error={error}
+          onChange={(e) => { setName(e.target.value); if (error) setError('') }}
+        />
+        <div>
+          <label htmlFor="edit-client-about" className="block mb-1.5 text-[13px] font-medium text-[color:var(--color-rc-ink)]">
+            About the company <span className="font-normal text-[color:var(--color-rc-muted)]">(optional)</span>
+          </label>
+          <textarea
+            id="edit-client-about"
+            rows={4}
+            maxLength={CLIENT_ABOUT_MAX}
+            value={about}
+            onChange={(e) => setAbout(e.target.value)}
+            placeholder="Consumer electronics company, around 300 people, founded in 2009."
+            className={
+              'w-full rounded-[10px] border border-[color:var(--color-rc-line)] bg-white px-3 py-2.5 ' +
+              'text-[14px] leading-relaxed text-[color:var(--color-rc-ink)] placeholder:text-[color:var(--color-rc-muted)] ' +
+              'hover:border-[color:var(--color-rc-muted)] focus:border-[color:var(--color-rc-ink)] focus:outline-none resize-y'
+            }
+          />
+          <p className="mt-1.5 text-[12.5px] text-[color:var(--color-rc-muted)]">
+            Only things that are true for every role at this company. Hours, pay and anything role-specific go in each role&rsquo;s JD.
+          </p>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 export default function RolesPage() {
   const supabase = createClient()
   const router = useRouter()
@@ -1763,6 +1834,9 @@ export default function RolesPage() {
   const [createMode, setCreateMode] = useState(false)
   const [clients, setClients] = useState([])
   const [scopeReady, setScopeReady] = useState(false)
+  const [editingClient, setEditingClient] = useState(false)
+  const [editKey, setEditKey] = useState(0)
+  const [savingClient, setSavingClient] = useState(false)
 
   useEffect(() => {
     // window.location instead of useSearchParams(): see the Suspense
@@ -1835,7 +1909,7 @@ export default function RolesPage() {
           return { data: null }
         }
       })(),
-      supabase.from('clients').select('id, name').order('name', { ascending: true }),
+      supabase.from('clients').select('id, name, about').order('name', { ascending: true }),
     ])
 
     if (clientsRes.error) console.error('roles: clients load:', clientsRes.error)
@@ -2038,6 +2112,28 @@ export default function RolesPage() {
     if (createMode && !clientId) router.push('/clients')
   }
 
+  function openEditClient() {
+    setEditKey((k) => k + 1)
+    setEditingClient(true)
+  }
+
+  async function saveClient({ name, about }) {
+    if (!clientId) return
+    setSavingClient(true)
+    const { error: e } = await supabase.from('clients').update({ name, about }).eq('id', clientId)
+    setSavingClient(false)
+    if (e) {
+      console.error('edit client:', e)
+      setErrorMsg('Couldn’t save the client. Try again.')
+      setTimeout(() => setErrorMsg(''), 4200)
+      return
+    }
+    setClients((list) => list.map((c) => (c.id === clientId ? { ...c, name, about } : c)))
+    setEditingClient(false)
+    setMessage('Client updated.')
+    setTimeout(() => setMessage(''), 3200)
+  }
+
   /* ── Derived (filter, sort, group) ─────────────────── */
 
   // Everything on screen is this client's roles only. rawRoles stays
@@ -2217,6 +2313,19 @@ export default function RolesPage() {
             >
               {client?.name || '\u00a0'}
             </h1>
+            {client && (
+              <button
+                type="button"
+                onClick={openEditClient}
+                className={
+                  'mr-auto -ml-1 inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[13px] ' +
+                  'text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)] ' +
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] transition-colors'
+                }
+              >
+                <Pencil size={13} aria-hidden="true" /> Edit
+              </button>
+            )}
             <Button
               variant="primary"
               size="md"
@@ -2367,6 +2476,18 @@ export default function RolesPage() {
           clientId={clientId}
           clients={clients}
         />
+
+        {client && (
+          <EditClientModal
+            key={editKey}
+            open={editingClient}
+            client={client}
+            otherNames={new Set(clients.filter((c) => c.id !== client.id).map((c) => c.name.toLowerCase()))}
+            onClose={() => setEditingClient(false)}
+            onSave={saveClient}
+            saving={savingClient}
+          />
+        )}
 
         <Modal
           open={!!pendingDelete}

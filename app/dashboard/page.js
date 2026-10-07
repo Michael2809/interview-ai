@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { dropUnfinished } from '@/lib/transcript'
+import { awaitingDecision } from '@/lib/decisions'
+import { reminderStatus } from '@/lib/reminders'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -342,7 +344,7 @@ function PriorityRow({ name, roleTitle, score, completedAt, stageId }) {
   return (
     <li>
       <Link
-        href={`/interview/${stageId}/transcript`}
+        href={`/interview/${stageId}/transcript?candidate=${encodeURIComponent(name || '')}`}
         aria-label={`Review ${name || 'candidate'} for ${roleTitle || 'unassigned role'}`}
         className={
           'group grid grid-cols-[minmax(0,1fr)_auto_20px] items-center gap-6 ' +
@@ -393,7 +395,7 @@ function WaitingRow({ name, roleTitle, score, completedAt, stageId }) {
   const suggested = suggestedFromScore(score)
   return (
     <Link
-      href={`/interview/${stageId}/transcript`}
+      href={`/interview/${stageId}/transcript?candidate=${encodeURIComponent(name || '')}`}
       className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] focus-visible:ring-offset-2 rounded-[14px]"
       aria-label={`Review ${name || 'candidate'} — ${roleTitle || 'unassigned role'}`}
     >
@@ -551,7 +553,7 @@ function PriorityQueueRow({ name, roleTitle, score, completedAt, stageId }) {
   return (
     <li>
       <Link
-        href={`/interview/${stageId}/transcript`}
+        href={`/interview/${stageId}/transcript?candidate=${encodeURIComponent(name || '')}`}
         aria-label={`Review ${name || 'candidate'} for ${roleTitle || 'unassigned role'}`}
         className={
           'group grid grid-cols-[10px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto_20px] items-center gap-x-4 md:gap-x-6 ' +
@@ -598,15 +600,18 @@ function PriorityQueueRow({ name, roleTitle, score, completedAt, stageId }) {
  * the "chase" affordance is only the row itself.
  * ────────────────────────────────────────────────────────── */
 
-function NeedsAttentionRow({ email, roleTitle, invited_at, roleId }) {
+// "Send a nudge" used to sit on this row. It sent nothing: the row was a
+// plain link. Reminders are automatic (lib/reminders.js), so the row now
+// says where that stands and opens this one candidate.
+function NeedsAttentionRow({ email, roleTitle, invited_at, reminder }) {
   const daysStale = invited_at
     ? Math.round((Date.now() - new Date(invited_at).getTime()) / 86_400_000)
     : null
   return (
     <li>
       <Link
-        href={roleId ? `/roles/${roleId}` : '/candidates'}
-        aria-label={`Follow up with ${email}`}
+        href={`/candidates?q=${encodeURIComponent(email || '')}`}
+        aria-label={`Open ${email}`}
         className={
           'group grid grid-cols-[8px_minmax(0,1fr)_auto_20px] items-center gap-x-4 md:gap-x-6 ' +
           'py-4 px-3 -mx-3 rounded-[12px] cursor-pointer ' +
@@ -627,7 +632,7 @@ function NeedsAttentionRow({ email, roleTitle, invited_at, roleId }) {
           </div>
         </div>
         <span className="text-[12px] text-[color:var(--color-rc-muted)] whitespace-nowrap hidden sm:inline">
-          Send a nudge
+          {reminder}
         </span>
         <ChevronRight
           size={15}
@@ -733,6 +738,11 @@ function formatClock(d) {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+// Under "Earlier" a bare 13:40 says nothing about which day it was.
+function formatDay(d) {
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
 function activityBuckets(items) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
@@ -770,15 +780,15 @@ function RecentActivityTimeline({ items }) {
                       : 'in-progress'}
                   />
                   <span className="text-[12px] tabular-nums text-[color:var(--color-rc-muted)]">
-                    {formatClock(it.at)}
+                    {bucket === 'Earlier' ? formatDay(it.at) : formatClock(it.at)}
                   </span>
                   <span className="text-[color:var(--color-rc-ink)]">
                     {it.kind === 'completed' && (
                       <>
                         <span className="font-medium">{it.name || 'A candidate'}</span>
-                        {' '}completed an interview
+                        {' '}finished{it.roleTitle ? <> the <span className="text-[color:var(--color-rc-ink)]">{it.roleTitle}</span> interview</> : ' an interview'}
                         {typeof it.score === 'number' && (
-                          <span className="text-[color:var(--color-rc-muted)]"> · scored {Number(it.score).toFixed(1)}</span>
+                          <span className="text-[color:var(--color-rc-muted)]"> · scored {Number(it.score).toFixed(1)}/10</span>
                         )}
                       </>
                     )}
@@ -825,6 +835,11 @@ function MomentumRoleCard({ role }) {
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)]'
       }
     >
+      {role.clientName && (
+        <div className="mb-1 text-[11px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] truncate">
+          {role.clientName}
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <h3
           className="min-w-0 text-[19px] leading-tight font-semibold tracking-[-0.018em] text-[color:var(--color-rc-ink)] [overflow-wrap:anywhere]"
@@ -1054,9 +1069,11 @@ function QuietEmpty({ title, body, action }) {
 function PriorityRoleCard({ role, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
-  const pct = role.invited
-    ? Math.min(100, Math.round((role.completed / role.invited) * 100))
-    : 0
+  // Interviews taken through a plain link have no invite row, so
+  // completed can be larger than invited ("21 of 4"). Count against
+  // whichever is bigger.
+  const total = Math.max(role.invited, role.completed)
+  const pct = total ? Math.round((role.completed / total) * 100) : 0
 
   useEffect(() => {
     if (!menuOpen) return
@@ -1081,7 +1098,7 @@ function PriorityRoleCard({ role, onDelete }) {
     action = (
       <Button
         as="a"
-        href={`/roles/${role.id}`}
+        href={`/roles/${role.id}?show=waiting#candidates`}
         variant="primary"
         size="sm"
         iconRight={<ChevronRight size={14} />}
@@ -1122,6 +1139,11 @@ function PriorityRoleCard({ role, onDelete }) {
           href={`/roles/${role.id}`}
           className="min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-rc-yellow)] rounded"
         >
+          {role.clientName && (
+            <div className="mb-1 text-[11px] uppercase tracking-[0.14em] font-semibold text-[color:var(--color-rc-warm)] truncate">
+              {role.clientName}
+            </div>
+          )}
           <h3
             className="text-[20px] leading-tight font-semibold tracking-[-0.022em] text-[color:var(--color-rc-ink)] truncate"
             style={{ fontFamily: 'var(--font-editorial), inherit' }}
@@ -1158,10 +1180,9 @@ function PriorityRoleCard({ role, onDelete }) {
               >
                 Open role
               </Link>
-              {/* The candidates page filters on role TITLE, not id — an id
-                  here matched nothing and always produced an empty list. */}
+              {/* Role id, not title: two clients can share a job title. */}
               <Link
-                href={`/candidates?role=${encodeURIComponent(role.title || '')}`}
+                href={`/candidates?role=${encodeURIComponent(role.id ?? '')}`}
                 role="menuitem"
                 className="block px-3.5 py-2 text-[13.5px] text-[color:var(--color-rc-ink)] hover:bg-[color:var(--color-rc-soft)]"
               >
@@ -1187,7 +1208,7 @@ function PriorityRoleCard({ role, onDelete }) {
       <div className="mt-6">
         <div className="flex items-center justify-between text-[13px] mb-2.5">
           <span className="text-[color:var(--color-rc-ink)] font-medium">
-            {role.completed} of {role.invited} completed
+            {role.completed} of {total} completed
           </span>
           <span className="text-[color:var(--color-rc-muted)] tabular-nums">
             {pct}%
@@ -1398,17 +1419,17 @@ export default function DashboardPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes] =
+    const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes, clientsRes] =
       await Promise.all([
         supabase
           .from('roles')
-          .select('id, title, department, status, created_at')
+          .select('id, title, department, status, created_at, client_id, interview_response_sla_days')
           .order('created_at', { ascending: false }),
         supabase.from('stages').select('id, role_id, name'),
         supabase
           .from('interviews')
           .select(
-            'stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status',
+            'stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status, reminder_count, last_reminded_at',
           ),
         supabase
           .from('scores')
@@ -1420,6 +1441,7 @@ export default function DashboardPage() {
           .from('settings')
           .select('onboarding_completed')
           .single(),
+        supabase.from('clients').select('id, name'),
       ])
 
     if (!settingsRes.data || !settingsRes.data.onboarding_completed) {
@@ -1459,10 +1481,17 @@ export default function DashboardPage() {
       stageRole[s.id] = s.role_id
     })
 
+    // "Sony · Graphic Designer", not just "Graphic Designer": two clients
+    // can share a job title. With a single client the prefix is noise.
+    const clientName = {}
+    ;(clientsRes.data || []).forEach((c) => { clientName[c.id] = c.name })
+    const multiClient = (clientsRes.data || []).length > 1
+    const roleClient = {}
     const roleTitle = {}
     const roleCategory = {}
     roles.forEach((r) => {
-      roleTitle[r.id] = r.title
+      roleClient[r.id] = multiClient ? clientName[r.client_id] || null : null
+      roleTitle[r.id] = roleClient[r.id] ? `${roleClient[r.id]} · ${r.title}` : r.title
       roleCategory[r.id] = r.department
     })
 
@@ -1486,7 +1515,11 @@ export default function DashboardPage() {
           // Set once the candidate starts and types their name.
           name: r.candidate_name || null,
           roleTitle: rid ? roleTitle[rid] : null,
+          roleId: rid || null,
           invited_at: r.invited_at,
+          status: r.status || null,
+          reminder_count: r.reminder_count || 0,
+          last_reminded_at: r.last_reminded_at || null,
         }
       }
     })
@@ -1499,7 +1532,10 @@ export default function DashboardPage() {
     transcripts.forEach((r) => {
       const key = `${r.stage_id}|${r.candidate_name}`
       const rid = stageRole[r.stage_id]
-      const scoreRow = scores.find((s) => s.candidate_name === r.candidate_name)
+      const scoreRow = scores.find(
+        (s) => String(s.stage_id) === String(r.stage_id) &&
+          (s.candidate_name || '').toLowerCase() === (r.candidate_name || '').toLowerCase(),
+      )
       if (!compMap[key]) {
         compMap[key] = {
           name: r.candidate_name,
@@ -1536,9 +1572,8 @@ export default function DashboardPage() {
     })
 
     // ─── Waiting on you: completed but no verdict yet ───────
-    const waitingArr = completedArr.filter(
-      (c) => !c.status || c.status === 'null' || c.status === '',
-    )
+    // The scorer writes 'pending', so "no status" is the wrong test.
+    const waitingArr = completedArr.filter((c) => awaitingDecision(c.status))
     setWaitingList(waitingArr)
 
     // ─── Per-role rollup incl. "waiting" count ──────────────
@@ -1547,6 +1582,7 @@ export default function DashboardPage() {
       roleMap[r.id] = {
         id: r.id,
         title: r.title || 'Untitled role',
+        clientName: roleClient[r.id] || null,
         category: r.department || null,
         status: r.status || 'active',
         invited: new Set(),
@@ -1577,7 +1613,8 @@ export default function DashboardPage() {
         if (!roleMap[rid].completed.has(key)) {
           roleMap[rid].completed.add(key)
           const scoreRow = scores.find(
-            (s) => s.candidate_name === r.candidate_name,
+            (s) => String(s.stage_id) === String(r.stage_id) &&
+              (s.candidate_name || '').toLowerCase() === (r.candidate_name || '').toLowerCase(),
           )
           roleMap[rid].completedCandidates.push({
             name: r.candidate_name,
@@ -1598,10 +1635,11 @@ export default function DashboardPage() {
     const progress = Object.values(roleMap).map((r) => {
       const invitedCount = r.invited.size
       const completedCount = r.completed.size
-      const waitingCount = r.completedCandidates.filter((c) => !c.status).length
+      const waitingCount = r.completedCandidates.filter((c) => awaitingDecision(c.status)).length
       return {
         id: r.id,
         title: r.title,
+        clientName: r.clientName,
         category: r.category,
         invited: invitedCount,
         completed: completedCount,
@@ -1665,9 +1703,12 @@ export default function DashboardPage() {
     // populate the "Needs your attention" section, and are excluded
     // from the priority queue by definition so we don't repeat rows.
     const staleCutoff = nowTs - 3 * DAY
+    const roleById = {}
+    roles.forEach((r) => { roleById[r.id] = r })
     const staleInvitees = ongoingArr
       .filter((c) => c.invited_at && new Date(c.invited_at).getTime() <= staleCutoff)
       .slice(0, 6)
+      .map((c) => ({ ...c, reminder: reminderStatus(c, roleById[c.roleId]) }))
 
     // Upcoming interviews — invited today or yesterday and not yet
     // completed. We surface only tomorrow's and today's activity per
@@ -1681,14 +1722,21 @@ export default function DashboardPage() {
     // Recent activity — merged feed of completions + invites, newest
     // first. Bucketed by day at render time.
     const activityItems = []
-    for (const s of scores.slice(0, 40)) {
-      if (!s.created_at) continue
+    // `scores` arrives sorted by score, not time. Taking the first 40 of
+    // that list showed the best interviews ever, not the latest ones.
+    const recentScores = scores
+      .filter((s) => s.created_at)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 40)
+    for (const s of recentScores) {
+      const rid = stageRole[s.stage_id]
       activityItems.push({
         kind: 'completed',
         at: new Date(s.created_at),
         name: s.candidate_name,
         score: s.score,
         stageId: s.stage_id,
+        roleTitle: rid ? roleTitle[rid] : null,
       })
     }
     for (const inv of invites.slice(0, 40)) {
@@ -2066,6 +2114,7 @@ export default function DashboardPage() {
                   email={c.email}
                   roleTitle={c.roleTitle}
                   invited_at={c.invited_at}
+                  reminder={c.reminder}
                 />
               ))}
             </ul>
@@ -2122,6 +2171,9 @@ export default function DashboardPage() {
           )}
         </section>
 
+        {/* Drawer lists use grid-cols-1 (minmax(0,1fr)). A bare `grid` has one
+            auto column that grows to the longest unwrapped line, and the
+            drawer then clips the right half of every row. */}
         <Drawer
           open={drawer === 'waiting'}
           onClose={() => setDrawer(null)}
@@ -2133,7 +2185,7 @@ export default function DashboardPage() {
           {waitingList.length === 0 ? (
             <EmptyState bare icon={<Sparkles size={20} />} title="You're completely caught up." description="No candidates are waiting for your review." />
           ) : (
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {waitingList.map((c) => (
                 <WaitingRow key={`${c.stageId}-${c.name}-drawer`} {...c} />
               ))}
@@ -2152,7 +2204,7 @@ export default function DashboardPage() {
           {roleProgress.length === 0 ? (
             <EmptyState bare icon={<Briefcase size={20} />} title="Nothing here yet." description="Create your first role to start inviting candidates." />
           ) : (
-            <div className="grid gap-4">
+            <div className="grid grid-cols-1 gap-4">
               {roleProgress.map((r) => (
                 <PriorityRoleCard key={r.id + '-drawer'} role={r} onDelete={setPendingDelete} />
               ))}
@@ -2170,7 +2222,7 @@ export default function DashboardPage() {
           {drawerLists.invited.length === 0 ? (
             <EmptyState bare icon={<Send size={20} />} title="No invites yet." description="Invite a candidate from any role to see them here." />
           ) : (
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {drawerLists.invited.map((c, i) => (
                 <SimpleRow
                   key={c.email + i}
@@ -2193,14 +2245,14 @@ export default function DashboardPage() {
           {drawerLists.completed.length === 0 ? (
             <EmptyState bare icon={<CheckCircle2 size={20} />} title="No completed interviews yet." description="Once candidates finish, they appear here." />
           ) : (
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {drawerLists.completed.map((c, i) => (
                 <SimpleRow
                   key={`${c.stageId}-${c.name}-${i}`}
                   name={c.name}
                   meta={c.roleTitle}
                   score={c.score}
-                  href={`/interview/${c.stageId}/transcript`}
+                  href={`/interview/${c.stageId}/transcript?candidate=${encodeURIComponent(c.name || '')}`}
                 />
               ))}
             </div>
@@ -2217,7 +2269,7 @@ export default function DashboardPage() {
           {drawerLists.ongoing.length === 0 ? (
             <EmptyState bare icon={<Loader size={20} />} title="Everything's settled." description="No interviews are mid-flight right now." />
           ) : (
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {drawerLists.ongoing.map((c, i) => (
                 <SimpleRow
                   key={c.email + i}
@@ -2241,14 +2293,14 @@ export default function DashboardPage() {
           {drawerLists.completed.filter((c) => c.score != null).length === 0 ? (
             <EmptyState bare icon={<Star size={20} />} title="No scores yet." description="Scores appear after interviews complete." />
           ) : (
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {drawerLists.completed.filter((c) => c.score != null).map((c, i) => (
                 <SimpleRow
                   key={`${c.stageId}-${c.name}-score-${i}`}
                   name={c.name}
                   meta={c.roleTitle}
                   score={c.score}
-                  href={`/interview/${c.stageId}/transcript`}
+                  href={`/interview/${c.stageId}/transcript?candidate=${encodeURIComponent(c.name || '')}`}
                 />
               ))}
             </div>

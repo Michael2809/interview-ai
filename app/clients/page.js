@@ -176,7 +176,7 @@ function AddClientModal({ open, onClose, onSave, saving, existingNames }) {
               maxLength={ABOUT_MAX}
               value={about}
               onChange={(e) => setAbout(e.target.value)}
-              placeholder="Design studio in Dubai, about 40 people, hybrid, 10am to 7pm."
+              placeholder="Consumer electronics company, around 300 people, founded in 2009."
               className={
                 'w-full rounded-[10px] border border-[color:var(--color-rc-line)] bg-white px-3 py-2.5 ' +
                 'text-[14px] leading-relaxed text-[color:var(--color-rc-ink)] placeholder:text-[color:var(--color-rc-muted)] ' +
@@ -184,7 +184,7 @@ function AddClientModal({ open, onClose, onSave, saving, existingNames }) {
               }
             />
             <p className="mt-1.5 text-[12.5px] text-[color:var(--color-rc-muted)]">
-              Used when candidates ask about the company and the JD doesn&rsquo;t say. Leave it blank if the JD covers it.
+              Only things that are true for every role at this company. Hours, pay and anything role-specific go in each role&rsquo;s JD.
             </p>
           </div>
         ) : (

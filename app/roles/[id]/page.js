@@ -545,7 +545,7 @@ function NextActionCard({ role, stages, waiting, invited, onOpenInvite, onGoCand
   } else if (waiting > 0) {
     title = `${waiting} candidate${waiting === 1 ? '' : 's'} waiting for your review.`
     description = 'Open each transcript, review the AI score, and decide.'
-    action = <Button variant="primary" size="sm" iconRight={<ChevronRight size={14} />} onClick={onGoCandidates}>Review candidates</Button>
+    action = <Button variant="primary" size="sm" iconRight={<ChevronRight size={14} />} onClick={() => onGoCandidates({ status: 'waiting' })}>Review candidates</Button>
   } else if (invited === 0) {
     title = 'Time to invite candidates.'
     description = 'You have stages ready. Send interview invites — Recrewt takes it from there.'
@@ -553,7 +553,7 @@ function NextActionCard({ role, stages, waiting, invited, onOpenInvite, onGoCand
   } else {
     title = 'You are all caught up.'
     description = 'Everything invited is either done or in progress. Come back once new interviews complete.'
-    action = <Button variant="secondary" size="sm" onClick={onGoCandidates} iconRight={<ChevronRight size={14} />}>View candidates</Button>
+    action = <Button variant="secondary" size="sm" onClick={() => onGoCandidates({})} iconRight={<ChevronRight size={14} />}>View candidates</Button>
   }
   return (
     <div className="mt-10 rounded-[18px] bg-white border border-[color:var(--color-rc-line)] p-6 md:p-7 [box-shadow:0_1px_2px_rgba(17,17,17,0.02),0_24px_44px_-40px_rgba(17,17,17,0.07)]">
@@ -672,7 +672,7 @@ function OverviewPanel({
         waiting={stats.waiting}
         invited={stats.invited}
         onOpenInvite={onOpenInvite}
-        onGoCandidates={() => onGoCandidatesFiltered({})}
+        onGoCandidates={(preset) => onGoCandidatesFiltered(preset || {})}
         onGoInterviews={onGoInterviews}
       />
     </div>
@@ -2996,6 +2996,7 @@ export default function RoleDetailPage() {
     try { window.sessionStorage.setItem(`${SESSION_TAB_KEY}:${roleId}`, tab) } catch {}
     const url = new URL(window.location.href)
     url.searchParams.set('tab', tab)
+    url.searchParams.delete('show') // one-shot: already applied on load
     url.hash = ''
     window.history.replaceState({}, '', url.toString())
   }, [tab, roleId])
@@ -3016,6 +3017,12 @@ export default function RoleDetailPage() {
   // Candidates tab filter (session-remembered)
   function readCandFilter() {
     if (typeof window === 'undefined') return { search: '', stage: 'all', statusFilter: 'all', sort: 'priority' }
+    // A link that says what to show (?show=waiting from "Review
+    // candidates" on the roles list) wins over remembered filters.
+    const show = new URLSearchParams(window.location.search).get('show')
+    if (show === 'waiting' || show === 'all') {
+      return { search: '', stage: 'all', statusFilter: show, sort: 'priority' }
+    }
     try {
       const raw = window.sessionStorage.getItem(`${SESSION_CAND_KEY}:${roleId}`)
       if (raw) return { search: '', stage: 'all', statusFilter: 'all', sort: 'priority', ...JSON.parse(raw) }
@@ -3856,16 +3863,31 @@ export default function RoleDetailPage() {
   }
 
   function handleTabChange(next) { setTab(next); if (next !== 'candidates') clearSelection() }
+  // Every button that jumps to the Candidates tab says exactly what it
+  // wants to show. Filters left over from an earlier visit (they are
+  // remembered per role) used to survive the jump, so "14 waiting for
+  // your review" opened onto 2 shortlisted candidates.
   function goCandidates(preset = {}) {
-    if (preset.stage) setStageFilter(preset.stage)
-    if (preset.status) setStatusFilter(preset.status)
+    setSearch('')
+    setStageFilter(preset.stage || 'all')
     // "verdict" is an alias for status when the caller comes from
     // the pipeline-outcomes cards.  Shortlisted / On hold / Rejected
     // all map onto the same status enum the Candidates tab already
     // understands.
-    if (preset.verdict) setStatusFilter(preset.verdict)
+    setStatusFilter(preset.verdict || preset.status || 'all')
     setTab('candidates')
   }
+
+  // The back link names the client the recruiter is returning to.
+  const [clientName, setClientName] = useState('')
+  useEffect(() => {
+    if (!role?.client_id) return
+    let live = true
+    supabase.from('clients').select('name').eq('id', role.client_id).maybeSingle()
+      .then(({ data }) => { if (live && data?.name) setClientName(data.name) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role?.client_id])
 
   const recruiterName = recruiterSettings?.full_name || ''
   const companyName = recruiterSettings?.company_name || ''
@@ -3884,7 +3906,7 @@ export default function RoleDetailPage() {
           href={role?.client_id ? `/roles?client=${role.client_id}` : '/clients'}
           className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] transition-colors mb-6"
         >
-          <ArrowLeft size={13} /> Back to roles
+          <ArrowLeft size={13} /> {clientName ? `Back to ${clientName}` : 'Back to roles'}
         </Link>
 
         <Toast kind="success" message={message} />

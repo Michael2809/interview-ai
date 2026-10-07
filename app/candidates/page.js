@@ -171,13 +171,16 @@ function statusForRow(row) {
  * Session helpers (persist filter/sort per user session)
  * ────────────────────────────────────────────────────────── */
 
+// `role` holds a role id, not a title: two clients can both have a
+// "Graphic Designer" and they must never collapse into one option.
+const SESSION_DEFAULTS = { search: '', client: 'all', role: 'all', quick: 'all', sort: 'newest' }
 function readSession() {
-  if (typeof window === 'undefined') return { search: '', role: 'all', quick: 'all', sort: 'newest' }
+  if (typeof window === 'undefined') return { ...SESSION_DEFAULTS }
   try {
     const raw = window.sessionStorage.getItem(SESSION_KEY)
-    if (raw) return { search: '', role: 'all', quick: 'all', sort: 'newest', ...JSON.parse(raw) }
+    if (raw) return { ...SESSION_DEFAULTS, ...JSON.parse(raw) }
   } catch {}
-  return { search: '', role: 'all', quick: 'all', sort: 'newest' }
+  return { ...SESSION_DEFAULTS }
 }
 function writeSession(v) {
   if (typeof window === 'undefined') return
@@ -640,7 +643,8 @@ function CandidateRowImpl({ row, selected, onToggleSelect, onMessage, onMenuActi
   const rowHref = row.href
   const ai = aiIndicator(row)
   const displayName = row.name || row.email || 'Anonymous candidate'
-  const secondary = (row.roleTitle || 'Unassigned role') + (time ? ` · ${time}` : '')
+  const roleLabel = row.roleTitle || 'Unassigned role'
+  const secondary = (row.clientName ? `${row.clientName} · ${roleLabel}` : roleLabel) + (time ? ` · ${time}` : '')
   const stopLink = (e) => { e.stopPropagation() }
 
   return (
@@ -793,6 +797,7 @@ const CandidateRow = memo(CandidateRowImpl, (prev, next) => {
       a.name === b.name &&
       a.email === b.email &&
       a.roleTitle === b.roleTitle &&
+      a.clientName === b.clientName &&
       a.stageName === b.stageName &&
       a.dbStatus === b.dbStatus &&
       a.score === b.score &&
@@ -920,6 +925,7 @@ export default function CandidatesPage() {
   const [loadError, setLoadError] = useState(null)   // null | 'network' | 'permission' | 'unknown'
   const initial = readSession()
   const [search, setSearch] = useState(initial.search)
+  const [client, setClient] = useState(initial.client)
   const [role, setRole] = useState(initial.role)
   const [quick, setQuick] = useState(initial.quick)
   const [sort, setSort] = useState(initial.sort)
@@ -927,10 +933,11 @@ export default function CandidatesPage() {
   const [comparePair, setComparePair] = useState(null)
 
   const [rows, setRows] = useState([])         // unified row list
-  const [roleList, setRoleList] = useState([])
+  const [roleList, setRoleList] = useState([])      // [{ id, title, clientId, clientName }]
+  const [clientList, setClientList] = useState([])  // [{ id, name }]
 
   // Persist filters/sort (not selection)
-  useEffect(() => { writeSession({ search, role, quick, sort }) }, [search, role, quick, sort])
+  useEffect(() => { writeSession({ search, client, role, quick, sort }) }, [search, client, role, quick, sort])
 
   // Persist the current filtered queue so opening a transcript
   // preserves filter/search/sort order across Prev/Next navigation.
@@ -942,10 +949,19 @@ export default function CandidatesPage() {
     const params = new URLSearchParams(window.location.search)
     const q = params.get('quick') || params.get('filter')
     if (q && QUICK_FILTERS.some((f) => f.key === q)) setQuick(q)
+    const c = params.get('client')
+    if (c) setClient(c)
     const r = params.get('role')
     if (r) setRole(r)
     const term = params.get('q')
-    if (term) setSearch(term)
+    if (term) {
+      // A link to one person must find them, whatever filters were left
+      // on from last time.
+      setSearch(term)
+      if (!params.get('client')) setClient('all')
+      if (!params.get('role')) setRole('all')
+      if (!q) setQuick('all')
+    }
     // Back-compat: legacy verdict param maps to quick chip
     const v = params.get('verdict')
     if (v === 'shortlisted') setQuick('shortlisted')
@@ -964,13 +980,14 @@ export default function CandidatesPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
-    let rolesRes, stagesRes, interviewsRes, scoresRes
+    let rolesRes, stagesRes, interviewsRes, scoresRes, clientsRes
     try {
-      [rolesRes, stagesRes, interviewsRes, scoresRes] = await Promise.all([
-        supabase.from('roles').select('id, title'),
+      [rolesRes, stagesRes, interviewsRes, scoresRes, clientsRes] = await Promise.all([
+        supabase.from('roles').select('id, title, client_id'),
         supabase.from('stages').select('id, role_id, name'),
         supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, created_at, session_id, status'),
         supabase.from('scores').select('candidate_name, score, status, stage_id, created_at, summary'),
+        supabase.from('clients').select('id, name').order('name', { ascending: true }),
       ])
     } catch (err) {
       // Network layer failure — `fetch` never left the machine.
@@ -990,7 +1007,7 @@ export default function CandidatesPage() {
 
     // Supabase surfaces auth/RLS errors on each response rather than
     // throwing. Detect the first non-transport error and classify it.
-    const supErr = (rolesRes.error || stagesRes.error || interviewsRes.error || scoresRes.error)
+    const supErr = (rolesRes.error || stagesRes.error || interviewsRes.error || scoresRes.error || clientsRes.error)
     if (supErr) {
       console.error('Candidates supabase error:', supErr)
       // 42501 = insufficient privilege (RLS); PGRST301 = JWT missing/expired
@@ -1001,6 +1018,9 @@ export default function CandidatesPage() {
     }
 
     const roles = rolesRes.data || []
+    const clientRows = clientsRes.data || []
+    const clientName = {}
+    clientRows.forEach((c) => { clientName[c.id] = c.name })
     const stages = stagesRes.data || []
     const scores = scoresRes.data || []
     // Unfinished attempts are never candidates. See lib/transcript.js.
@@ -1013,6 +1033,8 @@ export default function CandidatesPage() {
         name: s.name || 'Untitled stage',
         roleTitle: roleRow?.title || 'Unassigned role',
         roleId: roleRow?.id,
+        clientId: roleRow?.client_id || null,
+        clientName: clientName[roleRow?.client_id] || null,
       }
     })
 
@@ -1047,6 +1069,8 @@ export default function CandidatesPage() {
             stageName: info.name || 'Unknown stage',
             roleTitle: info.roleTitle || 'Unassigned role',
             roleId: info.roleId,
+            clientId: info.clientId || null,
+            clientName: info.clientName || null,
             invited_at: r.invited_at,
           })
         }
@@ -1069,6 +1093,8 @@ export default function CandidatesPage() {
           stageName: info.name || 'Unknown stage',
           roleTitle: info.roleTitle || 'Unassigned role',
           roleId: info.roleId,
+          clientId: info.clientId || null,
+          clientName: info.clientName || null,
           firstAt: r.created_at,
           latest: r.created_at,
         })
@@ -1106,6 +1132,8 @@ export default function CandidatesPage() {
         name: c.candidate_name,
         email: inviteEmailByStageName[key] || null,
         roleTitle: c.roleTitle,
+        clientId: c.clientId,
+        clientName: c.clientName,
         stageName: c.stageName,
         stageId: c.stage_id,
         roleId: c.roleId,
@@ -1148,6 +1176,8 @@ export default function CandidatesPage() {
         name: unfinished && c.name ? c.name : c.email,
         email: c.email,
         roleTitle: c.roleTitle,
+        clientId: c.clientId,
+        clientName: c.clientName,
         stageName: c.stageName,
         stageId: c.stage_id,
         roleId: c.roleId,
@@ -1163,11 +1193,33 @@ export default function CandidatesPage() {
     }
 
     setRows(unified)
-    setRoleList([...new Set(unified.map((r) => r.roleTitle))].sort())
+    setClientList(clientRows)
+    setRoleList(
+      roles
+        .map((r) => ({ id: String(r.id), title: r.title || 'Untitled role', clientId: r.client_id || null, clientName: clientName[r.client_id] || '' }))
+        .sort((a, b) => a.clientName.localeCompare(b.clientName) || a.title.localeCompare(b.title)),
+    )
     setLoading(false)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  /* ── Derived: client + role scope ───────────────── */
+
+  // A stale role (from an old session, or a role under another client)
+  // quietly counts as "All roles" rather than emptying the list.
+  const rolesForClient = useMemo(
+    () => (client === 'all' ? roleList : roleList.filter((r) => r.clientId === client)),
+    [roleList, client],
+  )
+  const activeRole = rolesForClient.some((r) => r.id === String(role)) ? String(role) : 'all'
+  const activeClient = clientList.some((c) => c.id === client) ? client : 'all'
+
+  const scopedRows = useMemo(() => rows.filter((r) => {
+    if (activeClient !== 'all' && r.clientId !== activeClient) return false
+    if (activeRole !== 'all' && String(r.roleId) !== activeRole) return false
+    return true
+  }), [rows, activeClient, activeRole])
 
   /* ── Derived: counts per quick filter ───────────── */
 
@@ -1177,7 +1229,7 @@ export default function CandidatesPage() {
       shortlisted: 0, offers: 0, rejected: 0, archived: 0,
     }
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    for (const r of rows) {
+    for (const r of scopedRows) {
       // Archived rows only count toward the Archived chip. Every other
       // chip — including "All" — excludes them so recruiters see a
       // clean active-pipeline view by default.
@@ -1190,22 +1242,21 @@ export default function CandidatesPage() {
       if (r.dbStatus === 'rejected') c.rejected++
     }
     return c
-  }, [rows])
+  }, [scopedRows])
 
   /* ── Derived: filtered + sorted list ─────────────── */
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    let out = rows.filter((r) => {
+    let out = scopedRows.filter((r) => {
       // Archived rows are only visible on the Archived chip.
       const isArchived = r.dbStatus === 'archived'
       if (quick === 'archived' && !isArchived) return false
       if (quick !== 'archived' && isArchived)  return false
 
-      if (role !== 'all' && r.roleTitle !== role) return false
       if (term) {
-        const hay = [r.name, r.email, r.roleTitle, r.stageName].filter(Boolean).join(' ').toLowerCase()
+        const hay = [r.name, r.email, r.roleTitle, r.clientName, r.stageName].filter(Boolean).join(' ').toLowerCase()
         if (!hay.includes(term)) return false
       }
       switch (quick) {
@@ -1234,7 +1285,7 @@ export default function CandidatesPage() {
       }
     })
     return out
-  }, [rows, role, quick, search, sort])
+  }, [scopedRows, quick, search, sort])
 
   // Clear selection whenever the visible list changes. Otherwise the
   // "N selected" count on the bulk bar counts rows that aren't
@@ -1242,7 +1293,7 @@ export default function CandidatesPage() {
   useEffect(() => {
     setSelected(new Set())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quick, role, search])
+  }, [quick, client, role, search])
 
   // Whenever the visible/sorted list changes, mirror the reviewable
   // subset (completed candidates) to sessionStorage so the transcript
@@ -1616,15 +1667,35 @@ export default function CandidatesPage() {
               className="md:min-w-[180px]"
               options={SORT_OPTIONS}
             />
+            {clientList.length > 1 && (
+              <Select
+                aria-label="Filter by client"
+                value={activeClient}
+                onChange={(e) => { setClient(e.target.value); setRole('all') }}
+                fullWidth={false}
+                className="md:min-w-[180px]"
+                options={[
+                  { value: 'all', label: 'All clients' },
+                  ...clientList.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+              />
+            )}
             <Select
               aria-label="Filter by role"
-              value={role}
+              value={activeRole}
               onChange={(e) => setRole(e.target.value)}
               fullWidth={false}
-              className="md:min-w-[200px]"
+              className="md:min-w-[220px]"
               options={[
                 { value: 'all', label: 'All roles' },
-                ...roleList.map((r) => ({ value: r, label: r })),
+                ...rolesForClient.map((r) => ({
+                  value: r.id,
+                  // With every client showing, the client name is what
+                  // tells two "Graphic Designer" roles apart.
+                  label: activeClient === 'all' && r.clientName && clientList.length > 1
+                    ? `${r.clientName} · ${r.title}`
+                    : r.title,
+                })),
               ]}
             />
           </div>
@@ -1668,9 +1739,9 @@ export default function CandidatesPage() {
                 ? 'No candidates have been rejected.'
                 : 'Try broadening the search or picking a different filter.'}
             </p>
-            {(search || role !== 'all' || quick !== 'all') && (
+            {(search || activeRole !== 'all' || activeClient !== 'all' || quick !== 'all') && (
               <div className="mt-5">
-                <Button variant="secondary" size="sm" onClick={() => { setSearch(''); setRole('all'); setQuick('all') }}>
+                <Button variant="secondary" size="sm" onClick={() => { setSearch(''); setClient('all'); setRole('all'); setQuick('all') }}>
                   Clear all filters
                 </Button>
               </div>
