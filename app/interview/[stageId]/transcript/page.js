@@ -2653,7 +2653,7 @@ export default function TranscriptPage() {
         <InQueueGate stageId={stageId} candidateName={selected}>
           <div className="flex items-center justify-between gap-3 mb-6 print:hidden">
             <Link
-              href={role?.id ? `/roles/${role.id}` : '/roles'}
+              href={role?.id ? `/roles/${role.id}` : '/clients'}
               className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] transition-colors duration-150"
             >
               <ArrowLeft size={13} /> Back to {role?.title || 'role'}

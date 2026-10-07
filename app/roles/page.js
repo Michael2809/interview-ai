@@ -23,6 +23,8 @@ import {
   ArchiveRestore,
   Trash2,
   Upload,
+  ArrowLeft,
+  Building2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import { SkeletonRow, SkeletonLine } from '@/components/AppShell/Skeleton'
@@ -770,8 +772,16 @@ function CriteriaList({ items, onRemove }) {
  * CreateRoleDrawer — form moved out of the page
  * ────────────────────────────────────────────────────────── */
 
-function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCount, prefill }) {
+function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCount, prefill, clientId = null, clients = [] }) {
   const supabase = createClient()
+
+  // Every role belongs to a client. Opened from inside a client the
+  // client is fixed; opened from anywhere else (Dashboard, Ctrl+K) the
+  // recruiter picks one first.
+  const [pickedClient, setPickedClient] = useState('')
+  const fixedClientId = clientId || prefill?.client_id || null
+  const roleClientId = fixedClientId || pickedClient || null
+  const roleClientName = clients.find((c) => c.id === roleClientId)?.name || ''
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -855,6 +865,7 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
     setOwnSkill('')
     suggestedFor.current = ''
     setError('')
+    setPickedClient('')
   }, [open, prefill])
 
   // Grow the title field to fit whatever the JD gave us.
@@ -895,7 +906,7 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
      title, every score had no requirement to quote, and nothing on
      screen ever said so. */
   const enoughCriteria = mustHaves.length >= MIN_CRITERIA
-  const canSubmit = !!title.trim() && !saving && !overLimit && enoughCriteria
+  const canSubmit = !!title.trim() && !saving && !overLimit && enoughCriteria && !!roleClientId
 
   /**
    * Hand the job description to /api/parse-jd and fill the form with
@@ -1024,6 +1035,7 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
   function removeNiceToHave(i) { setNiceToHaves((list) => list.filter((_, n) => n !== i)) }
 
   async function submit() {
+    if (!roleClientId) { setError('Choose which client this role is for.'); return }
     if (!title.trim()) { setError('Please enter a job title.'); return }
     if (overLimit) {
       setError(`You have reached the ${limit}-role limit on your ${plan} plan. Upgrade to unlock more roles.`)
@@ -1046,6 +1058,7 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        client_id: roleClientId,
         title: title.trim(),
         description: description.trim() || null,
         department: category
@@ -1179,6 +1192,33 @@ function CreateRoleDrawer({ open, onClose, onCreated, plan, roleLimit, currentCo
         <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
       )}
     >
+      {fixedClientId ? (
+        roleClientName && (
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[color:var(--color-rc-line)] bg-white px-3 py-1 text-[12.5px] text-[color:var(--color-rc-muted)]">
+            <Building2 size={13} aria-hidden="true" />
+            For <span className="font-medium text-[color:var(--color-rc-ink)]">{roleClientName}</span>
+          </div>
+        )
+      ) : (
+        <div className="mb-5">
+          <Select
+            label="Which client is this role for?"
+            value={pickedClient}
+            onChange={(e) => { setPickedClient(e.target.value); if (error) setError('') }}
+            placeholder="Choose a client"
+            options={clients.map((c) => ({ value: c.id, label: c.name }))}
+          />
+          {clients.length === 0 && (
+            <p className="mt-1.5 text-[12.5px] text-[color:var(--color-rc-muted)]">
+              You have no clients yet.{' '}
+              <Link href="/clients" className="text-[color:var(--color-rc-ink)] font-medium underline decoration-[color:var(--color-rc-yellow)] decoration-2 underline-offset-4">
+                Add one first
+              </Link>
+            </p>
+          )}
+        </div>
+      )}
+
       {!parsed ? (
         /* ── Nothing yet: one decision on the whole screen ────────── */
         <div className="py-6">
@@ -1692,7 +1732,7 @@ export default function RolesPage() {
 
   // Data
   const [rawRoles, setRawRoles] = useState([])  // roles + computed counts
-  const [totals, setTotals] = useState({
+  const [, setTotals] = useState({
     interviewsRunning: 0,
     waiting: 0,
     totalCandidates: 0,
@@ -1715,6 +1755,29 @@ export default function RolesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerPrefill, setDrawerPrefill] = useState(null)
 
+  // Client scope. This page always shows ONE client's roles
+  // (/roles?client=<id>). There is no "every role" view any more:
+  // /roles on its own sends you to Clients, and /roles?create=1 opens
+  // the new-role drawer with a client picker (Dashboard, Ctrl+K).
+  const [clientId, setClientId] = useState(null)
+  const [createMode, setCreateMode] = useState(false)
+  const [clients, setClients] = useState([])
+  const [scopeReady, setScopeReady] = useState(false)
+
+  useEffect(() => {
+    // window.location instead of useSearchParams(): see the Suspense
+    // boundary note in the README.
+    const params = new URLSearchParams(window.location.search)
+    const c = params.get('client')
+    const create = params.get('create') === '1'
+    if (!c && !create) { router.replace('/clients'); return }
+    setClientId(c)
+    setCreateMode(create)
+    setScopeReady(true)
+    if (create) setDrawerOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Delete modal
   const [pendingDelete, setPendingDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -1732,7 +1795,7 @@ export default function RolesPage() {
     async function loadRolesResilient() {
       const withStatus = await supabase
         .from('roles')
-        .select('id, title, description, department, employment_type, experience_level, status, created_at')
+        .select('id, title, description, department, employment_type, experience_level, status, created_at, client_id')
         .order('created_at', { ascending: false })
       if (!withStatus.error) {
         setHasStatusColumn(true)
@@ -1745,11 +1808,11 @@ export default function RolesPage() {
       setHasStatusColumn(false)
       return supabase
         .from('roles')
-        .select('id, title, description, department, employment_type, experience_level, created_at')
+        .select('id, title, description, department, employment_type, experience_level, created_at, client_id')
         .order('created_at', { ascending: false })
     }
 
-    const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes] = await Promise.all([
+    const [rolesRes, stagesRes, interviewsRes, scoresRes, settingsRes, clientsRes] = await Promise.all([
       loadRolesResilient(),
       supabase.from('stages').select('id, role_id'),
       supabase.from('interviews').select('stage_id, speaker, candidate_name, candidate_email, invited_at, session_id, status'),
@@ -1772,7 +1835,11 @@ export default function RolesPage() {
           return { data: null }
         }
       })(),
+      supabase.from('clients').select('id, name').order('name', { ascending: true }),
     ])
+
+    if (clientsRes.error) console.error('roles: clients load:', clientsRes.error)
+    setClients(clientsRes.data || [])
 
     if (settingsRes.data) setTrialData(settingsRes.data)
 
@@ -1845,6 +1912,7 @@ export default function RolesPage() {
         employment_type: r.employment_type,
         experience_level: r.experience_level,
         status: r.status,
+        client_id: r.client_id || null,
         created_at: r.created_at,
         lastActivityAt: r.lastActivityAt,
         invited:     invitedCount,
@@ -1962,20 +2030,48 @@ export default function RolesPage() {
     loadData()
   }
 
+  // Closing the drawer opened from Dashboard / Ctrl+K has no client
+  // page to fall back to, so it goes to Clients.
+  function closeDrawer() {
+    setDrawerOpen(false)
+    setDrawerPrefill(null)
+    if (createMode && !clientId) router.push('/clients')
+  }
+
   /* ── Derived (filter, sort, group) ─────────────────── */
+
+  // Everything on screen is this client's roles only. rawRoles stays
+  // the full list because the plan's role limit counts every client.
+  const client = clients.find((c) => c.id === clientId) || null
+  const scopedRoles = useMemo(
+    () => (clientId ? rawRoles.filter((r) => r.client_id === clientId) : []),
+    [rawRoles, clientId],
+  )
+  const scopedTotals = useMemo(() => {
+    const activeOnly = scopedRoles.filter((r) => (r.status || 'active') === 'active')
+    return {
+      interviewsRunning: activeOnly.reduce((n, r) => n + r.ongoing, 0),
+      waiting:           activeOnly.reduce((n, r) => n + r.waiting, 0),
+      totalCandidates:   activeOnly.reduce((n, r) => n + r.invited, 0),
+      needsAttention:    activeOnly.filter((r) => {
+        const k = roleHealth(r).key
+        return k === 'needs-review' || k === 'behind'
+      }).length,
+    }
+  }, [scopedRoles])
 
   const departments = useMemo(() => {
     const set = new Set()
-    rawRoles.forEach((r) => {
+    scopedRoles.forEach((r) => {
       const d = normalizeDept(r.department)
       if (d) set.add(d)
     })
     return Array.from(set).sort()
-  }, [rawRoles])
+  }, [scopedRoles])
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    return rawRoles.filter((r) => {
+    return scopedRoles.filter((r) => {
       if (term) {
         const hay = ((r.title || '') + ' ' + (r.department || '')).toLowerCase()
         if (!hay.includes(term)) return false
@@ -1986,7 +2082,7 @@ export default function RolesPage() {
       }
       return true
     })
-  }, [rawRoles, search, dept])
+  }, [scopedRoles, search, dept])
 
   function sortRoles(list) {
     const arr = [...list]
@@ -2045,9 +2141,10 @@ export default function RolesPage() {
   }, [filtered, status, sort])
 
   const activeRolesCount = rawRoles.filter((r) => (r.status || 'active') === 'active').length
-  const totalRolesCount  = rawRoles.length
-  const pausedCount   = rawRoles.filter((r) => r.status === 'paused').length
-  const archivedCount = rawRoles.filter((r) => r.status === 'archived').length
+  const clientActiveCount = scopedRoles.filter((r) => (r.status || 'active') === 'active').length
+  const totalRolesCount  = scopedRoles.length
+  const pausedCount   = scopedRoles.filter((r) => r.status === 'paused').length
+  const archivedCount = scopedRoles.filter((r) => r.status === 'archived').length
 
   const plan = trialData?.planKey || PLAN_KEYS.TRIAL
   const rawLimit = trialData?.roleLimit
@@ -2084,13 +2181,41 @@ export default function RolesPage() {
         {/* Header — compact application chrome. Title, description
             and Create-Role button sit on one baseline so the first
             role cards appear near the top of the viewport. */}
+        <Link
+          href="/clients"
+          className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] transition-colors mb-5"
+        >
+          <ArrowLeft size={13} /> Clients
+        </Link>
+
+        {!scopeReady ? (
+          <LoadingBlock />
+        ) : !clientId ? (
+          /* Opened as /roles?create=1 — just the drawer, picking a client. */
+          <header className="mb-6">
+            <h1
+              className="text-[26px] md:text-[28px] leading-[1.15] font-semibold tracking-[-0.02em] text-[color:var(--color-rc-ink)]"
+              style={{ fontFamily: 'var(--font-editorial), inherit' }}
+            >
+              New role
+            </h1>
+          </header>
+        ) : !loading && !client ? (
+          <EmptyState
+            icon={<Building2 size={22} />}
+            title="We couldn't find that client"
+            description="It may have been removed, or the link is out of date."
+            action={<Button as="a" href="/clients" variant="secondary">Back to clients</Button>}
+          />
+        ) : (
+        <>
         <header className="mb-6">
           <div className="flex items-baseline justify-between gap-4 flex-wrap">
             <h1
               className="text-[26px] md:text-[28px] leading-[1.15] font-semibold tracking-[-0.02em] text-[color:var(--color-rc-ink)]"
               style={{ fontFamily: 'var(--font-editorial), inherit' }}
             >
-              Roles
+              {client?.name || '\u00a0'}
             </h1>
             <Button
               variant="primary"
@@ -2104,7 +2229,7 @@ export default function RolesPage() {
             </Button>
           </div>
           <p className="mt-1.5 text-[14px] text-[color:var(--color-rc-muted)]">
-            Manage all hiring roles across your organisation.
+            {client ? `Roles you’re hiring for at ${client.name}.` : '\u00a0'}
             {!loading && (pausedCount > 0 || archivedCount > 0) && (
               <span className="ml-2 text-[color:var(--color-rc-muted)]/80">
                 · {pausedCount > 0 && `${pausedCount} paused`}
@@ -2124,11 +2249,11 @@ export default function RolesPage() {
 
           {!loading && (
             <SummaryStrip
-              activeRoles={activeRolesCount}
-              interviewsRunning={totals.interviewsRunning}
-              waiting={totals.waiting}
-              totalCandidates={totals.totalCandidates}
-              needsAttention={totals.needsAttention}
+              activeRoles={clientActiveCount}
+              interviewsRunning={scopedTotals.interviewsRunning}
+              waiting={scopedTotals.waiting}
+              totalCandidates={scopedTotals.totalCandidates}
+              needsAttention={scopedTotals.needsAttention}
             />
           )}
         </header>
@@ -2150,15 +2275,15 @@ export default function RolesPage() {
         ) : totalRolesCount === 0 ? (
           <EmptyState
             icon={<Briefcase size={22} />}
-            title="No roles yet"
-            description="Create your first hiring role to begin interviewing candidates. Recrewt drafts tailored questions from the role description."
+            title={`No roles for ${client?.name || 'this client'} yet`}
+            description="Add the first role and drop in its job description. Recrewt drafts the interview questions from it."
             action={
               <Button
                 variant="primary"
                 iconLeft={<Plus size={16} />}
                 onClick={() => { setDrawerPrefill(null); setDrawerOpen(true) }}
               >
-                Create Role
+                Create role
               </Button>
             }
           />
@@ -2228,14 +2353,19 @@ export default function RolesPage() {
           </>
         )}
 
+        </>
+        )}
+
         <CreateRoleDrawer
           open={drawerOpen}
-          onClose={() => { setDrawerOpen(false); setDrawerPrefill(null) }}
+          onClose={closeDrawer}
           onCreated={handleCreated}
           plan={plan}
           roleLimit={rawLimit}
           currentCount={activeRolesCount}
           prefill={drawerPrefill}
+          clientId={clientId}
+          clients={clients}
         />
 
         <Modal

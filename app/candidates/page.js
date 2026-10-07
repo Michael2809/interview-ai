@@ -1641,10 +1641,10 @@ export default function CandidatesPage() {
           <EmptyState
             icon={<Users size={22} />}
             title="No candidates yet"
-            description="Candidates will appear here once you invite them from a role."
+            description="Candidates show up here once you invite them from a client’s role."
             action={
-              <Button as="a" href="/roles" variant="primary" iconLeft={<Briefcase size={16} />}>
-                Invite Candidate
+              <Button as="a" href="/clients" variant="primary" iconLeft={<Briefcase size={16} />}>
+                Go to clients
               </Button>
             }
           />

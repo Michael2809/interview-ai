@@ -13,6 +13,7 @@
 
 export const ROUTES = {
   '/dashboard':      { label: 'Dashboard' },
+  '/clients':        { label: 'Clients' },
   '/roles':          { label: 'Roles' },
   '/candidates':     { label: 'Candidates' },
   '/settings':       { label: 'Settings' },
@@ -24,8 +25,9 @@ export const ROUTES = {
 
 // Route pattern → default contextual primary { label, href, shortcut }
 export const DEFAULT_PRIMARY_BY_PATTERN = [
-  { pattern: /^\/dashboard/,                     primary: { label: 'Create role',     href: '/roles' } },
-  { pattern: /^\/roles$/,                        primary: { label: 'Create role',     href: '/roles' } },
+  { pattern: /^\/dashboard/,                     primary: { label: 'Create role',     href: '/roles?create=1' } },
+  { pattern: /^\/clients/,                     primary: null /* page has its own Add client button */ },
+  { pattern: /^\/roles$/,                        primary: null /* page has its own Create role button */ },
   { pattern: /^\/roles\/[^/]+$/,                 primary: null /* pages override */ },
   { pattern: /^\/candidates/,                    primary: null /* review lives on the transcript page, not the list */ },
   { pattern: /^\/interview\/[^/]+\/transcript/,  primary: null /* pages override */ },

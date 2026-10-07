@@ -1938,7 +1938,7 @@ export default function DashboardPage() {
               not exist, and "View reports" at Candidates for a reports
               page that does not exist either. Two honest destinations
               beat four misleading ones. */}
-          <QuickAction icon={<Plus size={14} />}      label="New role"        href="/roles" />
+          <QuickAction icon={<Plus size={14} />}      label="New role"        href="/roles?create=1" />
           <QuickAction icon={<Users size={14} />}     label="All candidates"  href="/candidates" />
         </div>
 
@@ -2025,7 +2025,7 @@ export default function DashboardPage() {
               title="No roles yet."
               body="Create your first role to start inviting candidates."
               action={
-                <Button as="a" href="/roles" variant="primary" size="sm" iconLeft={<Plus size={14} />}>
+                <Button as="a" href="/roles?create=1" variant="primary" size="sm" iconLeft={<Plus size={14} />}>
                   Create a role
                 </Button>
               }

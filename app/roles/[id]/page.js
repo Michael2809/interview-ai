@@ -3845,7 +3845,7 @@ export default function RoleDetailPage() {
       await step('role', supabase.from('roles').delete().eq('id', roleId))
 
       setConfirmDeleteRole(false)
-      router.push('/roles')
+      router.push(role?.client_id ? `/roles?client=${role.client_id}` : '/clients')
     } catch (e) {
       console.error('Role delete failed:', e)
       flashError('Unable to delete this role. Nothing was removed that we could not remove cleanly — please try again.')
@@ -3881,7 +3881,7 @@ export default function RoleDetailPage() {
     <AppShell>
       <div className="max-w-[1180px] mx-auto pb-8">
         <Link
-          href="/roles"
+          href={role?.client_id ? `/roles?client=${role.client_id}` : '/clients'}
           className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--color-rc-muted)] hover:text-[color:var(--color-rc-ink)] transition-colors mb-6"
         >
           <ArrowLeft size={13} /> Back to roles

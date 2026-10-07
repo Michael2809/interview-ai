@@ -64,8 +64,42 @@ export async function POST(request) {
     return Response.json({ error: msg, reason: gate.reason }, { status: 403 })
   }
 
+  // ── Which client is this role for ────────────────────────────────
+  // Every role belongs to a client (client -> roles -> candidates).
+  // A client_id from the browser is only trusted if it is this user's.
+  // Without one (onboarding, older callers) the role goes under the
+  // user's first client, which is created on the spot if needed.
+  let clientId = null
+  const askedFor = typeof body?.client_id === 'string' ? body.client_id : null
+  if (askedFor) {
+    const { data: owned } = await svc
+      .from('clients').select('id').eq('id', askedFor).eq('user_id', user.id).maybeSingle()
+    if (!owned) {
+      return Response.json({ error: 'That client could not be found.' }, { status: 400 })
+    }
+    clientId = owned.id
+  } else {
+    const { data: first } = await svc
+      .from('clients').select('id').eq('user_id', user.id)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (first) {
+      clientId = first.id
+    } else {
+      const { data: settings } = await svc
+        .from('settings').select('company_name').eq('user_id', user.id).maybeSingle()
+      const name = String(settings?.company_name || '').trim() || 'My company'
+      const { data: made, error: clientErr } = await svc
+        .from('clients').insert({ user_id: user.id, name }).select('id').single()
+      if (clientErr || !made) {
+        console.error('create-role: default client insert failed:', clientErr)
+        return Response.json({ error: 'Could not create the role.' }, { status: 500 })
+      }
+      clientId = made.id
+    }
+  }
+
   // ── Create it ────────────────────────────────────────────────────
-  const row = { user_id: user.id, title }
+  const row = { user_id: user.id, title, client_id: clientId }
   for (const key of Object.keys(body || {})) {
     if (ALLOWED.has(key) && key !== 'title') row[key] = body[key]
   }

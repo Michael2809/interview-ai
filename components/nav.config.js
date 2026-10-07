@@ -1,11 +1,11 @@
-import { LayoutDashboard, Briefcase, Users, Settings, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Building2, Users, Settings, CreditCard } from 'lucide-react';
 
 /**
  * Single source of truth for the authed sidebar navigation.
  * Edit here and every page's nav updates automatically.
  *
  * `matchPrefix` — the pathname prefix that counts as "active".
- *   /roles/[id] and /roles both highlight the Roles link.
+ *   `alsoMatch` — extra prefixes that also count (Clients owns /roles).
  */
 export const NAV_LINKS = [
   {
@@ -15,10 +15,13 @@ export const NAV_LINKS = [
     matchPrefix: '/dashboard',
   },
   {
-    href: '/roles',
-    label: 'Roles',
-    icon: Briefcase,
-    matchPrefix: '/roles',
+    // Roles live inside a client now (client -> roles -> candidates),
+    // so /roles and /roles/[id] keep this link highlighted.
+    href: '/clients',
+    label: 'Clients',
+    icon: Building2,
+    matchPrefix: '/clients',
+    alsoMatch: ['/roles'],
   },
   {
     href: '/candidates',
@@ -43,5 +46,6 @@ export const NAV_LINKS = [
 /** Returns true if `pathname` should highlight the given nav link. */
 export function isActive(pathname, link) {
   if (!pathname) return false;
-  return pathname === link.href || pathname.startsWith(link.matchPrefix + '/');
+  const prefixes = [link.matchPrefix, ...(link.alsoMatch || [])];
+  return pathname === link.href || prefixes.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }

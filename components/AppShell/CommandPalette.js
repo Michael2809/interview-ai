@@ -14,7 +14,7 @@ import { useSearchIndex } from './SearchIndexContext'
 
 const PAGES = [
   { key: 'p-dashboard',  label: 'Dashboard',  href: '/dashboard', icon: 'briefcase' },
-  { key: 'p-roles',      label: 'Roles',      href: '/roles',     icon: 'briefcase' },
+  { key: 'p-clients',    label: 'Clients',    href: '/clients',   icon: 'briefcase' },
   { key: 'p-candidates', label: 'Candidates', href: '/candidates', icon: 'user' },
   { key: 'p-settings',   label: 'Settings',   href: '/settings',  icon: 'settings' },
   { key: 'p-subscription', label: 'Subscription', href: '/subscription', icon: 'card' },
@@ -28,7 +28,7 @@ const PAGES = [
  * even close the palette. Both live inside a role, and the palette
  * already lists every role by name — which is the honest route to them. */
 const ACTIONS = [
-  { key: 'a-create-role',   label: 'Create role',        href: '/roles' },
+  { key: 'a-create-role',   label: 'Create role',        href: '/roles?create=1' },
   { key: 'a-open-candidates', label: 'View all candidates', href: '/candidates' },
   { key: 'a-open-settings', label: 'Open Settings',      href: '/settings' },
   { key: 'a-open-subscription', label: 'Open Subscription',  href: '/subscription' },

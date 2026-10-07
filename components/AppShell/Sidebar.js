@@ -33,7 +33,7 @@ export default function Sidebar({ onNavigate, collapsedOverride }) {
     if (n.read_at) return;
     if (n.kind === 'interview_completed') badges['/dashboard'] = true;
     if (n.kind === 'scoring_completed')   badges['/candidates'] = true;
-    if (n.kind === 'invite_accepted' || n.kind === 'invite_withdrawn') badges['/roles'] = true;
+    if (n.kind === 'invite_accepted' || n.kind === 'invite_withdrawn') badges['/clients'] = true;
   });
 
   return (
