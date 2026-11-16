@@ -613,9 +613,10 @@ export default function LandingPage() {
         <img src="/assets/recrewt-logo-tight.png" alt="Recrewt AI" width="711" height="172" fetchPriority="high" />
       </a>
       <div className="hd-actions">
-        <p className="hd-line" id="hdLine">Adaptive AI interviews for modern hiring teams.</p>
+        <p className="hd-line" id="hdLine">AI interviews for hiring teams and agencies.</p>
         <nav className="hd-nav" aria-label="Main">
           <a href="#how-it-works">How it works</a>
+          <a href="#agencies">Agencies</a>
           <a href="#pricing">Pricing</a>
           <a href="#trust">Trust</a>
         </nav>
@@ -626,19 +627,19 @@ export default function LandingPage() {
 
     {/* hero copy */}
     <div className="hero-copy" id="heroCopy">
-      <p className="hc-eyebrow">AI interviewer for hiring teams</p>
+      <p className="hc-eyebrow">AI interviewer for hiring teams and agencies</p>
       <h1 className="hc-headline" id="hc-headline">
         Every candidate <em>screened.</em>
         <span className="l2">Before your team spends a minute.</span>
       </h1>
       <p className="hc-sub" id="heroSub">
         Recrewt AI interviews each applicant on video, asks follow-up
-        questions about what they actually said, and gives your team scored
-        answers with the reasons behind each score.
+        questions about what they actually said, and shows you the evidence
+        behind every score. For in-house teams and recruitment agencies.
       </p>
       <div className="hc-actions">
         <a className="btn btn-primary" href="#pricing">
-          Get started <span className="arrow" aria-hidden="true">→</span>
+          Start screening candidates <span className="arrow" aria-hidden="true">→</span>
         </a>
         <a className="btn btn-secondary" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a demo</a>
       </div>
@@ -669,13 +670,14 @@ export default function LandingPage() {
     </a>
     <nav className="sn-links" aria-label="Sections">
       <a href="#how-it-works">How it works</a>
+      <a href="#agencies">Agencies</a>
       <a href="#pricing">Pricing</a>
       <a href="#trust">Trust</a>
     </nav>
     <div className="sn-actions">
       <a className="sn-login" href="/login">Log in</a>
       <a className="sn-btn sn-btn-sec" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a demo</a>
-      <a className="sn-btn sn-btn-pri" href="#pricing">Get started</a>
+      <a className="sn-btn sn-btn-pri" href="#pricing">Start screening</a>
     </div>
   </div>
 </header>
@@ -1143,6 +1145,38 @@ export default function LandingPage() {
 </section>
 
 {/* ============================================================
+     SECTION — Agencies. Secondary audience; reuses the Trust card
+     styles. Every claim maps to a shipped feature: clients -> roles ->
+     candidates, share links, closed-book candidate Q&A.
+     ============================================================ */}
+<section className="trust" id="agencies" aria-labelledby="agencies-heading">
+  <div className="container">
+    <div className="tr-head">
+      <span className="tr-label">For recruitment agencies</span>
+      <h2 id="agencies-heading">Send your client a shortlist <em>they can trust.</em></h2>
+    </div>
+    <div className="tr-grid">
+      <div className="tr-item">
+        <h3>One workspace per client</h3>
+        <p>Keep each client&rsquo;s roles and candidates separate, from intake to shortlist.</p>
+      </div>
+      <div className="tr-item">
+        <h3>Share results by link</h3>
+        <p>Your client sees scores, evidence and recordings without creating an account.</p>
+      </div>
+      <div className="tr-item">
+        <h3>No promises you didn&rsquo;t make</h3>
+        <p>When a candidate asks about salary, start date or the client, Recrewt only answers from facts you gave it. If it doesn&rsquo;t know, it says so and passes the question to you.</p>
+      </div>
+      <div className="tr-item">
+        <h3>Priced per screened candidate</h3>
+        <p>From $1.24 to $2.10 per candidate, depending on your plan. Change or cancel your plan any time. <a className="tr-link" href="#pricing">See plans</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{/* ============================================================
      SECTION — Trust. Answers the questions HR buyers ask first.
      Every answer matches the interview consent screen and /privacy.
      If either of those changes, update this section too.
@@ -1169,6 +1203,22 @@ export default function LandingPage() {
       <div className="tr-item">
         <h3>What happens to candidate data?</h3>
         <p>Only the recruiter who created the role can see it. It&rsquo;s kept until you delete the role or ask us to, then permanently removed within 30 days. Candidates can ask for their data to be erased at any time. <a className="tr-link" href="/privacy">Read the privacy policy</a></p>
+      </div>
+      <div className="tr-item">
+        <h3>What if a candidate asks something the AI can&rsquo;t answer?</h3>
+        <p>It only answers from the facts you gave it about the role and company. If it doesn&rsquo;t know, it tells the candidate it has noted the question for you, so nobody gets an invented salary or start date.</p>
+      </div>
+      <div className="tr-item">
+        <h3>We&rsquo;re an agency. Can our clients see the results?</h3>
+        <p>Yes. Each client gets its own roles and candidates, and you can share results by link. Your client reviews the evidence without creating an account.</p>
+      </div>
+      <div className="tr-item">
+        <h3>Which companies handle candidate data?</h3>
+        <p>Supabase (database and sign-in), Anthropic (question writing and scoring), AssemblyAI (transcription), Cloudinary (video storage), Resend (invite emails) and Modal (the interviewer&rsquo;s voice). Each one only processes what it needs to do its job. <a className="tr-link" href="/privacy">Full list in the privacy policy</a></p>
+      </div>
+      <div className="tr-item">
+        <h3>What if a candidate&rsquo;s connection drops mid-interview?</h3>
+        <p>You can let them try again from their candidate page. Their unfinished answers are never shown to you or scored, so nobody is judged on a broken call.</p>
       </div>
     </div>
   </div>
@@ -1279,16 +1329,16 @@ export default function LandingPage() {
   <div className="cta-inner">
     <span className="cta-label reveal">Ready when you are</span>
     <h2 id="cta-heading" className="cta-h reveal">
-      Hiring is important.<br />
-      <em>So is your time.</em>
+      Your next 200 applicants<br />
+      <em>deserve more than a CV skim.</em>
     </h2>
     <p className="cta-copy reveal">Recrewt runs the first interview with every applicant, so your team only meets the people worth meeting.</p>
     <div className="cta-actions reveal">
       <div className="cta-btns">
-        <a className="cta-btn cta-btn-pri" href="#pricing">Get started <span className="arrow" aria-hidden="true">→</span></a>
+        <a className="cta-btn cta-btn-pri" href="#pricing">Start screening candidates <span className="arrow" aria-hidden="true">→</span></a>
         <a className="cta-btn" href="https://calendly.com/mike-recrewtai" target="_blank" rel="noopener noreferrer">Book a 15-minute demo</a>
       </div>
-      <p className="cta-note">No commitment. Just a conversation about how you hire.</p>
+      <p className="cta-note">Monthly plans. Change or cancel any time.</p>
     </div>
   </div>
 </section>
